@@ -1,0 +1,12 @@
+.DS_Store
+.env
+*.env
+node_modules/
+__pycache__/
+*.py[cod]
+*.tmp
+*response*.json
+
+# Runtime image outputs
+generated-images/
+image-design-workbench/generated-images/

@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>商品图片设计工作台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Product Image Studio</p>
+          <h1>商品图片设计工作台</h1>
+        </div>
+        <div class="topbar-actions">
+          <div class="spec-control" aria-label="图片规格">
+            <label>
+              <span>图片规格</span>
+              <select id="imageSpecMode">
+                <option value="square">1:1 方图</option>
+                <option value="fixed">固定边长</option>
+              </select>
+            </label>
+            <label>
+              <span>请求边长</span>
+              <input id="imageSpecSize" type="number" min="256" max="4096" step="1" value="1024" />
+            </label>
+          </div>
+          <div class="fixed-size" aria-label="当前套图">
+            <span>当前套图</span>
+            <strong id="imageSetName">--</strong>
+          </div>
+          <button class="button" id="openNewWindow" type="button">
+            <span class="icon" data-icon="window"></span>
+            新套图窗口
+          </button>
+          <button class="button primary" id="generateMainTop" type="button">
+            <span class="icon" data-icon="spark"></span>
+            生成主图
+          </button>
+          <button class="button" id="generateAll" type="button" disabled>
+            <span class="icon" data-icon="layers"></span>
+            生成六张衍生图
+          </button>
+          <button class="button ghost" id="downloadAll" type="button" disabled>
+            <span class="icon" data-icon="download"></span>
+            下载全部
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="status-strip" aria-live="polite">
+          <div>
+            <span class="status-dot"></span>
+            <span id="globalStatus">准备就绪</span>
+          </div>
+          <button class="text-button" id="clearState" type="button">清空页面</button>
+        </section>
+
+        <section class="board" id="imageBoard">
+          <article class="image-card main-card" data-type="main">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 01</p>
+                <h2>主图</h2>
+              </div>
+              <span class="badge strong">源图</span>
+            </div>
+            <div class="preview" data-preview="main">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="image"></span>
+                <span>等待生成</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-main" rows="6"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button primary full" data-action="generate" data-type="main" type="button">
+                <span class="icon" data-icon="spark"></span>
+                生成主图
+              </button>
+              <button class="button" id="uploadMainButton" type="button">
+                <span class="icon" data-icon="upload"></span>
+                上传主图
+              </button>
+              <input id="uploadMainInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+              <button class="icon-button" data-action="download" data-type="main" type="button" disabled title="下载主图" aria-label="下载主图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="main"></p>
+          </article>
+
+          <article class="image-card" data-type="whiteBackground">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 02</p>
+                <h2>白色背景图</h2>
+              </div>
+              <span class="badge" data-badge="whiteBackground">待主图</span>
+            </div>
+            <div class="preview locked" data-preview="whiteBackground">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="lock"></span>
+                <span>需要主图</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-whiteBackground" rows="5"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button full" data-action="generate" data-type="whiteBackground" type="button" disabled>
+                <span class="icon" data-icon="refresh"></span>
+                生成
+              </button>
+              <button class="icon-button" data-action="download" data-type="whiteBackground" type="button" disabled title="下载白色背景图" aria-label="下载白色背景图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="whiteBackground"></p>
+          </article>
+
+          <article class="image-card" data-type="dimensions">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 03</p>
+                <h2>尺寸标注图</h2>
+              </div>
+              <span class="badge" data-badge="dimensions">待主图</span>
+            </div>
+            <div class="preview locked" data-preview="dimensions">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="lock"></span>
+                <span>需要主图</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-dimensions" rows="5"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button full" data-action="generate" data-type="dimensions" type="button" disabled>
+                <span class="icon" data-icon="refresh"></span>
+                生成
+              </button>
+              <button class="icon-button" data-action="download" data-type="dimensions" type="button" disabled title="下载尺寸标注图" aria-label="下载尺寸标注图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="dimensions"></p>
+          </article>
+
+          <article class="image-card" data-type="detail">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 04</p>
+                <h2>局部放大图</h2>
+              </div>
+              <span class="badge" data-badge="detail">待主图</span>
+            </div>
+            <div class="preview locked" data-preview="detail">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="lock"></span>
+                <span>需要主图</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-detail" rows="5"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button full" data-action="generate" data-type="detail" type="button" disabled>
+                <span class="icon" data-icon="refresh"></span>
+                生成
+              </button>
+              <button class="icon-button" data-action="download" data-type="detail" type="button" disabled title="下载局部放大图" aria-label="下载局部放大图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="detail"></p>
+          </article>
+
+          <article class="image-card" data-type="worn">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 05</p>
+                <h2>人物穿戴图</h2>
+              </div>
+              <span class="badge" data-badge="worn">待主图</span>
+            </div>
+            <div class="preview locked" data-preview="worn">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="lock"></span>
+                <span>需要主图</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-worn" rows="5"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button full" data-action="generate" data-type="worn" type="button" disabled>
+                <span class="icon" data-icon="refresh"></span>
+                生成
+              </button>
+              <button class="icon-button" data-action="download" data-type="worn" type="button" disabled title="下载人物穿戴图" aria-label="下载人物穿戴图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="worn"></p>
+          </article>
+
+          <article class="image-card" data-type="scene">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 06</p>
+                <h2>场景展示图</h2>
+              </div>
+              <span class="badge" data-badge="scene">待主图</span>
+            </div>
+            <div class="preview locked" data-preview="scene">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="lock"></span>
+                <span>需要主图</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-scene" rows="5"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button full" data-action="generate" data-type="scene" type="button" disabled>
+                <span class="icon" data-icon="refresh"></span>
+                生成
+              </button>
+              <button class="icon-button" data-action="download" data-type="scene" type="button" disabled title="下载场景展示图" aria-label="下载场景展示图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="scene"></p>
+          </article>
+
+          <article class="image-card" data-type="sellingPoints">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 07</p>
+                <h2>卖点展示图</h2>
+              </div>
+              <span class="badge" data-badge="sellingPoints">待主图</span>
+            </div>
+            <div class="preview locked" data-preview="sellingPoints">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="lock"></span>
+                <span>需要主图</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-sellingPoints" rows="5"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button full" data-action="generate" data-type="sellingPoints" type="button" disabled>
+                <span class="icon" data-icon="refresh"></span>
+                生成
+              </button>
+              <button class="icon-button" data-action="download" data-type="sellingPoints" type="button" disabled title="下载卖点展示图" aria-label="下载卖点展示图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="sellingPoints"></p>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <template id="spinnerTemplate">
+      <div class="loading-state">
+        <span class="spinner"></span>
+        <span>生成中</span>
+      </div>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
