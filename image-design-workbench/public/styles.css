@@ -115,9 +115,9 @@ h2 {
   white-space: nowrap;
 }
 
+.set-control,
 .spec-control {
   display: inline-grid;
-  grid-template-columns: minmax(118px, auto) 96px;
   align-items: center;
   gap: 8px;
   min-height: 42px;
@@ -127,12 +127,22 @@ h2 {
   border-radius: 8px;
 }
 
+.set-control {
+  grid-template-columns: minmax(126px, auto);
+}
+
+.spec-control {
+  grid-template-columns: minmax(118px, auto) 96px;
+}
+
+.set-control label,
 .spec-control label {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
 
+.set-control span,
 .spec-control span {
   color: var(--muted);
   font-size: 11px;
@@ -140,6 +150,7 @@ h2 {
   line-height: 1;
 }
 
+.set-control select,
 .spec-control select,
 .spec-control input {
   width: 100%;
@@ -233,6 +244,15 @@ h2 {
   font-weight: 800;
 }
 
+.text-button.danger {
+  color: var(--danger);
+}
+
+.text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .icon,
 .empty-icon {
   width: 18px;
@@ -299,6 +319,13 @@ h2 {
   font-weight: 800;
 }
 
+.status-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
 .status-dot {
   width: 9px;
   height: 9px;
@@ -315,6 +342,11 @@ h2 {
   align-items: start;
 }
 
+.board[data-product-set="bag"] {
+  grid-template-columns: repeat(2, minmax(280px, 520px));
+  justify-content: center;
+}
+
 .image-card {
   display: grid;
   gap: 14px;
@@ -326,8 +358,29 @@ h2 {
   box-shadow: var(--shadow);
 }
 
+.image-card[hidden] {
+  display: none;
+}
+
 .main-card {
   grid-row: span 3;
+}
+
+.board[data-product-set="bag"] .main-card {
+  grid-row: auto;
+}
+
+.board[data-product-set="bag"] .image-card {
+  grid-template-columns: 1fr;
+}
+
+.board[data-product-set="bag"] .image-card:not(.main-card) .prompt-field,
+.board[data-product-set="bag"] .image-card:not(.main-card) .card-actions {
+  grid-column: 1;
+}
+
+.board[data-product-set="bag"] .image-card:not(.main-card) textarea {
+  min-height: 158px;
 }
 
 .image-card:not(.main-card) {
@@ -547,6 +600,7 @@ textarea:focus {
 
   .topbar-actions,
   .fixed-size,
+  .set-control,
   .spec-control,
   .button {
     width: 100%;
@@ -567,6 +621,10 @@ textarea:focus {
   }
 
   .board {
+    grid-template-columns: 1fr;
+  }
+
+  .board[data-product-set="bag"] {
     grid-template-columns: 1fr;
   }
 

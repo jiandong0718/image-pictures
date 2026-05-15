@@ -14,6 +14,15 @@
           <h1>商品图片设计工作台</h1>
         </div>
         <div class="topbar-actions">
+          <div class="set-control" aria-label="商品套图类型">
+            <label>
+              <span>商品套图</span>
+              <select id="productSetMode">
+                <option value="hat">帽子套图</option>
+                <option value="bag">包包套图</option>
+              </select>
+            </label>
+          </div>
           <div class="spec-control" aria-label="图片规格">
             <label>
               <span>图片规格</span>
@@ -56,7 +65,10 @@
             <span class="status-dot"></span>
             <span id="globalStatus">准备就绪</span>
           </div>
-          <button class="text-button" id="clearState" type="button">清空页面</button>
+          <div class="status-actions">
+            <button class="text-button" id="clearState" type="button">清空页面</button>
+            <button class="text-button danger" id="resetGeneratedCache" type="button">重置缓存</button>
+          </div>
         </section>
 
         <section class="board" id="imageBoard">
@@ -93,6 +105,36 @@
               </button>
             </div>
             <p class="card-message" data-message="main"></p>
+          </article>
+
+          <article class="image-card" data-type="derived" hidden>
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 02</p>
+                <h2>衍生图</h2>
+              </div>
+              <span class="badge" data-badge="derived">待主图</span>
+            </div>
+            <div class="preview locked" data-preview="derived">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="lock"></span>
+                <span>需要主图</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-derived" rows="5"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button full" data-action="generate" data-type="derived" type="button" disabled>
+                <span class="icon" data-icon="refresh"></span>
+                生成
+              </button>
+              <button class="icon-button" data-action="download" data-type="derived" type="button" disabled title="下载衍生图" aria-label="下载衍生图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="derived"></p>
           </article>
 
           <article class="image-card" data-type="whiteBackground">

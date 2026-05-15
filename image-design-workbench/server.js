@@ -50,7 +50,8 @@ const PYTHON_COMMANDS = [
   "python",
   "python3",
 ].filter(Boolean);
-const IMAGE_NORMALIZER_COMMAND = process.env.IMAGE_NORMALIZER || "sips";
+const IMAGE_NORMALIZER_COMMAND =
+  process.env.IMAGE_NORMALIZER || (process.platform === "darwin" ? "sips" : "magick");
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4173);
 const PREFERRED_IMAGE_WIDTH = 1024;
@@ -73,6 +74,11 @@ const IMAGE_TYPES = {
     label: "主图",
     prefix: "main",
     endpoint: "generations",
+  },
+  derived: {
+    label: "衍生图",
+    prefix: "derived",
+    endpoint: "edits",
   },
   whiteBackground: {
     label: "白色背景图",
@@ -106,6 +112,14 @@ const IMAGE_TYPES = {
   },
 };
 
+const HAT_BATCH_DERIVED_TYPES = [
+  "whiteBackground",
+  "dimensions",
+  "detail",
+  "worn",
+  "scene",
+  "sellingPoints",
+];
 const DERIVED_TYPES = Object.keys(IMAGE_TYPES).filter((type) => type !== "main");
 const IMAGE_SET_ID_PATTERN = /^\d{3,}$/;
 const IMAGE_FILE_PATTERN = /^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp|gif)$/i;
@@ -442,6 +456,18 @@ function normalizeImageSpec(rawSpec = {}) {
   };
 }
 
+function getImageTypeConfig(type) {
+  return IMAGE_TYPES[type] || null;
+}
+
+function getDerivedImageTypes() {
+  return [...DERIVED_TYPES];
+}
+
+function getBatchDerivedTypes() {
+  return [...HAT_BATCH_DERIVED_TYPES];
+}
+
 function describeImageSpec(spec) {
   const normalized = normalizeImageSpec(spec);
   return normalized.mode === "fixed"
@@ -503,6 +529,55 @@ function getImageNormalizationPlan(dimensions, spec = normalizeImageSpec()) {
   };
 }
 
+function getImageNormalizerCommands(command, plan, filePath) {
+  const commandName = path.basename(command).toLowerCase();
+  const commands = [];
+  const isImageMagick = commandName === "convert" || commandName === "magick";
+
+  if (plan.cropSize) {
+    if (isImageMagick) {
+      commands.push({
+        command,
+        args: [
+          filePath,
+          "-gravity",
+          "center",
+          "-crop",
+          `${plan.cropSize}x${plan.cropSize}+0+0`,
+          "+repage",
+          filePath,
+        ],
+      });
+    } else {
+      commands.push({
+        command,
+        args: ["--cropToHeightWidth", String(plan.cropSize), String(plan.cropSize), filePath],
+      });
+    }
+  }
+
+  if (plan.targetWidth && plan.targetHeight) {
+    if (isImageMagick) {
+      commands.push({
+        command,
+        args: [filePath, "-resize", `${plan.targetWidth}x${plan.targetHeight}!`, filePath],
+      });
+    } else {
+      commands.push({
+        command,
+        args: [
+          "--resampleHeightWidth",
+          String(plan.targetHeight),
+          String(plan.targetWidth),
+          filePath,
+        ],
+      });
+    }
+  }
+
+  return commands;
+}
+
 async function normalizeGeneratedImageFile(filePath, spec, label) {
   const normalized = normalizeImageSpec(spec);
   const originalData = await fsp.readFile(filePath);
@@ -517,24 +592,8 @@ async function normalizeGeneratedImageFile(filePath, spec, label) {
   }
 
   try {
-    if (plan.cropSize) {
-      await runProcess(
-        IMAGE_NORMALIZER_COMMAND,
-        ["--cropToHeightWidth", String(plan.cropSize), String(plan.cropSize), filePath],
-        ROOT_DIR,
-      );
-    }
-    if (plan.targetWidth && plan.targetHeight) {
-      await runProcess(
-        IMAGE_NORMALIZER_COMMAND,
-        [
-          "--resampleHeightWidth",
-          String(plan.targetHeight),
-          String(plan.targetWidth),
-          filePath,
-        ],
-        ROOT_DIR,
-      );
+    for (const command of getImageNormalizerCommands(IMAGE_NORMALIZER_COMMAND, plan, filePath)) {
+      await runProcess(command.command, command.args, ROOT_DIR);
     }
   } catch (error) {
     throw new Error(
@@ -645,6 +704,41 @@ function allocateImageSet() {
   const allocation = imageSetAllocationQueue.then(allocateImageSetNow, allocateImageSetNow);
   imageSetAllocationQueue = allocation.catch(() => {});
   return allocation;
+}
+
+async function clearOutputDirContents(outputDir = OUTPUT_DIR) {
+  const root = path.resolve(outputDir);
+  if (root === path.parse(root).root) {
+    throw new Error("拒绝清空系统根目录");
+  }
+  await fsp.mkdir(root, { recursive: true });
+  const entries = await fsp.readdir(root, { withFileTypes: true });
+  await Promise.all(
+    entries.map((entry) =>
+      fsp.rm(path.join(root, entry.name), {
+        recursive: true,
+        force: true,
+      }),
+    ),
+  );
+  return entries.length;
+}
+
+async function resetImageSets() {
+  const reset = imageSetAllocationQueue.then(
+    async () => {
+      const removedCount = await clearOutputDirContents(OUTPUT_DIR);
+      const imageSet = await allocateImageSetNow();
+      return { removedCount, imageSet };
+    },
+    async () => {
+      const removedCount = await clearOutputDirContents(OUTPUT_DIR);
+      const imageSet = await allocateImageSetNow();
+      return { removedCount, imageSet };
+    },
+  );
+  imageSetAllocationQueue = reset.catch(() => {});
+  return reset;
 }
 
 function parseGeneratedImagePath(stdout) {
@@ -974,6 +1068,12 @@ async function handleApi(req, res, pathname, searchParams) {
     return;
   }
 
+  if (req.method === "POST" && pathname === "/api/image-sets/reset") {
+    const { removedCount, imageSet } = await resetImageSets();
+    sendJson(res, 200, { ok: true, removedCount, imageSet });
+    return;
+  }
+
   if (req.method === "GET" && pathname.startsWith("/api/images/file/")) {
     const id = decodeURIComponent(pathname.replace("/api/images/file/", ""));
     await serveImage(req, res, id, false);
@@ -1035,7 +1135,7 @@ async function handleApi(req, res, pathname, searchParams) {
 
   if (req.method === "POST" && pathname === "/api/images/derived/batch") {
     const payload = await readJson(req);
-    const tasks = DERIVED_TYPES.map(async (type) => {
+    const tasks = HAT_BATCH_DERIVED_TYPES.map(async (type) => {
       try {
         const image = await generateImage({
           type,
@@ -1118,7 +1218,12 @@ module.exports = {
   PREFERRED_IMAGE_WIDTH,
   REQUIRED_IMAGE_RATIO,
   assertImageSpecDimensions,
+  clearOutputDirContents,
   describeImageSpec,
+  getBatchDerivedTypes,
+  getDerivedImageTypes,
+  getImageTypeConfig,
+  getImageNormalizerCommands,
   getImageNormalizationPlan,
   normalizeImageSpec,
   normalizeGeneratedImageFile,

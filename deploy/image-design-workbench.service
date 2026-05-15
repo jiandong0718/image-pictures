@@ -1,0 +1,22 @@
+[Unit]
+Description=Image Design Workbench
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=imageapp
+Group=imageapp
+WorkingDirectory=/opt/image-pictures/current/image-design-workbench
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=4173
+Environment=IMAGE_NORMALIZER=magick
+Environment=HOME=/opt/image-pictures
+ExecStart=/usr/bin/node /opt/image-pictures/current/image-design-workbench/server.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+

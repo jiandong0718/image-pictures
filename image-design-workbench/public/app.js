@@ -1,5 +1,30 @@
-const TYPES = ["main", "whiteBackground", "dimensions", "detail", "worn", "scene", "sellingPoints"];
-const DERIVED_TYPES = ["whiteBackground", "dimensions", "detail", "worn", "scene", "sellingPoints"];
+const HAT_DERIVED_TYPES = ["whiteBackground", "dimensions", "detail", "worn", "scene", "sellingPoints"];
+const BAG_DERIVED_TYPES = ["derived"];
+const TYPES = ["main", "derived", ...HAT_DERIVED_TYPES];
+const DERIVED_TYPES = ["derived", ...HAT_DERIVED_TYPES];
+const DEFAULT_PRODUCT_SET_MODE = "hat";
+const PRODUCT_SET_MODES = {
+  hat: {
+    label: "帽子套图",
+    types: ["main", ...HAT_DERIVED_TYPES],
+    derivedTypes: HAT_DERIVED_TYPES,
+    generateAllLabel: "生成六张衍生图",
+    readyStatus: "主图已准备，可以继续生成六张衍生图",
+    generatingStatus: "正在同时生成六张衍生图",
+    doneStatus: "六张衍生图已生成",
+    partialStatus: "部分衍生图生成失败",
+  },
+  bag: {
+    label: "包包套图",
+    types: ["main", ...BAG_DERIVED_TYPES],
+    derivedTypes: BAG_DERIVED_TYPES,
+    generateAllLabel: "生成衍生图",
+    readyStatus: "主图已准备，可以继续生成衍生图",
+    generatingStatus: "正在生成衍生图",
+    doneStatus: "衍生图已生成",
+    partialStatus: "衍生图生成失败",
+  },
+};
 const STORAGE_KEY = "imageDesignWorkbench.session.v5";
 const DEFAULT_IMAGE_SPEC = { mode: "square", size: 1024 };
 const MIN_IMAGE_SPEC_SIZE = 256;
@@ -7,6 +32,7 @@ const MAX_IMAGE_SPEC_SIZE = 4096;
 
 const TYPE_LABELS = {
   main: "主图",
+  derived: "衍生图",
   whiteBackground: "白色背景图",
   dimensions: "尺寸标注图",
   detail: "局部放大图",
@@ -18,6 +44,8 @@ const TYPE_LABELS = {
 const DEFAULT_PROMPTS = {
   main:
     "为一款 3D 印花商品生成电商主图。商品居中展示，图案清晰，材质真实，光线干净，高级商业摄影风格，适合电商平台首图。",
+  derived:
+    "基于主图生成一张包包商品衍生图。保留包包主体、颜色、材质和图案细节，按照我的要求调整场景、角度或展示方式，画面干净高级，适合电商详情页。",
   whiteBackground:
     "基于主图保留商品外观、颜色和 3D 印花细节，生成纯白背景电商图。商品完整居中，边缘干净，无多余道具。",
   dimensions:
@@ -44,6 +72,22 @@ function normalizeImageSpec(rawSpec = {}) {
   return { mode, size };
 }
 
+function normalizeProductSetMode(value) {
+  return PRODUCT_SET_MODES[value] ? value : DEFAULT_PRODUCT_SET_MODE;
+}
+
+function getProductSetConfig() {
+  return PRODUCT_SET_MODES[normalizeProductSetMode(state.productSetMode)];
+}
+
+function getActiveTypes() {
+  return getProductSetConfig().types;
+}
+
+function getActiveDerivedTypes() {
+  return getProductSetConfig().derivedTypes;
+}
+
 function readPromptParams() {
   try {
     const raw = new URLSearchParams(window.location.search).get("prompts");
@@ -65,6 +109,11 @@ function readPromptParams() {
   }
 }
 
+function readProductSetModeParam() {
+  const raw = new URLSearchParams(window.location.search).get("productSetMode");
+  return raw ? normalizeProductSetMode(raw) : "";
+}
+
 function readImageSpecParams() {
   try {
     const raw = new URLSearchParams(window.location.search).get("imageSpec");
@@ -80,23 +129,33 @@ function shouldStartNewSet() {
 
 function cleanStartupParams() {
   const url = new URL(window.location.href);
-  if (!url.searchParams.has("newSet") && !url.searchParams.has("prompts") && !url.searchParams.has("imageSpec")) {
+  if (
+    !url.searchParams.has("newSet") &&
+    !url.searchParams.has("prompts") &&
+    !url.searchParams.has("imageSpec") &&
+    !url.searchParams.has("productSetMode")
+  ) {
     return;
   }
   url.searchParams.delete("newSet");
   url.searchParams.delete("prompts");
   url.searchParams.delete("imageSpec");
+  url.searchParams.delete("productSetMode");
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
 function loadState() {
   const promptParams = readPromptParams();
   const imageSpecParams = readImageSpecParams();
+  const productSetModeParam = readProductSetModeParam();
   const forceNewSet = shouldStartNewSet();
 
   try {
     const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "{}");
     return {
+      productSetMode: normalizeProductSetMode(
+        productSetModeParam || (forceNewSet ? DEFAULT_PRODUCT_SET_MODE : saved.productSetMode),
+      ),
       imageSet: forceNewSet ? null : saved.imageSet || null,
       prompts: { ...DEFAULT_PROMPTS, ...(forceNewSet ? {} : saved.prompts || {}), ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...(forceNewSet ? {} : saved.imageSpec || {}), ...imageSpecParams }),
@@ -105,6 +164,7 @@ function loadState() {
     };
   } catch {
     return {
+      productSetMode: normalizeProductSetMode(productSetModeParam),
       imageSet: null,
       prompts: { ...DEFAULT_PROMPTS, ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...imageSpecParams }),
@@ -119,6 +179,7 @@ function saveState() {
     STORAGE_KEY,
     JSON.stringify({
       imageSet: state.imageSet,
+      productSetMode: state.productSetMode,
       prompts: state.prompts,
       imageSpec: state.imageSpec,
       images: state.images,
@@ -130,6 +191,17 @@ function updateImageSetView() {
   const el = qs("#imageSetName");
   if (el) {
     el.textContent = state.imageSet?.folderName || "--";
+  }
+}
+
+function updateProductSetModeControl() {
+  const mode = qs("#productSetMode");
+  if (mode) {
+    mode.value = normalizeProductSetMode(state.productSetMode);
+  }
+  const board = qs("#imageBoard");
+  if (board) {
+    board.dataset.productSet = normalizeProductSetMode(state.productSetMode);
   }
 }
 
@@ -254,28 +326,35 @@ function updateBadges() {
 }
 
 function updateControls() {
+  const config = getProductSetConfig();
+  const activeTypes = getActiveTypes();
   const hasImageSet = Boolean(state.imageSet?.id);
   const hasMain = Boolean(state.images.main);
   const anyLoading = Object.values(state.loading).some(Boolean);
-  const anyImage = TYPES.some((type) => Boolean(state.images[type]));
+  const anyImage = activeTypes.some((type) => Boolean(state.images[type]));
 
   qs("#generateAll").disabled = !hasImageSet || !hasMain || anyLoading;
+  qs("#generateAll").innerHTML = `<span class="icon" data-icon="layers"></span>${config.generateAllLabel}`;
   qs("#downloadAll").disabled = !hasImageSet || !anyImage || anyLoading;
   qs("#generateMainTop").disabled = !hasImageSet || Boolean(state.loading.main);
   qs("#uploadMainButton").disabled = !hasImageSet || Boolean(state.loading.main);
 
   for (const type of TYPES) {
+    const card = qs(`[data-type="${type}"]`);
     const generateButton = qs(`[data-action="generate"][data-type="${type}"]`);
     const downloadButton = qs(`[data-action="download"][data-type="${type}"]`);
+    const isActive = activeTypes.includes(type);
     const canGenerate =
-      type === "main" ? hasImageSet && !state.loading.main : hasImageSet && hasMain && !state.loading[type];
+      isActive &&
+      (type === "main" ? hasImageSet && !state.loading.main : hasImageSet && hasMain && !state.loading[type]);
 
+    card.hidden = !isActive;
     generateButton.disabled = !canGenerate;
     generateButton.innerHTML =
       type === "main"
         ? `<span class="icon" data-icon="spark"></span>${state.images.main ? "重新生成主图" : "生成主图"}`
         : `<span class="icon" data-icon="refresh"></span>${state.images[type] ? "重新生成" : "生成"}`;
-    downloadButton.disabled = !state.images[type] || anyLoading;
+    downloadButton.disabled = !isActive || !state.images[type] || anyLoading;
   }
 
   updateBadges();
@@ -283,6 +362,7 @@ function updateControls() {
 
 function render() {
   updateImageSetView();
+  updateProductSetModeControl();
   updateImageSpecControls();
   for (const type of TYPES) {
     const textarea = qs(`#prompt-${type}`);
@@ -385,6 +465,7 @@ function openNewImageSetWindow() {
   url.searchParams.set("newSet", "1");
   url.searchParams.set("prompts", JSON.stringify(prompts));
   url.searchParams.set("imageSpec", JSON.stringify(imageSpec));
+  url.searchParams.set("productSetMode", normalizeProductSetMode(state.productSetMode));
   window.open(url.toString(), "_blank", "noopener");
 }
 
@@ -412,7 +493,7 @@ async function generateMain() {
     state.images.main = data.image;
     saveState();
     setMessage("main", "主图已生成", "success");
-    setStatus("主图已生成，可以继续生成六张衍生图");
+    setStatus(getProductSetConfig().readyStatus);
   } catch (error) {
     setMessage("main", error.message, "error");
     setStatus("主图生成失败");
@@ -464,7 +545,7 @@ async function uploadMain(file) {
     state.images.main = data.image;
     saveState();
     setMessage("main", "已上传为主图", "success");
-    setStatus("主图已上传，可以继续生成六张衍生图");
+    setStatus(getProductSetConfig().readyStatus);
   } catch (error) {
     setMessage("main", error.message, "error");
     setStatus("主图上传失败");
@@ -516,11 +597,17 @@ async function generateAllDerived() {
     setStatus("请先生成主图");
     return;
   }
+  const config = getProductSetConfig();
+  const derivedTypes = getActiveDerivedTypes();
+  if (derivedTypes.length === 1) {
+    await generateDerived(derivedTypes[0]);
+    return;
+  }
   const imageSet = await ensureImageSet();
   const imageSpec = collectImageSpec();
 
   const prompts = {};
-  for (const type of DERIVED_TYPES) {
+  for (const type of derivedTypes) {
     prompts[type] = collectPrompt(type);
     if (!prompts[type]) {
       setMessage(type, `${TYPE_LABELS[type]}提示词不能为空`, "error");
@@ -528,11 +615,11 @@ async function generateAllDerived() {
     }
   }
 
-  for (const type of DERIVED_TYPES) {
+  for (const type of derivedTypes) {
     setLoading(type, true);
     setMessage(type, "");
   }
-  setStatus("正在同时生成六张衍生图");
+  setStatus(config.generatingStatus);
   try {
     const data = await apiPost("/api/images/derived/batch", {
       mainImageId: state.images.main.id,
@@ -541,7 +628,7 @@ async function generateAllDerived() {
       imageSpec,
     });
 
-    for (const type of DERIVED_TYPES) {
+    for (const type of derivedTypes) {
       if (data.results?.[type]) {
         state.images[type] = data.results[type];
         setMessage(type, `${TYPE_LABELS[type]}已生成`, "success");
@@ -550,14 +637,14 @@ async function generateAllDerived() {
       }
     }
     saveState();
-    setStatus(data.ok ? "六张衍生图已生成" : "部分衍生图生成失败");
+    setStatus(data.ok ? config.doneStatus : config.partialStatus);
   } catch (error) {
-    for (const type of DERIVED_TYPES) {
+    for (const type of derivedTypes) {
       setMessage(type, error.message, "error");
     }
     setStatus("衍生图生成失败");
   } finally {
-    for (const type of DERIVED_TYPES) {
+    for (const type of derivedTypes) {
       setLoading(type, false);
     }
     render();
@@ -573,7 +660,7 @@ function downloadSingle(type) {
 }
 
 async function downloadAll() {
-  const ids = TYPES.map((type) => state.images[type]?.id).filter(Boolean);
+  const ids = getActiveTypes().map((type) => state.images[type]?.id).filter(Boolean);
   if (!ids.length) {
     return;
   }
@@ -613,6 +700,7 @@ async function clearState() {
   const imageSpec = collectImageSpec();
   sessionStorage.removeItem(STORAGE_KEY);
   state = {
+    productSetMode: normalizeProductSetMode(state.productSetMode),
     imageSet: null,
     prompts: { ...DEFAULT_PROMPTS },
     imageSpec,
@@ -633,6 +721,42 @@ async function clearState() {
   render();
 }
 
+async function resetGeneratedCache() {
+  const ok = window.confirm("这会删除所有已生成图片文件，并让新套图编号从 001 开始。继续吗？");
+  if (!ok) {
+    return;
+  }
+
+  const productSetMode = normalizeProductSetMode(state.productSetMode);
+  const imageSpec = collectImageSpec();
+  const resetButton = qs("#resetGeneratedCache");
+  resetButton.disabled = true;
+  setStatus("正在重置生成缓存");
+  try {
+    const data = await apiPost("/api/image-sets/reset", {});
+    sessionStorage.removeItem(STORAGE_KEY);
+    state = {
+      productSetMode,
+      imageSet: data.imageSet,
+      prompts: { ...DEFAULT_PROMPTS },
+      imageSpec,
+      images: {},
+      loading: {},
+    };
+    for (const type of TYPES) {
+      setMessage(type, "");
+    }
+    saveState();
+    render();
+    setStatus(`缓存已清理，当前输出文件夹：${data.imageSet.folderName}`);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    resetButton.disabled = false;
+    render();
+  }
+}
+
 function bindEvents() {
   for (const type of TYPES) {
     qs(`#prompt-${type}`).addEventListener("input", (event) => {
@@ -641,6 +765,12 @@ function bindEvents() {
     });
   }
 
+  qs("#productSetMode").addEventListener("change", (event) => {
+    state.productSetMode = normalizeProductSetMode(event.target.value);
+    saveState();
+    render();
+    setStatus(`已切换到${getProductSetConfig().label}`);
+  });
   qs("#imageSpecMode").addEventListener("change", () => {
     collectImageSpec();
   });
@@ -655,6 +785,7 @@ function bindEvents() {
   qs("#generateAll").addEventListener("click", generateAllDerived);
   qs("#downloadAll").addEventListener("click", downloadAll);
   qs("#clearState").addEventListener("click", clearState);
+  qs("#resetGeneratedCache").addEventListener("click", resetGeneratedCache);
   qs("#openNewWindow").addEventListener("click", openNewImageSetWindow);
   qs("#uploadMainButton").addEventListener("click", () => qs("#uploadMainInput").click());
   qs("#uploadMainInput").addEventListener("change", async (event) => {

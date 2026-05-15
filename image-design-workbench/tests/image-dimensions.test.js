@@ -1,8 +1,16 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
 const test = require("node:test");
 
 const {
   assertImageSpecDimensions,
+  clearOutputDirContents,
+  getBatchDerivedTypes,
+  getDerivedImageTypes,
+  getImageTypeConfig,
+  getImageNormalizerCommands,
   getImageNormalizationPlan,
   normalizeImageSpec,
   readImageDimensions,
@@ -106,4 +114,56 @@ test("plans generated image normalization for fixed mode", () => {
     targetWidth: 1024,
     targetHeight: 1024,
   });
+});
+
+test("builds ImageMagick normalization commands for Linux", () => {
+  const commands = getImageNormalizerCommands(
+    "convert",
+    {
+      needsNormalization: true,
+      cropSize: 1000,
+      targetWidth: 1024,
+      targetHeight: 1024,
+    },
+    "/tmp/product.png",
+  );
+
+  assert.deepEqual(commands, [
+    {
+      command: "convert",
+      args: ["/tmp/product.png", "-gravity", "center", "-crop", "1000x1000+0+0", "+repage", "/tmp/product.png"],
+    },
+    {
+      command: "convert",
+      args: ["/tmp/product.png", "-resize", "1024x1024!", "/tmp/product.png"],
+    },
+  ]);
+});
+
+test("supports one generic derived image without changing the hat batch set", () => {
+  assert.equal(getImageTypeConfig("derived").label, "衍生图");
+  assert.equal(getImageTypeConfig("derived").endpoint, "edits");
+  assert.ok(getDerivedImageTypes().includes("derived"));
+  assert.deepEqual(getBatchDerivedTypes(), [
+    "whiteBackground",
+    "dimensions",
+    "detail",
+    "worn",
+    "scene",
+    "sellingPoints",
+  ]);
+});
+
+test("clears generated output contents while keeping the output directory", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "image-output-"));
+  t.after(() => fs.rm(tempDir, { recursive: true, force: true }));
+  const outputDir = path.join(tempDir, "product-design");
+  await fs.mkdir(path.join(outputDir, "001"), { recursive: true });
+  await fs.writeFile(path.join(outputDir, "001", "main.png"), "image");
+  await fs.writeFile(path.join(outputDir, "loose.txt"), "cache");
+
+  const removed = await clearOutputDirContents(outputDir);
+
+  assert.equal(removed, 2);
+  assert.deepEqual(await fs.readdir(outputDir), []);
 });
