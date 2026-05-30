@@ -110,6 +110,16 @@ const IMAGE_TYPES = {
     prefix: "selling-points",
     endpoint: "edits",
   },
+  shoulderBagStrap: {
+    label: "肩带部位图",
+    prefix: "shoulder-bag-strap",
+    endpoint: "edits",
+  },
+  shoulderBagBody: {
+    label: "包身部位图",
+    prefix: "shoulder-bag-body",
+    endpoint: "edits",
+  },
 };
 
 const HAT_BATCH_DERIVED_TYPES = [
@@ -464,8 +474,24 @@ function getDerivedImageTypes() {
   return [...DERIVED_TYPES];
 }
 
-function getBatchDerivedTypes() {
-  return [...HAT_BATCH_DERIVED_TYPES];
+function normalizeBatchDerivedTypes(types) {
+  const uniqueTypes = [...new Set(Array.isArray(types) ? types : HAT_BATCH_DERIVED_TYPES)];
+  if (!uniqueTypes.length) {
+    throw new Error("没有可生成的衍生图类型");
+  }
+  for (const type of uniqueTypes) {
+    if (!DERIVED_TYPES.includes(type)) {
+      throw new Error("未知衍生图类型");
+    }
+  }
+  return uniqueTypes;
+}
+
+function getBatchDerivedTypes(types) {
+  if (typeof types === "undefined") {
+    return [...HAT_BATCH_DERIVED_TYPES];
+  }
+  return normalizeBatchDerivedTypes(types);
 }
 
 function describeImageSpec(spec) {
@@ -775,13 +801,14 @@ async function saveUploadedMain(req, imageSetId, imageSpec = normalizeImageSpec(
   if (!ext) {
     throw new Error("只支持上传 PNG、JPG、WEBP 或 GIF 图片");
   }
-  assertImageSpecDimensions(upload.data, normalizedSpec, "上传主图");
+  // 上传主图不限制尺寸/比例，落盘后再归一化为 1:1，保证生成阶段为方图。
 
   const outputDir = resolveImageSetDir(imageSetId);
   await fsp.mkdir(outputDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
   const filePath = path.join(outputDir, `uploaded-main-${stamp}.${ext}`);
   await fsp.writeFile(filePath, upload.data);
+  await normalizeGeneratedImageFile(filePath, normalizedSpec, "上传主图");
   return makeImageRecord(filePath, "main", `上传主图：${upload.filename}`);
 }
 
@@ -1135,7 +1162,14 @@ async function handleApi(req, res, pathname, searchParams) {
 
   if (req.method === "POST" && pathname === "/api/images/derived/batch") {
     const payload = await readJson(req);
-    const tasks = HAT_BATCH_DERIVED_TYPES.map(async (type) => {
+    let batchTypes;
+    try {
+      batchTypes = getBatchDerivedTypes(payload.types);
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+    const tasks = batchTypes.map(async (type) => {
       try {
         const image = await generateImage({
           type,

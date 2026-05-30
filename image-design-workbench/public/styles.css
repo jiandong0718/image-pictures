@@ -347,6 +347,10 @@ h2 {
   justify-content: center;
 }
 
+.board[data-product-set="shoulderBagFlat"] {
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
+}
+
 .image-card {
   display: grid;
   gap: 14px;
@@ -370,16 +374,24 @@ h2 {
   grid-row: auto;
 }
 
-.board[data-product-set="bag"] .image-card {
+.board[data-product-set="shoulderBagFlat"] .main-card {
+  grid-row: auto;
+}
+
+.board[data-product-set="bag"] .image-card,
+.board[data-product-set="shoulderBagFlat"] .image-card {
   grid-template-columns: 1fr;
 }
 
 .board[data-product-set="bag"] .image-card:not(.main-card) .prompt-field,
-.board[data-product-set="bag"] .image-card:not(.main-card) .card-actions {
+.board[data-product-set="bag"] .image-card:not(.main-card) .card-actions,
+.board[data-product-set="shoulderBagFlat"] .image-card:not(.main-card) .prompt-field,
+.board[data-product-set="shoulderBagFlat"] .image-card:not(.main-card) .card-actions {
   grid-column: 1;
 }
 
-.board[data-product-set="bag"] .image-card:not(.main-card) textarea {
+.board[data-product-set="bag"] .image-card:not(.main-card) textarea,
+.board[data-product-set="shoulderBagFlat"] .image-card:not(.main-card) textarea {
   min-height: 158px;
 }
 
@@ -586,6 +598,10 @@ textarea:focus {
     grid-template-columns: repeat(2, minmax(280px, 1fr));
   }
 
+  .board[data-product-set="shoulderBagFlat"] {
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+  }
+
   .main-card {
     grid-column: 1 / -1;
     grid-row: auto;
@@ -625,6 +641,10 @@ textarea:focus {
   }
 
   .board[data-product-set="bag"] {
+    grid-template-columns: 1fr;
+  }
+
+  .board[data-product-set="shoulderBagFlat"] {
     grid-template-columns: 1fr;
   }
 

@@ -20,6 +20,7 @@
               <select id="productSetMode">
                 <option value="hat">帽子套图</option>
                 <option value="bag">包包套图</option>
+                <option value="shoulderBagFlat">单肩背包平面图</option>
               </select>
             </label>
           </div>
@@ -135,6 +136,66 @@
               </button>
             </div>
             <p class="card-message" data-message="derived"></p>
+          </article>
+
+          <article class="image-card" data-type="shoulderBagStrap" hidden>
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 02</p>
+                <h2>肩带部位图</h2>
+              </div>
+              <span class="badge" data-badge="shoulderBagStrap">待主图</span>
+            </div>
+            <div class="preview locked" data-preview="shoulderBagStrap">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="lock"></span>
+                <span>需要主图</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-shoulderBagStrap" rows="5"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button full" data-action="generate" data-type="shoulderBagStrap" type="button" disabled>
+                <span class="icon" data-icon="refresh"></span>
+                生成
+              </button>
+              <button class="icon-button" data-action="download" data-type="shoulderBagStrap" type="button" disabled title="下载肩带部位图" aria-label="下载肩带部位图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="shoulderBagStrap"></p>
+          </article>
+
+          <article class="image-card" data-type="shoulderBagBody" hidden>
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Step 03</p>
+                <h2>包身部位图</h2>
+              </div>
+              <span class="badge" data-badge="shoulderBagBody">待主图</span>
+            </div>
+            <div class="preview locked" data-preview="shoulderBagBody">
+              <div class="empty-state">
+                <span class="empty-icon" data-icon="lock"></span>
+                <span>需要主图</span>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>提示词</span>
+              <textarea id="prompt-shoulderBagBody" rows="5"></textarea>
+            </label>
+            <div class="card-actions">
+              <button class="button full" data-action="generate" data-type="shoulderBagBody" type="button" disabled>
+                <span class="icon" data-icon="refresh"></span>
+                生成
+              </button>
+              <button class="icon-button" data-action="download" data-type="shoulderBagBody" type="button" disabled title="下载包身部位图" aria-label="下载包身部位图">
+                <span class="icon" data-icon="download"></span>
+              </button>
+            </div>
+            <p class="card-message" data-message="shoulderBagBody"></p>
           </article>
 
           <article class="image-card" data-type="whiteBackground">

@@ -1,7 +1,8 @@
 const HAT_DERIVED_TYPES = ["whiteBackground", "dimensions", "detail", "worn", "scene", "sellingPoints"];
 const BAG_DERIVED_TYPES = ["derived"];
-const TYPES = ["main", "derived", ...HAT_DERIVED_TYPES];
-const DERIVED_TYPES = ["derived", ...HAT_DERIVED_TYPES];
+const SHOULDER_BAG_FLAT_DERIVED_TYPES = ["shoulderBagStrap", "shoulderBagBody"];
+const TYPES = ["main", "derived", ...HAT_DERIVED_TYPES, ...SHOULDER_BAG_FLAT_DERIVED_TYPES];
+const DERIVED_TYPES = ["derived", ...HAT_DERIVED_TYPES, ...SHOULDER_BAG_FLAT_DERIVED_TYPES];
 const DEFAULT_PRODUCT_SET_MODE = "hat";
 const PRODUCT_SET_MODES = {
   hat: {
@@ -24,6 +25,17 @@ const PRODUCT_SET_MODES = {
     doneStatus: "衍生图已生成",
     partialStatus: "衍生图生成失败",
   },
+  shoulderBagFlat: {
+    label: "单肩背包平面图",
+    types: ["main", ...SHOULDER_BAG_FLAT_DERIVED_TYPES],
+    derivedTypes: SHOULDER_BAG_FLAT_DERIVED_TYPES,
+    generateAllLabel: "生成两张部位图",
+    readyStatus: "主图已准备，可以继续生成两张部位图",
+    generatingStatus: "正在同时生成两张部位图",
+    doneStatus: "两张部位图已生成",
+    partialStatus: "部分部位图生成失败",
+    mainUploadOnly: true,
+  },
 };
 const STORAGE_KEY = "imageDesignWorkbench.session.v5";
 const DEFAULT_IMAGE_SPEC = { mode: "square", size: 1024 };
@@ -39,6 +51,8 @@ const TYPE_LABELS = {
   worn: "人物穿戴图",
   scene: "场景展示图",
   sellingPoints: "卖点展示图",
+  shoulderBagStrap: "肩带部位图",
+  shoulderBagBody: "包身部位图",
 };
 
 const DEFAULT_PROMPTS = {
@@ -58,6 +72,10 @@ const DEFAULT_PROMPTS = {
     "基于主图生成生活场景展示图。保留商品外观、颜色和 3D 印花细节，将商品自然放置在简洁真实的使用场景中，适合商品详情页。",
   sellingPoints:
     "基于主图生成卖点展示图。保留商品外观、颜色和 3D 印花细节，加入清晰卖点标注区域和简洁版式，不添加虚假参数。",
+  shoulderBagStrap:
+    "基于上传的单肩背包平面图生成肩带部位图。保留背包颜色、材质、印花和五金细节，突出肩带连接、调节扣、走线和受力结构，画面干净，适合电商详情页。",
+  shoulderBagBody:
+    "基于上传的单肩背包平面图生成包身部位图。保留包型、颜色、材质和印花细节，突出包身轮廓、开合结构、边缘工艺和容量区域，画面干净，适合电商详情页。",
 };
 
 let state = loadState();
@@ -336,7 +354,8 @@ function updateControls() {
   qs("#generateAll").disabled = !hasImageSet || !hasMain || anyLoading;
   qs("#generateAll").innerHTML = `<span class="icon" data-icon="layers"></span>${config.generateAllLabel}`;
   qs("#downloadAll").disabled = !hasImageSet || !anyImage || anyLoading;
-  qs("#generateMainTop").disabled = !hasImageSet || Boolean(state.loading.main);
+  qs("#generateMainTop").hidden = Boolean(config.mainUploadOnly);
+  qs("#generateMainTop").disabled = Boolean(config.mainUploadOnly) || !hasImageSet || Boolean(state.loading.main);
   qs("#uploadMainButton").disabled = !hasImageSet || Boolean(state.loading.main);
 
   for (const type of TYPES) {
@@ -349,6 +368,7 @@ function updateControls() {
       (type === "main" ? hasImageSet && !state.loading.main : hasImageSet && hasMain && !state.loading[type]);
 
     card.hidden = !isActive;
+    generateButton.hidden = type === "main" && Boolean(config.mainUploadOnly);
     generateButton.disabled = !canGenerate;
     generateButton.innerHTML =
       type === "main"
@@ -356,6 +376,8 @@ function updateControls() {
         : `<span class="icon" data-icon="refresh"></span>${state.images[type] ? "重新生成" : "生成"}`;
     downloadButton.disabled = !isActive || !state.images[type] || anyLoading;
   }
+
+  qs("#prompt-main").closest(".prompt-field").hidden = Boolean(config.mainUploadOnly);
 
   updateBadges();
 }
@@ -524,11 +546,7 @@ async function uploadMain(file) {
     setMessage("main", "无法读取图片尺寸，请上传 PNG、JPG、WEBP 或 GIF 图片", "error");
     return;
   }
-  const specError = imageSpecError(dimensions, imageSpec);
-  if (specError) {
-    setMessage("main", specError, "error");
-    return;
-  }
+  void dimensions;
 
   if (state.images.main && DERIVED_TYPES.some((type) => state.images[type])) {
     const ok = window.confirm("上传新主图后，已有衍生图会标记为需更新。继续吗？");
@@ -622,6 +640,7 @@ async function generateAllDerived() {
   setStatus(config.generatingStatus);
   try {
     const data = await apiPost("/api/images/derived/batch", {
+      types: derivedTypes,
       mainImageId: state.images.main.id,
       imageSetId: imageSet.id,
       prompts,
