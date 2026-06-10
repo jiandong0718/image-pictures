@@ -148,14 +148,14 @@ def apply_config(args: argparse.Namespace) -> argparse.Namespace:
 
     args.api_base = pick_value(
         args.api_base,
-        env_values.get(ENV_KEY_API_BASE, ""),
         os.getenv(ENV_KEY_API_BASE, ""),
+        env_values.get(ENV_KEY_API_BASE, ""),
         DEFAULT_API_BASE,
     )
     args.api_key = pick_value(
         args.api_key,
-        env_values.get(ENV_KEY_API_KEY, ""),
         os.getenv(ENV_KEY_API_KEY, ""),
+        env_values.get(ENV_KEY_API_KEY, ""),
     )
     args.model = pick_value(
         args.model,

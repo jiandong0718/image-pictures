@@ -27,7 +27,9 @@ http://127.0.0.1:4174
 4) ~/.codex/skills/custom-image-generator/scripts/image_generator.py
 ```
 
-API Key 可以放在当前项目的 `.env`，也可以继续使用 skill 目录下的 `.env`：
+页面顶部点击“API 配置”，在弹窗里填写 API Key，保存后会立即用于后续生图请求。接口地址由服务端固定配置，不在页面暴露。该配置只保存在当前 Node 服务进程内，不写入 `.env`、浏览器存储或仓库文件；服务重启后需要重新保存。
+
+`.env` 仍可作为命令行脚本的本地默认配置：
 
 ```dotenv
 CUSTOM_IMAGE_API_KEY=your-api-key-here

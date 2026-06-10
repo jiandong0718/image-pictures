@@ -296,6 +296,103 @@ h2 {
   --icon: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M7 10V8a5 5 0 0 1 10 0v2h2v11H5V10h2Zm2 0h6V8a3 3 0 0 0-6 0v2Zm-2 2v7h10v-7H7Z'/%3E%3C/svg%3E");
 }
 
+[data-icon="key"] {
+  --icon: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M8 14a5 5 0 1 1 4.6-7h8.4v4h-3v3h-4.4A5 5 0 0 1 8 14Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm5-3c0 .3 0 .7-.1 1h3.1V7h3V5h-5.4A5 5 0 0 1 13 9Z'/%3E%3C/svg%3E");
+}
+
+[data-icon="close"] {
+  --icon: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z'/%3E%3C/svg%3E");
+}
+
+.api-config-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.api-config-entry .button {
+  min-width: 0;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(22, 26, 24, 0.42);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal {
+  width: min(100%, 460px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 24px 70px rgba(28, 35, 31, 0.22);
+}
+
+.api-config-form {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.modal-head,
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+}
+
+.modal-actions .button {
+  width: auto;
+}
+
+.config-field {
+  display: grid;
+  gap: 8px;
+}
+
+.config-field span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.config-field input {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  color: var(--ink);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: 0;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.config-field input:focus {
+  border-color: #8fc7af;
+  box-shadow: 0 0 0 4px rgba(31, 122, 91, 0.1);
+}
+
 .status-strip {
   display: flex;
   align-items: center;
@@ -616,10 +713,20 @@ textarea:focus {
 
   .topbar-actions,
   .fixed-size,
+  .api-config-entry,
   .set-control,
   .spec-control,
   .button {
     width: 100%;
+  }
+
+  .api-config-entry {
+    justify-content: space-between;
+  }
+
+  .api-config-entry .button {
+    width: auto;
+    flex: 1;
   }
 
   .fixed-size {

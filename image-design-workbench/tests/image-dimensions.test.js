@@ -6,14 +6,21 @@ const test = require("node:test");
 
 const {
   assertImageSpecDimensions,
+  buildImageGeneratorArgs,
+  buildImageGeneratorEnv,
+  clearRuntimeImageApiConfig,
   clearOutputDirContents,
   getBatchDerivedTypes,
   getDerivedImageTypes,
   getImageTypeConfig,
   getImageNormalizerCommands,
   getImageNormalizationPlan,
+  getRequiredRuntimeImageApiConfig,
+  getRuntimeImageApiConfigSummary,
+  normalizeImageApiConfig,
   normalizeImageSpec,
   readImageDimensions,
+  setRuntimeImageApiConfig,
 } = require("../server");
 
 function makePng(width, height) {
@@ -163,6 +170,78 @@ test("supports product-specific derived image types without changing the default
     "shoulderBagBody",
   ]);
   assert.throws(() => getBatchDerivedTypes(["shoulderBagStrap", "unknown"]), /未知衍生图类型/);
+});
+
+test("requires uploaded runtime image API config", () => {
+  clearRuntimeImageApiConfig();
+
+  assert.deepEqual(getRuntimeImageApiConfigSummary(), {
+    uploaded: false,
+    hasApiKey: false,
+    uploadedAt: "",
+  });
+  assert.throws(() => getRequiredRuntimeImageApiConfig(), /请先在页面保存 API 配置/);
+});
+
+test("normalizes runtime image API config without exposing the key in summaries", () => {
+  clearRuntimeImageApiConfig();
+
+  const summary = setRuntimeImageApiConfig({
+    apiKey: " secret-key ",
+  });
+
+  assert.equal(summary.uploaded, true);
+  assert.equal(summary.hasApiKey, true);
+  assert.equal(typeof summary.uploadedAt, "string");
+  assert.equal(Object.hasOwn(summary, "apiBase"), false);
+  assert.equal(Object.hasOwn(summary, "apiKey"), false);
+  const runtimeConfig = getRequiredRuntimeImageApiConfig();
+  assert.equal(typeof runtimeConfig.apiBase, "string");
+  assert.ok(runtimeConfig.apiBase.startsWith("https://"));
+  assert.equal(runtimeConfig.apiKey, "secret-key");
+  assert.equal(runtimeConfig.uploadedAt, summary.uploadedAt);
+});
+
+test("rejects invalid runtime image API config", () => {
+  assert.throws(() => normalizeImageApiConfig({ apiKey: "" }), /API Key 不能为空/);
+  assert.throws(() => normalizeImageApiConfig({}), /API Key 不能为空/);
+});
+
+test("injects uploaded API config through process env instead of command args", () => {
+  const args = buildImageGeneratorArgs({
+    skillScript: "/workspace/image_generator.py",
+    prompt: "测试提示词",
+    endpoint: "generations",
+    outputDir: "/tmp/images",
+    filenamePrefix: "main",
+    requestSize: "1024x1024",
+  });
+  const env = buildImageGeneratorEnv(
+    { PATH: "/bin", CUSTOM_IMAGE_API_BASE: "https://env.example/v1", CUSTOM_IMAGE_API_KEY: "env-key" },
+    { apiBase: "https://unit.test/v1", apiKey: "uploaded-key" },
+  );
+
+  assert.equal(args.includes("--api-key"), false);
+  assert.equal(args.includes("uploaded-key"), false);
+  assert.deepEqual(args, [
+    "/workspace/image_generator.py",
+    "测试提示词",
+    "--endpoint",
+    "generations",
+    "--output-dir",
+    "/tmp/images",
+    "--filename-prefix",
+    "main",
+    "--n",
+    "1",
+    "--size",
+    "1024x1024",
+    "--timeout",
+    "180",
+  ]);
+  assert.equal(env.CUSTOM_IMAGE_API_BASE, "https://unit.test/v1");
+  assert.equal(env.CUSTOM_IMAGE_API_KEY, "uploaded-key");
+  assert.equal(env.PATH, "/bin");
 });
 
 test("clears generated output contents while keeping the output directory", async (t) => {

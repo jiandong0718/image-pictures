@@ -39,6 +39,11 @@ const PRODUCT_SET_MODES = {
 };
 const STORAGE_KEY = "imageDesignWorkbench.session.v5";
 const DEFAULT_IMAGE_SPEC = { mode: "square", size: 1024 };
+const DEFAULT_IMAGE_API_CONFIG = {
+  uploaded: false,
+  hasApiKey: false,
+  uploadedAt: "",
+};
 const MIN_IMAGE_SPEC_SIZE = 256;
 const MAX_IMAGE_SPEC_SIZE = 4096;
 
@@ -178,6 +183,7 @@ function loadState() {
       prompts: { ...DEFAULT_PROMPTS, ...(forceNewSet ? {} : saved.prompts || {}), ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...(forceNewSet ? {} : saved.imageSpec || {}), ...imageSpecParams }),
       images: forceNewSet ? {} : { ...(saved.images || {}) },
+      imageApiConfig: { ...DEFAULT_IMAGE_API_CONFIG },
       loading: {},
     };
   } catch {
@@ -187,6 +193,7 @@ function loadState() {
       prompts: { ...DEFAULT_PROMPTS, ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...imageSpecParams }),
       images: {},
+      imageApiConfig: { ...DEFAULT_IMAGE_API_CONFIG },
       loading: {},
     };
   }
@@ -229,6 +236,41 @@ function updateImageSpecControls() {
   const size = qs("#imageSpecSize");
   mode.value = spec.mode;
   size.value = String(spec.size);
+}
+
+function updateApiConfigView() {
+  const config = state.imageApiConfig || DEFAULT_IMAGE_API_CONFIG;
+  const status = qs("#apiConfigStatus");
+  if (!status) {
+    return;
+  }
+  status.className = config.uploaded ? "badge ready" : "badge";
+  status.textContent = config.uploaded ? "已配置" : "未配置";
+}
+
+function setApiConfigMessage(message, kind = "") {
+  const el = qs("#apiConfigMessage");
+  if (!el) {
+    return;
+  }
+  el.textContent = message || "";
+  el.classList.toggle("error", kind === "error");
+  el.classList.toggle("success", kind === "success");
+}
+
+function openApiConfigDialog() {
+  updateApiConfigView();
+  setApiConfigMessage("");
+  qs("#apiConfigDialog").hidden = false;
+  requestAnimationFrame(() => {
+    qs("#apiKeyInput").focus();
+  });
+}
+
+function closeApiConfigDialog() {
+  qs("#apiConfigDialog").hidden = true;
+  setApiConfigMessage("");
+  qs("#apiKeyInput").value = "";
 }
 
 async function ensureImageSet(forceNew = false) {
@@ -347,16 +389,20 @@ function updateControls() {
   const config = getProductSetConfig();
   const activeTypes = getActiveTypes();
   const hasImageSet = Boolean(state.imageSet?.id);
+  const hasApiConfig = Boolean(state.imageApiConfig?.uploaded);
   const hasMain = Boolean(state.images.main);
   const anyLoading = Object.values(state.loading).some(Boolean);
   const anyImage = activeTypes.some((type) => Boolean(state.images[type]));
 
-  qs("#generateAll").disabled = !hasImageSet || !hasMain || anyLoading;
+  qs("#generateAll").disabled = !hasApiConfig || !hasImageSet || !hasMain || anyLoading;
   qs("#generateAll").innerHTML = `<span class="icon" data-icon="layers"></span>${config.generateAllLabel}`;
   qs("#downloadAll").disabled = !hasImageSet || !anyImage || anyLoading;
   qs("#generateMainTop").hidden = Boolean(config.mainUploadOnly);
-  qs("#generateMainTop").disabled = Boolean(config.mainUploadOnly) || !hasImageSet || Boolean(state.loading.main);
+  qs("#generateMainTop").disabled =
+    Boolean(config.mainUploadOnly) || !hasApiConfig || !hasImageSet || Boolean(state.loading.main);
   qs("#uploadMainButton").disabled = !hasImageSet || Boolean(state.loading.main);
+  qs("#uploadApiConfig").disabled = anyLoading;
+  qs("#openApiConfig").disabled = anyLoading;
 
   for (const type of TYPES) {
     const card = qs(`[data-type="${type}"]`);
@@ -364,6 +410,7 @@ function updateControls() {
     const downloadButton = qs(`[data-action="download"][data-type="${type}"]`);
     const isActive = activeTypes.includes(type);
     const canGenerate =
+      hasApiConfig &&
       isActive &&
       (type === "main" ? hasImageSet && !state.loading.main : hasImageSet && hasMain && !state.loading[type]);
 
@@ -386,6 +433,7 @@ function render() {
   updateImageSetView();
   updateProductSetModeControl();
   updateImageSpecControls();
+  updateApiConfigView();
   for (const type of TYPES) {
     const textarea = qs(`#prompt-${type}`);
     if (textarea.value !== state.prompts[type]) {
@@ -401,6 +449,18 @@ async function apiPost(url, payload) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.details || data.error || "请求失败");
+  }
+  return data;
+}
+
+async function apiGet(url) {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { Accept: "application/json" },
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -462,6 +522,54 @@ function collectImageSpec() {
   return state.imageSpec;
 }
 
+async function loadApiConfigStatus() {
+  try {
+    const data = await apiGet("/api/image-config");
+    state.imageApiConfig = { ...DEFAULT_IMAGE_API_CONFIG, ...(data.config || {}) };
+    updateApiConfigView();
+    updateControls();
+    if (!state.imageApiConfig.uploaded) {
+      setStatus("请先保存 API 配置");
+    }
+  } catch (error) {
+    state.imageApiConfig = { ...DEFAULT_IMAGE_API_CONFIG };
+    updateApiConfigView();
+    updateControls();
+    setStatus(error.message);
+  }
+}
+
+async function uploadApiConfig(event) {
+  event.preventDefault();
+  const apiKey = qs("#apiKeyInput").value.trim();
+  if (!apiKey) {
+    setApiConfigMessage("API Key 不能为空", "error");
+    qs("#apiKeyInput").focus();
+    return;
+  }
+
+  const button = qs("#uploadApiConfig");
+  button.disabled = true;
+  setApiConfigMessage("正在保存 API 配置");
+  setStatus("正在保存 API 配置");
+  try {
+    const data = await apiPost("/api/image-config", { apiKey });
+    state.imageApiConfig = { ...DEFAULT_IMAGE_API_CONFIG, ...(data.config || {}) };
+    qs("#apiKeyInput").value = "";
+    setApiConfigMessage("API 配置已生效", "success");
+    closeApiConfigDialog();
+    updateApiConfigView();
+    updateControls();
+    setStatus("API 配置已生效");
+  } catch (error) {
+    setApiConfigMessage(error.message, "error");
+    setStatus(error.message);
+  } finally {
+    button.disabled = false;
+    updateControls();
+  }
+}
+
 function imageSpecError(dimensions, spec) {
   if (dimensions.width !== dimensions.height) {
     return `上传主图必须是 1:1 方图，当前是 ${dimensions.width} x ${dimensions.height}`;
@@ -492,6 +600,10 @@ function openNewImageSetWindow() {
 }
 
 async function generateMain() {
+  if (!state.imageApiConfig?.uploaded) {
+    setStatus("请先保存 API 配置");
+    return;
+  }
   const imageSet = await ensureImageSet();
   const prompt = collectPrompt("main");
   const imageSpec = collectImageSpec();
@@ -574,6 +686,10 @@ async function uploadMain(file) {
 }
 
 async function generateDerived(type) {
+  if (!state.imageApiConfig?.uploaded) {
+    setStatus("请先保存 API 配置");
+    return;
+  }
   if (!state.images.main) {
     setStatus("请先生成主图");
     return;
@@ -611,6 +727,10 @@ async function generateDerived(type) {
 }
 
 async function generateAllDerived() {
+  if (!state.imageApiConfig?.uploaded) {
+    setStatus("请先保存 API 配置");
+    return;
+  }
   if (!state.images.main) {
     setStatus("请先生成主图");
     return;
@@ -724,6 +844,7 @@ async function clearState() {
     prompts: { ...DEFAULT_PROMPTS },
     imageSpec,
     images: {},
+    imageApiConfig: state.imageApiConfig || { ...DEFAULT_IMAGE_API_CONFIG },
     loading: {},
   };
   for (const type of TYPES) {
@@ -760,6 +881,7 @@ async function resetGeneratedCache() {
       prompts: { ...DEFAULT_PROMPTS },
       imageSpec,
       images: {},
+      imageApiConfig: state.imageApiConfig || { ...DEFAULT_IMAGE_API_CONFIG },
       loading: {},
     };
     for (const type of TYPES) {
@@ -801,6 +923,20 @@ function bindEvents() {
   });
 
   qs("#generateMainTop").addEventListener("click", generateMain);
+  qs("#openApiConfig").addEventListener("click", openApiConfigDialog);
+  qs("#closeApiConfig").addEventListener("click", closeApiConfigDialog);
+  qs("#cancelApiConfig").addEventListener("click", closeApiConfigDialog);
+  qs("#apiConfigDialog").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) {
+      closeApiConfigDialog();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !qs("#apiConfigDialog").hidden) {
+      closeApiConfigDialog();
+    }
+  });
+  qs("#apiConfigForm").addEventListener("submit", uploadApiConfig);
   qs("#generateAll").addEventListener("click", generateAllDerived);
   qs("#downloadAll").addEventListener("click", downloadAll);
   qs("#clearState").addEventListener("click", clearState);
@@ -832,9 +968,12 @@ bindEvents();
 render();
 cleanStartupParams();
 setStatus(state.imageSet?.folderName ? `准备就绪，当前输出文件夹：${state.imageSet.folderName}` : "正在分配套图文件夹");
-ensureImageSet()
-  .then((imageSet) => {
-    setStatus(`准备就绪，当前输出文件夹：${imageSet.folderName}`);
+Promise.all([loadApiConfigStatus(), ensureImageSet()])
+  .then(([, imageSet]) => {
+    const apiStatus = state.imageApiConfig?.uploaded
+      ? "API 配置已生效"
+      : "请先保存 API 配置";
+    setStatus(`${apiStatus}，当前输出文件夹：${imageSet.folderName}`);
     render();
   })
   .catch((error) => {

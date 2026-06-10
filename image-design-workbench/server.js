@@ -58,6 +58,10 @@ const PREFERRED_IMAGE_WIDTH = 1024;
 const PREFERRED_IMAGE_HEIGHT = 1024;
 const PREFERRED_IMAGE_SIZE = `${PREFERRED_IMAGE_WIDTH}x${PREFERRED_IMAGE_HEIGHT}`;
 const REQUIRED_IMAGE_RATIO = "1:1";
+const IMAGE_API_BASE_ENV_KEY = "CUSTOM_IMAGE_API_BASE";
+const IMAGE_API_KEY_ENV_KEY = "CUSTOM_IMAGE_API_KEY";
+const FALLBACK_IMAGE_API_BASE = "https://api.example.invalid/v1";
+const FIXED_IMAGE_API_BASE = resolveFixedImageApiBase();
 const IMAGE_SPEC_MODES = new Set(["square", "fixed"]);
 const MIN_IMAGE_SPEC_SIZE = 256;
 const MAX_IMAGE_SPEC_SIZE = 4096;
@@ -134,6 +138,11 @@ const DERIVED_TYPES = Object.keys(IMAGE_TYPES).filter((type) => type !== "main")
 const IMAGE_SET_ID_PATTERN = /^\d{3,}$/;
 const IMAGE_FILE_PATTERN = /^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp|gif)$/i;
 let imageSetAllocationQueue = Promise.resolve();
+let runtimeImageApiConfig = {
+  apiBase: FIXED_IMAGE_API_BASE,
+  apiKey: "",
+  uploadedAt: "",
+};
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -211,6 +220,123 @@ async function readJson(req) {
 
 function cleanPrompt(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function parseEnvLine(line) {
+  const stripped = line.trim();
+  if (!stripped || stripped.startsWith("#")) {
+    return null;
+  }
+  const normalized = stripped.startsWith("export ") ? stripped.slice(7).trim() : stripped;
+  const separator = normalized.indexOf("=");
+  if (separator === -1) {
+    return null;
+  }
+  const key = normalized.slice(0, separator).trim();
+  let value = normalized.slice(separator + 1).trim();
+  if (!key) {
+    return null;
+  }
+  if (value.length >= 2 && value[0] === value[value.length - 1] && ['"', "'"].includes(value[0])) {
+    value = value.slice(1, -1);
+  }
+  return [key, value];
+}
+
+function readEnvValueFromFile(filePath, key) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return "";
+    }
+    const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+    for (const line of lines) {
+      const parsed = parseEnvLine(line);
+      if (parsed && parsed[0] === key) {
+        return cleanPrompt(parsed[1]);
+      }
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function resolveFixedImageApiBase() {
+  return (
+    cleanPrompt(process.env[IMAGE_API_BASE_ENV_KEY] || "") ||
+    readEnvValueFromFile(path.join(ROOT_DIR, ".env"), IMAGE_API_BASE_ENV_KEY) ||
+    readEnvValueFromFile(path.join(PROJECT_ROOT_DIR, "skills", "custom-image-generator", ".env"), IMAGE_API_BASE_ENV_KEY) ||
+    FALLBACK_IMAGE_API_BASE
+  );
+}
+
+function normalizeImageApiConfig(rawConfig = {}) {
+  const apiKey = cleanPrompt(rawConfig.apiKey || rawConfig.api_key);
+
+  if (!apiKey) {
+    throw new Error("API Key 不能为空");
+  }
+
+  return { apiBase: FIXED_IMAGE_API_BASE, apiKey };
+}
+
+function getRuntimeImageApiConfigSummary() {
+  return {
+    uploaded: Boolean(runtimeImageApiConfig.apiBase && runtimeImageApiConfig.apiKey),
+    hasApiKey: Boolean(runtimeImageApiConfig.apiKey),
+    uploadedAt: runtimeImageApiConfig.uploadedAt,
+  };
+}
+
+function setRuntimeImageApiConfig(rawConfig = {}) {
+  const normalized = normalizeImageApiConfig(rawConfig);
+  runtimeImageApiConfig = {
+    ...normalized,
+    uploadedAt: new Date().toISOString(),
+  };
+  return getRuntimeImageApiConfigSummary();
+}
+
+function clearRuntimeImageApiConfig() {
+  runtimeImageApiConfig = {
+    apiBase: FIXED_IMAGE_API_BASE,
+    apiKey: "",
+    uploadedAt: "",
+  };
+}
+
+function getRequiredRuntimeImageApiConfig() {
+  if (!runtimeImageApiConfig.apiBase || !runtimeImageApiConfig.apiKey) {
+    throw new Error("请先在页面保存 API 配置");
+  }
+  return runtimeImageApiConfig;
+}
+
+function buildImageGeneratorEnv(baseEnv = process.env, apiConfig = getRequiredRuntimeImageApiConfig()) {
+  return {
+    ...baseEnv,
+    [IMAGE_API_BASE_ENV_KEY]: apiConfig.apiBase,
+    [IMAGE_API_KEY_ENV_KEY]: apiConfig.apiKey,
+  };
+}
+
+function buildImageGeneratorArgs({ skillScript, prompt, endpoint, outputDir, filenamePrefix, requestSize }) {
+  return [
+    skillScript,
+    prompt,
+    "--endpoint",
+    endpoint,
+    "--output-dir",
+    outputDir,
+    "--filename-prefix",
+    filenamePrefix,
+    "--n",
+    "1",
+    "--size",
+    requestSize,
+    "--timeout",
+    "180",
+  ];
 }
 
 function trimMultipartCrlf(buffer) {
@@ -832,22 +958,15 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
     );
   }
 
-  const args = [
-    SKILL_SCRIPT,
-    normalizedPrompt,
-    "--endpoint",
-    config.endpoint,
-    "--output-dir",
+  const apiConfig = getRequiredRuntimeImageApiConfig();
+  const args = buildImageGeneratorArgs({
+    skillScript: SKILL_SCRIPT,
+    prompt: normalizedPrompt,
+    endpoint: config.endpoint,
     outputDir,
-    "--filename-prefix",
-    config.prefix,
-    "--n",
-    "1",
-    "--size",
-    normalizedSpec.requestSize,
-    "--timeout",
-    "180",
-  ];
+    filenamePrefix: config.prefix,
+    requestSize: normalizedSpec.requestSize,
+  });
 
   let sourceMainId = "";
   if (config.endpoint === "edits") {
@@ -861,7 +980,7 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
     args.push("--image", sourcePath);
   }
 
-  const { stdout, stderr } = await runPythonProcess(args, ROOT_DIR);
+  const { stdout, stderr } = await runPythonProcess(args, ROOT_DIR, buildImageGeneratorEnv(process.env, apiConfig));
   const imagePath = parseGeneratedImagePath(stdout);
   if (!imagePath) {
     throw new Error(stderr || stdout || "生图完成，但没有找到输出图片路径");
@@ -876,11 +995,11 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
   return makeImageRecord(imagePath, type, normalizedPrompt, sourceMainId);
 }
 
-function runProcess(command, args, cwd) {
+function runProcess(command, args, cwd, env = process.env) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
-      env: process.env,
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -912,11 +1031,11 @@ function runProcess(command, args, cwd) {
   });
 }
 
-async function runPythonProcess(args, cwd) {
+async function runPythonProcess(args, cwd, env = process.env) {
   let lastError = null;
   for (const command of PYTHON_COMMANDS) {
     try {
-      return await runProcess(command, args, cwd);
+      return await runProcess(command, args, cwd, env);
     } catch (error) {
       if (error && error.code === "ENOENT") {
         lastError = error;
@@ -1085,6 +1204,31 @@ async function handleApi(req, res, pathname, searchParams) {
       skillScriptCandidates: SKILL_SCRIPT_CANDIDATES,
       defaultImageSpec: normalizeImageSpec(),
       requiredImageRatio: REQUIRED_IMAGE_RATIO,
+      imageApiConfig: getRuntimeImageApiConfigSummary(),
+    });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/image-config") {
+    sendJson(res, 200, {
+      ok: true,
+      config: getRuntimeImageApiConfigSummary(),
+    });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/image-config") {
+    const payload = await readJson(req);
+    let config;
+    try {
+      config = setRuntimeImageApiConfig(payload);
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      config,
     });
     return;
   }
@@ -1115,6 +1259,12 @@ async function handleApi(req, res, pathname, searchParams) {
 
   if (req.method === "POST" && pathname === "/api/images/main") {
     const payload = await readJson(req);
+    try {
+      getRequiredRuntimeImageApiConfig();
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
     if (!cleanPrompt(payload.prompt)) {
       sendError(res, 400, "主图提示词不能为空");
       return;
@@ -1141,6 +1291,12 @@ async function handleApi(req, res, pathname, searchParams) {
 
   if (req.method === "POST" && pathname === "/api/images/derived") {
     const payload = await readJson(req);
+    try {
+      getRequiredRuntimeImageApiConfig();
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
     if (!DERIVED_TYPES.includes(payload.type)) {
       sendError(res, 400, "未知衍生图类型");
       return;
@@ -1162,6 +1318,12 @@ async function handleApi(req, res, pathname, searchParams) {
 
   if (req.method === "POST" && pathname === "/api/images/derived/batch") {
     const payload = await readJson(req);
+    try {
+      getRequiredRuntimeImageApiConfig();
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
     let batchTypes;
     try {
       batchTypes = getBatchDerivedTypes(payload.types);
@@ -1252,6 +1414,9 @@ module.exports = {
   PREFERRED_IMAGE_WIDTH,
   REQUIRED_IMAGE_RATIO,
   assertImageSpecDimensions,
+  buildImageGeneratorArgs,
+  buildImageGeneratorEnv,
+  clearRuntimeImageApiConfig,
   clearOutputDirContents,
   describeImageSpec,
   getBatchDerivedTypes,
@@ -1259,7 +1424,11 @@ module.exports = {
   getImageTypeConfig,
   getImageNormalizerCommands,
   getImageNormalizationPlan,
+  getRequiredRuntimeImageApiConfig,
+  getRuntimeImageApiConfigSummary,
+  normalizeImageApiConfig,
   normalizeImageSpec,
   normalizeGeneratedImageFile,
   readImageDimensions,
+  setRuntimeImageApiConfig,
 };

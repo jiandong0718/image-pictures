@@ -14,6 +14,13 @@
           <h1>商品图片设计工作台</h1>
         </div>
         <div class="topbar-actions">
+          <div class="api-config-entry" aria-label="API 配置">
+            <button class="button" id="openApiConfig" type="button">
+              <span class="icon" data-icon="key"></span>
+              API 配置
+            </button>
+            <span class="badge" id="apiConfigStatus">未配置</span>
+          </div>
           <div class="set-control" aria-label="商品套图类型">
             <label>
               <span>商品套图</span>
@@ -379,6 +386,34 @@
           </article>
         </section>
       </main>
+    </div>
+
+    <div class="modal-backdrop" id="apiConfigDialog" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="apiConfigTitle">
+        <form class="api-config-form" id="apiConfigForm">
+          <div class="modal-head">
+            <div>
+              <p class="card-kicker">API</p>
+              <h2 id="apiConfigTitle">API 配置</h2>
+            </div>
+            <button class="icon-button" id="closeApiConfig" type="button" title="关闭" aria-label="关闭">
+              <span class="icon" data-icon="close"></span>
+            </button>
+          </div>
+          <label class="config-field">
+            <span>API Key</span>
+            <input id="apiKeyInput" type="password" autocomplete="off" />
+          </label>
+          <p class="card-message" id="apiConfigMessage"></p>
+          <div class="modal-actions">
+            <button class="button ghost" id="cancelApiConfig" type="button">取消</button>
+            <button class="button primary" id="uploadApiConfig" type="submit">
+              <span class="icon" data-icon="key"></span>
+              保存配置
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
 
     <template id="spinnerTemplate">
