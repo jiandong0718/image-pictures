@@ -53,7 +53,7 @@ const PYTHON_COMMANDS = [
 const IMAGE_NORMALIZER_COMMAND =
   process.env.IMAGE_NORMALIZER || (process.platform === "darwin" ? "sips" : "magick");
 const HOST = process.env.HOST || "127.0.0.1";
-const PORT = Number(process.env.PORT || 4173);
+const PORT = Number(process.env.PORT || 4174);
 const PREFERRED_IMAGE_WIDTH = 1024;
 const PREFERRED_IMAGE_HEIGHT = 1024;
 const PREFERRED_IMAGE_SIZE = `${PREFERRED_IMAGE_WIDTH}x${PREFERRED_IMAGE_HEIGHT}`;
