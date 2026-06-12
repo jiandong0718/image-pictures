@@ -60,8 +60,10 @@ const PREFERRED_IMAGE_SIZE = `${PREFERRED_IMAGE_WIDTH}x${PREFERRED_IMAGE_HEIGHT}
 const REQUIRED_IMAGE_RATIO = "1:1";
 const IMAGE_API_BASE_ENV_KEY = "CUSTOM_IMAGE_API_BASE";
 const IMAGE_API_KEY_ENV_KEY = "CUSTOM_IMAGE_API_KEY";
+const PROMPT_API_BASE_ENV_KEY = "CUSTOM_PROMPT_API_BASE";
+const PROMPT_API_KEY_ENV_KEY = "CUSTOM_PROMPT_API_KEY";
 const PROMPT_EXTRACT_MODEL_ENV_KEY = "CUSTOM_PROMPT_EXTRACT_MODEL";
-const FALLBACK_IMAGE_API_BASE = "https://api.example.invalid/v1";
+const FALLBACK_IMAGE_API_BASE = "https://colorflowai.com/v1";
 const FIXED_IMAGE_API_BASE = resolveFixedImageApiBase();
 const FALLBACK_PROMPT_EXTRACT_MODEL = "gpt-4o-mini";
 const PROMPT_EXTRACTION_TIMEOUT_MS = 120000;
@@ -146,6 +148,12 @@ let imageSetAllocationQueue = Promise.resolve();
 let runtimeImageApiConfig = {
   apiBase: FIXED_IMAGE_API_BASE,
   apiKey: "",
+  uploadedAt: "",
+};
+let runtimePromptApiConfig = {
+  apiBase: resolvePromptApiBase(),
+  apiKey: resolvePromptApiKey(),
+  model: getPromptExtractModel(),
   uploadedAt: "",
 };
 
@@ -275,6 +283,20 @@ function resolveFixedImageApiBase() {
   );
 }
 
+function resolvePromptApiBase() {
+  return (
+    cleanPrompt(process.env[PROMPT_API_BASE_ENV_KEY] || "") ||
+    readEnvValueFromFile(path.join(ROOT_DIR, ".env"), PROMPT_API_BASE_ENV_KEY)
+  );
+}
+
+function resolvePromptApiKey() {
+  return (
+    cleanPrompt(process.env[PROMPT_API_KEY_ENV_KEY] || "") ||
+    readEnvValueFromFile(path.join(ROOT_DIR, ".env"), PROMPT_API_KEY_ENV_KEY)
+  );
+}
+
 function normalizeImageApiConfig(rawConfig = {}) {
   const apiKey = cleanPrompt(rawConfig.apiKey || rawConfig.api_key);
 
@@ -285,11 +307,50 @@ function normalizeImageApiConfig(rawConfig = {}) {
   return { apiBase: FIXED_IMAGE_API_BASE, apiKey };
 }
 
+function normalizePromptApiBase(value) {
+  const apiBase = cleanPrompt(value);
+  if (!apiBase) {
+    throw new Error("提示词 API URL 不能为空");
+  }
+  let parsed;
+  try {
+    parsed = new URL(apiBase);
+  } catch {
+    throw new Error("提示词 API URL 格式不正确");
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("提示词 API URL 必须以 http:// 或 https:// 开头");
+  }
+  return parsed.toString().replace(/\/$/, "");
+}
+
+function normalizePromptApiConfig(rawConfig = {}) {
+  const apiBase = normalizePromptApiBase(rawConfig.apiBase || rawConfig.apiUrl || rawConfig.api_url);
+  const apiKey = cleanPrompt(rawConfig.apiKey || rawConfig.api_key);
+  const model = cleanPrompt(rawConfig.model || rawConfig.promptModel || rawConfig.prompt_model) || getPromptExtractModel();
+
+  if (!apiKey) {
+    throw new Error("提示词 API Key 不能为空");
+  }
+
+  return { apiBase, apiKey, model };
+}
+
 function getRuntimeImageApiConfigSummary() {
   return {
     uploaded: Boolean(runtimeImageApiConfig.apiBase && runtimeImageApiConfig.apiKey),
     hasApiKey: Boolean(runtimeImageApiConfig.apiKey),
     uploadedAt: runtimeImageApiConfig.uploadedAt,
+  };
+}
+
+function getRuntimePromptApiConfigSummary() {
+  return {
+    uploaded: Boolean(runtimePromptApiConfig.apiBase && runtimePromptApiConfig.apiKey),
+    apiBase: runtimePromptApiConfig.apiBase,
+    model: runtimePromptApiConfig.model || getPromptExtractModel(),
+    hasApiKey: Boolean(runtimePromptApiConfig.apiKey),
+    uploadedAt: runtimePromptApiConfig.uploadedAt,
   };
 }
 
@@ -302,10 +363,28 @@ function setRuntimeImageApiConfig(rawConfig = {}) {
   return getRuntimeImageApiConfigSummary();
 }
 
+function setRuntimePromptApiConfig(rawConfig = {}) {
+  const normalized = normalizePromptApiConfig(rawConfig);
+  runtimePromptApiConfig = {
+    ...normalized,
+    uploadedAt: new Date().toISOString(),
+  };
+  return getRuntimePromptApiConfigSummary();
+}
+
 function clearRuntimeImageApiConfig() {
   runtimeImageApiConfig = {
     apiBase: FIXED_IMAGE_API_BASE,
     apiKey: "",
+    uploadedAt: "",
+  };
+}
+
+function clearRuntimePromptApiConfig() {
+  runtimePromptApiConfig = {
+    apiBase: "",
+    apiKey: "",
+    model: getPromptExtractModel(),
     uploadedAt: "",
   };
 }
@@ -315,6 +394,13 @@ function getRequiredRuntimeImageApiConfig() {
     throw new Error("请先在页面保存 API 配置");
   }
   return runtimeImageApiConfig;
+}
+
+function getRequiredRuntimePromptApiConfig() {
+  if (!runtimePromptApiConfig.apiBase || !runtimePromptApiConfig.apiKey) {
+    throw new Error("请先在配置中心保存提示词 API 配置");
+  }
+  return runtimePromptApiConfig;
 }
 
 function buildImageGeneratorEnv(baseEnv = process.env, apiConfig = getRequiredRuntimeImageApiConfig()) {
@@ -449,7 +535,7 @@ function getApiErrorMessage(data, fallback = "") {
   );
 }
 
-async function callPromptExtractionApi({ upload, apiConfig = getRequiredRuntimeImageApiConfig(), fetchImpl = globalThis.fetch }) {
+async function callPromptExtractionApi({ upload, apiConfig = getRequiredRuntimePromptApiConfig(), fetchImpl = globalThis.fetch }) {
   if (typeof fetchImpl !== "function") {
     throw new Error("当前 Node.js 版本不支持 fetch，请升级到 Node.js 18 或更高版本");
   }
@@ -459,7 +545,7 @@ async function callPromptExtractionApi({ upload, apiConfig = getRequiredRuntimeI
   const requestBody = buildPromptExtractionRequest({
     imageData: upload.data,
     mime,
-    model: getPromptExtractModel(),
+    model: apiConfig.model || getPromptExtractModel(),
   });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROMPT_EXTRACTION_TIMEOUT_MS);
@@ -1362,6 +1448,7 @@ async function handleApi(req, res, pathname, searchParams) {
       defaultImageSpec: normalizeImageSpec(),
       requiredImageRatio: REQUIRED_IMAGE_RATIO,
       imageApiConfig: getRuntimeImageApiConfigSummary(),
+      promptApiConfig: getRuntimePromptApiConfigSummary(),
     });
     return;
   }
@@ -1390,10 +1477,34 @@ async function handleApi(req, res, pathname, searchParams) {
     return;
   }
 
+  if (req.method === "GET" && pathname === "/api/prompt-config") {
+    sendJson(res, 200, {
+      ok: true,
+      config: getRuntimePromptApiConfigSummary(),
+    });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/prompt-config") {
+    const payload = await readJson(req);
+    let config;
+    try {
+      config = setRuntimePromptApiConfig(payload);
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      config,
+    });
+    return;
+  }
+
   if (req.method === "POST" && pathname === "/api/prompts/extract") {
     let apiConfig;
     try {
-      apiConfig = getRequiredRuntimeImageApiConfig();
+      apiConfig = getRequiredRuntimePromptApiConfig();
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -1605,6 +1716,7 @@ module.exports = {
   buildPromptExtractionRequest,
   callPromptExtractionApi,
   clearRuntimeImageApiConfig,
+  clearRuntimePromptApiConfig,
   clearOutputDirContents,
   describeImageSpec,
   getBatchDerivedTypes,
@@ -1613,11 +1725,15 @@ module.exports = {
   getImageNormalizerCommands,
   getImageNormalizationPlan,
   getRequiredRuntimeImageApiConfig,
+  getRequiredRuntimePromptApiConfig,
   getRuntimeImageApiConfigSummary,
+  getRuntimePromptApiConfigSummary,
   normalizeImageApiConfig,
   normalizeImageSpec,
+  normalizePromptApiConfig,
   normalizeGeneratedImageFile,
   parsePromptExtractionResponse,
   readImageDimensions,
   setRuntimeImageApiConfig,
+  setRuntimePromptApiConfig,
 };

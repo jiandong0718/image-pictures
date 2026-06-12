@@ -486,11 +486,6 @@ h2 {
   max-width: 960px;
 }
 
-.config-center-form {
-  padding: 0;
-  align-self: start;
-}
-
 .config-note {
   margin: 0;
   color: var(--muted);
@@ -500,7 +495,7 @@ h2 {
 
 .settings-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(340px, 1fr);
+  grid-template-columns: minmax(250px, 0.72fr) minmax(420px, 1fr);
   gap: 28px;
   align-items: start;
 }
@@ -537,6 +532,32 @@ h2 {
   border-radius: 8px;
   font-size: 12px;
   font-weight: 800;
+}
+
+.settings-forms {
+  display: grid;
+  gap: 14px;
+}
+
+.config-center-form {
+  align-self: start;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.config-form-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.config-form-head h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  line-height: 1.25;
 }
 
 .prompt-extractor-page {

@@ -80,6 +80,16 @@ const DEFAULT_IMAGE_API_CONFIG = {
   hasApiKey: false,
   uploadedAt: "",
 };
+const DEFAULT_PROMPT_EXTRACT_MODEL = "gpt-4o-mini";
+const DEFAULT_PROMPT_API_CONFIG = {
+  uploaded: false,
+  apiBase: "",
+  model: DEFAULT_PROMPT_EXTRACT_MODEL,
+  hasApiKey: false,
+  uploadedAt: "",
+};
+const DEFAULT_CONFIG_SCOPE = "all";
+const CONFIG_SCOPES = new Set(["all", "image", "prompt"]);
 const MIN_IMAGE_SPEC_SIZE = 256;
 const MAX_IMAGE_SPEC_SIZE = 4096;
 
@@ -140,6 +150,10 @@ function normalizeProductSetMode(value) {
 
 function normalizeActiveModule(value) {
   return MODULES[value] ? value : DEFAULT_ACTIVE_MODULE;
+}
+
+function normalizeConfigScope(value) {
+  return CONFIG_SCOPES.has(value) ? value : DEFAULT_CONFIG_SCOPE;
 }
 
 function getProductModule(mode) {
@@ -240,24 +254,28 @@ function loadState() {
           (productSetModeParam ? getProductModule(productSetModeParam) : "") ||
           (forceNewSet ? getProductModule(productSetMode) : saved.activeModule),
       ),
+      configScope: normalizeConfigScope(forceNewSet ? DEFAULT_CONFIG_SCOPE : saved.configScope),
       productSetMode,
       imageSet: forceNewSet ? null : saved.imageSet || null,
       prompts: { ...DEFAULT_PROMPTS, ...(forceNewSet ? {} : saved.prompts || {}), ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...(forceNewSet ? {} : saved.imageSpec || {}), ...imageSpecParams }),
       images: forceNewSet ? {} : { ...(saved.images || {}) },
       imageApiConfig: { ...DEFAULT_IMAGE_API_CONFIG },
+      promptApiConfig: { ...DEFAULT_PROMPT_API_CONFIG },
       loading: {},
     };
   } catch {
     const productSetMode = normalizeProductSetMode(productSetModeParam);
     return {
       activeModule: normalizeActiveModule(activeModuleParam || (productSetModeParam ? getProductModule(productSetMode) : "")),
+      configScope: DEFAULT_CONFIG_SCOPE,
       productSetMode,
       imageSet: null,
       prompts: { ...DEFAULT_PROMPTS, ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...imageSpecParams }),
       images: {},
       imageApiConfig: { ...DEFAULT_IMAGE_API_CONFIG },
+      promptApiConfig: { ...DEFAULT_PROMPT_API_CONFIG },
       loading: {},
     };
   }
@@ -269,6 +287,7 @@ function saveState() {
     JSON.stringify({
       imageSet: state.imageSet,
       activeModule: state.activeModule,
+      configScope: state.configScope,
       productSetMode: state.productSetMode,
       prompts: state.prompts,
       imageSpec: state.imageSpec,
@@ -295,10 +314,61 @@ function isProductModule(moduleName = state.activeModule) {
   return Boolean(MODULES[moduleName]?.productSetMode);
 }
 
+function moduleHasRequiredConfig(moduleName) {
+  if (isProductModule(moduleName)) {
+    return Boolean(state.imageApiConfig?.uploaded);
+  }
+  if (moduleName === "promptExtractor") {
+    return Boolean(state.promptApiConfig?.uploaded);
+  }
+  return true;
+}
+
+function getConfigScopeForModule(moduleName) {
+  if (isProductModule(moduleName)) {
+    return "image";
+  }
+  if (moduleName === "promptExtractor") {
+    return "prompt";
+  }
+  return "all";
+}
+
+function updateConfigCenterView() {
+  const scope = normalizeConfigScope(state.configScope);
+  const title = qs("#settingsTitle");
+  const description = qs("#settingsDescription");
+  const facts = qs("#settingsFacts");
+
+  const copy = {
+    all: {
+      title: "连接你的生产服务",
+      description: "生图和提示词提取使用两套独立 API 配置。提示词提取需要具备视觉理解能力的 GPT 通道，不影响画图接口。",
+      facts: ["生图 URL 服务端固定", "提示词 API 单独配置", "Key 不写入浏览器存储"],
+    },
+    image: {
+      title: "配置画图能力",
+      description: "这里只配置套图生成使用的生图 API Key。提示词提取使用另一套 GPT 配置，不会在这里出现。",
+      facts: ["只影响套图生成", "生图 URL 服务端固定", "不影响提示词提取"],
+    },
+    prompt: {
+      title: "配置提示词提取能力",
+      description: "这里只配置图片理解/GPT 能力使用的 API URL 和 API Key，不展示也不修改画图 API 配置。",
+      facts: ["只影响提示词提取", "需要视觉理解模型", "不影响画图接口"],
+    },
+  }[scope];
+
+  title.textContent = copy.title;
+  description.textContent = copy.description;
+  facts.innerHTML = copy.facts.map((fact) => `<span>${fact}</span>`).join("");
+  qsa("[data-config-scope]").forEach((section) => {
+    section.hidden = scope !== "all" && section.dataset.configScope !== scope;
+  });
+}
+
 function updateWorkspaceView() {
   const activeModule = normalizeActiveModule(state.activeModule);
   const moduleConfig = MODULES[activeModule];
-  const isConfigured = Boolean(state.imageApiConfig?.uploaded);
   const isProduct = isProductModule(activeModule);
   const isPromptExtractor = activeModule === "promptExtractor";
   const configPanel = qs("#configCenterPanel");
@@ -318,6 +388,9 @@ function updateWorkspaceView() {
   kicker.textContent = moduleConfig.kicker;
   subtitle.textContent = moduleConfig.subtitle || "";
   configPanel.hidden = activeModule !== "config";
+  if (activeModule === "config") {
+    updateConfigCenterView();
+  }
   promptPanel.hidden = !isPromptExtractor;
   board.hidden = !isProduct;
   specControl.hidden = !isProduct;
@@ -329,7 +402,7 @@ function updateWorkspaceView() {
 
   qsa("[data-module]").forEach((item) => {
     const moduleName = item.dataset.module;
-    const locked = MODULES[moduleName]?.requiresApiConfig && !isConfigured;
+    const locked = MODULES[moduleName]?.requiresApiConfig && !moduleHasRequiredConfig(moduleName);
     item.classList.toggle("active", moduleName === activeModule);
     item.classList.toggle("locked", Boolean(locked));
     item.setAttribute("aria-current", moduleName === activeModule ? "page" : "false");
@@ -339,17 +412,22 @@ function updateWorkspaceView() {
 function switchActiveModule(moduleName) {
   const normalized = normalizeActiveModule(moduleName);
   const moduleConfig = MODULES[normalized];
-  if (moduleConfig.requiresApiConfig && !state.imageApiConfig?.uploaded) {
+  if (moduleConfig.requiresApiConfig && !moduleHasRequiredConfig(normalized)) {
     state.activeModule = "config";
+    state.configScope = getConfigScopeForModule(normalized);
     saveState();
     render();
-    setStatus("请先在配置中心保存 API Key");
+    setStatus(normalized === "promptExtractor" ? "请先在配置中心保存提示词 API 配置" : "请先在配置中心保存生图 API Key");
     requestAnimationFrame(() => {
-      qs("#apiKeyInput")?.focus();
+      const focusTarget = state.configScope === "prompt" ? "#promptApiUrlInput" : "#apiKeyInput";
+      qs(focusTarget)?.focus();
     });
     return;
   }
   state.activeModule = normalized;
+  if (normalized === "config") {
+    state.configScope = "all";
+  }
   if (moduleConfig.productSetMode) {
     state.productSetMode = moduleConfig.productSetMode;
   }
@@ -369,11 +447,26 @@ function updateImageSpecControls() {
 function updateApiConfigView() {
   const config = state.imageApiConfig || DEFAULT_IMAGE_API_CONFIG;
   const status = qs("#apiConfigStatus");
-  if (!status) {
-    return;
+  const imageInlineStatus = qs("#imageApiInlineStatus");
+  const promptInlineStatus = qs("#promptApiInlineStatus");
+  const promptConfig = state.promptApiConfig || DEFAULT_PROMPT_API_CONFIG;
+
+  if (status) {
+    const allConfigured = Boolean(config.uploaded && promptConfig.uploaded);
+    const partialConfigured = Boolean(config.uploaded || promptConfig.uploaded);
+    status.className = allConfigured ? "badge ready" : partialConfigured ? "badge stale" : "badge";
+    status.textContent = allConfigured ? "已配置" : partialConfigured ? "部分配置" : "未配置";
   }
-  status.className = config.uploaded ? "badge ready" : "badge";
-  status.textContent = config.uploaded ? "已配置" : "未配置";
+
+  if (imageInlineStatus) {
+    imageInlineStatus.className = config.uploaded ? "badge ready" : "badge";
+    imageInlineStatus.textContent = config.uploaded ? "已配置" : "未配置";
+  }
+
+  if (promptInlineStatus) {
+    promptInlineStatus.className = promptConfig.uploaded ? "badge ready" : "badge";
+    promptInlineStatus.textContent = promptConfig.uploaded ? "已配置" : "未配置";
+  }
 }
 
 function setApiConfigMessage(message, kind = "") {
@@ -386,8 +479,19 @@ function setApiConfigMessage(message, kind = "") {
   el.classList.toggle("success", kind === "success");
 }
 
+function setPromptApiConfigMessage(message, kind = "") {
+  const el = qs("#promptApiConfigMessage");
+  if (!el) {
+    return;
+  }
+  el.textContent = message || "";
+  el.classList.toggle("error", kind === "error");
+  el.classList.toggle("success", kind === "success");
+}
+
 function openApiConfigDialog() {
   state.activeModule = "config";
+  state.configScope = "all";
   saveState();
   render();
   setApiConfigMessage("");
@@ -436,7 +540,7 @@ function renderPromptExtractor() {
   const copyButton = qs("#copyExtractedPrompt");
   const hasFile = Boolean(promptExtractionFile);
   const hasPrompt = Boolean(output?.value.trim());
-  const hasApiConfig = Boolean(state.imageApiConfig?.uploaded);
+  const hasApiConfig = Boolean(state.promptApiConfig?.uploaded);
 
   if (preview) {
     if (promptExtractionLoading) {
@@ -591,6 +695,7 @@ function updateControls() {
   const isProduct = isProductModule();
   const hasImageSet = Boolean(state.imageSet?.id);
   const hasApiConfig = Boolean(state.imageApiConfig?.uploaded);
+  const hasPromptApiConfig = Boolean(state.promptApiConfig?.uploaded);
   const hasMain = Boolean(state.images.main);
   const anyLoading = Object.values(state.loading).some(Boolean) || promptExtractionLoading;
   const anyImage = activeTypes.some((type) => Boolean(state.images[type]));
@@ -603,7 +708,8 @@ function updateControls() {
     Boolean(config.mainUploadOnly) || !hasApiConfig || !hasImageSet || Boolean(state.loading.main);
   qs("#uploadMainButton").disabled = !hasImageSet || Boolean(state.loading.main);
   qs("#uploadApiConfig").disabled = anyLoading;
-  qs("#extractPromptButton").disabled = !hasApiConfig || !promptExtractionFile || promptExtractionLoading;
+  qs("#uploadPromptApiConfig").disabled = anyLoading;
+  qs("#extractPromptButton").disabled = !hasPromptApiConfig || !promptExtractionFile || promptExtractionLoading;
   qs("#copyExtractedPrompt").disabled =
     promptExtractionLoading || !qs("#extractedPrompt").value.trim();
 
@@ -743,19 +849,29 @@ function collectImageSpec() {
 
 async function loadApiConfigStatus() {
   try {
-    const data = await apiGet("/api/image-config");
-    state.imageApiConfig = { ...DEFAULT_IMAGE_API_CONFIG, ...(data.config || {}) };
-    if (!state.imageApiConfig.uploaded) {
+    const [imageData, promptData] = await Promise.all([
+      apiGet("/api/image-config"),
+      apiGet("/api/prompt-config"),
+    ]);
+    state.imageApiConfig = { ...DEFAULT_IMAGE_API_CONFIG, ...(imageData.config || {}) };
+    state.promptApiConfig = { ...DEFAULT_PROMPT_API_CONFIG, ...(promptData.config || {}) };
+    if (state.promptApiConfig.apiBase) {
+      qs("#promptApiUrlInput").value = state.promptApiConfig.apiBase;
+    }
+    qs("#promptApiModelInput").value = state.promptApiConfig.model || DEFAULT_PROMPT_EXTRACT_MODEL;
+    if (!moduleHasRequiredConfig(state.activeModule)) {
+      state.configScope = getConfigScopeForModule(state.activeModule);
       state.activeModule = "config";
       saveState();
     }
     updateApiConfigView();
     updateControls();
-    if (!state.imageApiConfig.uploaded) {
-      setStatus("请先保存 API 配置");
+    if (!state.imageApiConfig.uploaded || !state.promptApiConfig.uploaded) {
+      setStatus("请在配置中心保存所需 API 配置");
     }
   } catch (error) {
     state.imageApiConfig = { ...DEFAULT_IMAGE_API_CONFIG };
+    state.promptApiConfig = { ...DEFAULT_PROMPT_API_CONFIG };
     updateApiConfigView();
     updateControls();
     setStatus(error.message);
@@ -788,6 +904,47 @@ async function uploadApiConfig(event) {
     setStatus("API 配置已生效");
   } catch (error) {
     setApiConfigMessage(error.message, "error");
+    setStatus(error.message);
+  } finally {
+    button.disabled = false;
+    updateControls();
+  }
+}
+
+async function uploadPromptApiConfig(event) {
+  event.preventDefault();
+  const apiBase = qs("#promptApiUrlInput").value.trim();
+  const apiKey = qs("#promptApiKeyInput").value.trim();
+  const model = qs("#promptApiModelInput").value.trim() || DEFAULT_PROMPT_EXTRACT_MODEL;
+  if (!apiBase) {
+    setPromptApiConfigMessage("提示词 API URL 不能为空", "error");
+    qs("#promptApiUrlInput").focus();
+    return;
+  }
+  if (!apiKey) {
+    setPromptApiConfigMessage("提示词 API Key 不能为空", "error");
+    qs("#promptApiKeyInput").focus();
+    return;
+  }
+
+  const button = qs("#uploadPromptApiConfig");
+  button.disabled = true;
+  setPromptApiConfigMessage("正在保存提示词 API 配置");
+  setStatus("正在保存提示词 API 配置");
+  try {
+    const data = await apiPost("/api/prompt-config", { apiBase, apiKey, model });
+    state.promptApiConfig = { ...DEFAULT_PROMPT_API_CONFIG, ...(data.config || {}) };
+    qs("#promptApiModelInput").value = state.promptApiConfig.model || DEFAULT_PROMPT_EXTRACT_MODEL;
+    qs("#promptApiKeyInput").value = "";
+    if (state.activeModule === "config" && state.configScope === "prompt") {
+      state.activeModule = "promptExtractor";
+    }
+    setPromptApiConfigMessage("提示词 API 配置已生效", "success");
+    saveState();
+    render();
+    setStatus("提示词 API 配置已生效");
+  } catch (error) {
+    setPromptApiConfigMessage(error.message, "error");
     setStatus(error.message);
   } finally {
     button.disabled = false;
@@ -940,9 +1097,9 @@ async function selectPromptExtractionImage(file) {
 }
 
 async function extractPromptFromImage() {
-  if (!state.imageApiConfig?.uploaded) {
-    setPromptExtractorMessage("请先保存 API 配置", "error");
-    setStatus("请先保存 API 配置");
+  if (!state.promptApiConfig?.uploaded) {
+    setPromptExtractorMessage("请先保存提示词 API 配置", "error");
+    setStatus("请先保存提示词 API 配置");
     return;
   }
   if (!promptExtractionFile) {
@@ -1139,12 +1296,14 @@ async function clearState() {
   sessionStorage.removeItem(STORAGE_KEY);
   state = {
     activeModule: normalizeActiveModule(state.activeModule),
+    configScope: normalizeConfigScope(state.configScope),
     productSetMode: normalizeProductSetMode(state.productSetMode),
     imageSet: null,
     prompts: { ...DEFAULT_PROMPTS },
     imageSpec,
     images: {},
     imageApiConfig: state.imageApiConfig || { ...DEFAULT_IMAGE_API_CONFIG },
+    promptApiConfig: state.promptApiConfig || { ...DEFAULT_PROMPT_API_CONFIG },
     loading: {},
   };
   for (const type of TYPES) {
@@ -1169,6 +1328,8 @@ async function resetGeneratedCache() {
 
   const productSetMode = normalizeProductSetMode(state.productSetMode);
   const activeModule = normalizeActiveModule(state.activeModule);
+  const configScope = normalizeConfigScope(state.configScope);
+  const promptApiConfig = state.promptApiConfig || { ...DEFAULT_PROMPT_API_CONFIG };
   const imageSpec = collectImageSpec();
   const resetButton = qs("#resetGeneratedCache");
   resetButton.disabled = true;
@@ -1178,12 +1339,14 @@ async function resetGeneratedCache() {
     sessionStorage.removeItem(STORAGE_KEY);
     state = {
       activeModule,
+      configScope,
       productSetMode,
       imageSet: data.imageSet,
       prompts: { ...DEFAULT_PROMPTS },
       imageSpec,
       images: {},
       imageApiConfig: state.imageApiConfig || { ...DEFAULT_IMAGE_API_CONFIG },
+      promptApiConfig,
       loading: {},
     };
     for (const type of TYPES) {
@@ -1244,6 +1407,7 @@ function bindEvents() {
     await selectPromptExtractionImage(event.dataTransfer.files?.[0]);
   });
   qs("#apiConfigForm").addEventListener("submit", uploadApiConfig);
+  qs("#promptApiConfigForm").addEventListener("submit", uploadPromptApiConfig);
   qs("#generateAll").addEventListener("click", generateAllDerived);
   qs("#downloadAll").addEventListener("click", downloadAll);
   qs("#clearState").addEventListener("click", clearState);

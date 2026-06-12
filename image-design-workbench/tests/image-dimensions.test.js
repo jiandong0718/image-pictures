@@ -12,6 +12,7 @@ const {
   buildPromptExtractionRequest,
   callPromptExtractionApi,
   clearRuntimeImageApiConfig,
+  clearRuntimePromptApiConfig,
   clearOutputDirContents,
   getBatchDerivedTypes,
   getDerivedImageTypes,
@@ -19,12 +20,16 @@ const {
   getImageNormalizerCommands,
   getImageNormalizationPlan,
   getRequiredRuntimeImageApiConfig,
+  getRequiredRuntimePromptApiConfig,
   getRuntimeImageApiConfigSummary,
+  getRuntimePromptApiConfigSummary,
   normalizeImageApiConfig,
   normalizeImageSpec,
+  normalizePromptApiConfig,
   parsePromptExtractionResponse,
   readImageDimensions,
   setRuntimeImageApiConfig,
+  setRuntimePromptApiConfig,
 } = require("../server");
 
 function makePng(width, height) {
@@ -211,6 +216,54 @@ test("rejects invalid runtime image API config", () => {
   assert.throws(() => normalizeImageApiConfig({}), /API Key 不能为空/);
 });
 
+test("normalizes prompt extraction API config separately from image config", () => {
+  clearRuntimePromptApiConfig();
+
+  assert.deepEqual(getRuntimePromptApiConfigSummary(), {
+    uploaded: false,
+    apiBase: "",
+    model: "gpt-4o-mini",
+    hasApiKey: false,
+    uploadedAt: "",
+  });
+  assert.throws(() => getRequiredRuntimePromptApiConfig(), /请先在配置中心保存提示词 API 配置/);
+
+  const summary = setRuntimePromptApiConfig({
+    apiBase: " https://prompt.unit.test/v1/ ",
+    apiKey: " prompt-key ",
+    model: " vision-unit-model ",
+  });
+
+  assert.equal(summary.uploaded, true);
+  assert.equal(summary.apiBase, "https://prompt.unit.test/v1");
+  assert.equal(summary.model, "vision-unit-model");
+  assert.equal(summary.hasApiKey, true);
+  assert.equal(Object.hasOwn(summary, "apiKey"), false);
+  const runtimeConfig = getRequiredRuntimePromptApiConfig();
+  assert.equal(runtimeConfig.apiBase, "https://prompt.unit.test/v1");
+  assert.equal(runtimeConfig.apiKey, "prompt-key");
+  assert.equal(runtimeConfig.model, "vision-unit-model");
+});
+
+test("rejects invalid prompt extraction API config", () => {
+  assert.throws(
+    () => normalizePromptApiConfig({ apiBase: "", apiKey: "prompt-key" }),
+    /提示词 API URL 不能为空/,
+  );
+  assert.throws(
+    () => normalizePromptApiConfig({ apiBase: "not-a-url", apiKey: "prompt-key" }),
+    /提示词 API URL 格式不正确/,
+  );
+  assert.throws(
+    () => normalizePromptApiConfig({ apiBase: "ftp://prompt.unit.test/v1", apiKey: "prompt-key" }),
+    /提示词 API URL 必须以 http:\/\/ 或 https:\/\//,
+  );
+  assert.throws(
+    () => normalizePromptApiConfig({ apiBase: "https://prompt.unit.test/v1", apiKey: "" }),
+    /提示词 API Key 不能为空/,
+  );
+});
+
 test("injects uploaded API config through process env instead of command args", () => {
   const args = buildImageGeneratorArgs({
     skillScript: "/workspace/image_generator.py",
@@ -303,13 +356,14 @@ test("calls prompt extraction API with Authorization header only", async () => {
       mime: "image/png",
       data: makePng(32, 32),
     },
-    apiConfig: { apiBase: "https://unit.test/v1", apiKey: "uploaded-key" },
+    apiConfig: { apiBase: "https://unit.test/v1", apiKey: "uploaded-key", model: "vision-unit-model" },
     fetchImpl,
   });
   const body = JSON.parse(capturedRequest.body);
 
   assert.equal(capturedUrl, buildApiEndpoint("https://unit.test/v1", "chat/completions"));
   assert.equal(capturedRequest.headers.Authorization, "Bearer uploaded-key");
+  assert.equal(body.model, "vision-unit-model");
   assert.equal(JSON.stringify(body).includes("uploaded-key"), false);
   assert.match(body.messages[0].content[1].image_url.url, /^data:image\/png;base64,/);
   assert.equal(result.prompt, "商品图详细提示词");

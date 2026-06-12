@@ -29,14 +29,21 @@ http://127.0.0.1:4174
 4) ~/.codex/skills/custom-image-generator/scripts/image_generator.py
 ```
 
-页面顶部点击“API 配置”，在弹窗里填写 API Key，保存后会立即用于后续生图请求。接口地址由服务端固定配置，不在页面暴露。该配置只保存在当前 Node 服务进程内，不写入 `.env`、浏览器存储或仓库文件；服务重启后需要重新保存。
+配置中心包含两套互不影响的运行时配置：
+
+- 生图配置：只填写生图 API Key；接口地址由服务端固定配置，不在页面暴露。
+- 提示词提取配置：单独填写提示词 API URL、API Key 和模型名；用于图片理解/GPT 能力，不影响画图接口。
+
+页面保存的配置只保存在当前 Node 服务进程内，不写入浏览器存储或仓库文件；服务重启后可重新保存，或通过 `.env` 提供默认值。
 
 `.env` 仍可作为命令行脚本的本地默认配置：
 
 ```dotenv
 CUSTOM_IMAGE_API_KEY=your-api-key-here
-CUSTOM_IMAGE_API_BASE=https://aicodelink.top/v1
+CUSTOM_IMAGE_API_BASE=https://colorflowai.com/v1
 CUSTOM_IMAGE_MODEL=gpt-image-2
+CUSTOM_PROMPT_API_BASE=https://api.example.com/v1
+CUSTOM_PROMPT_API_KEY=your-prompt-api-key-here
 CUSTOM_PROMPT_EXTRACT_MODEL=gpt-4o-mini
 ```
 

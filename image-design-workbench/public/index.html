@@ -103,28 +103,67 @@
           <div class="settings-layout">
             <div class="settings-copy">
               <p class="card-kicker">Required setup</p>
-              <h2>连接你的图像服务</h2>
-              <p>API Key 只保存在当前服务进程内，用于套图生成和图片提示词提取。服务重启后需要重新保存。</p>
-              <div class="settings-facts">
-                <span>URL 服务端固定</span>
+              <h2 id="settingsTitle">连接你的生产服务</h2>
+              <p id="settingsDescription">生图和提示词提取使用两套独立 API 配置。提示词提取需要具备视觉理解能力的 GPT 通道，不会影响画图接口。</p>
+              <div class="settings-facts" id="settingsFacts">
+                <span>生图 URL 服务端固定</span>
+                <span>提示词 API 单独配置</span>
                 <span>Key 不写入浏览器存储</span>
-                <span>配置后解锁菜单</span>
               </div>
             </div>
-            <form class="api-config-form config-center-form" id="apiConfigForm">
-              <label class="config-field">
-                <span>API Key</span>
-                <input id="apiKeyInput" type="password" autocomplete="off" />
-              </label>
-              <p class="config-note">API URL 由服务端固定配置，页面不展示也不允许修改。</p>
-              <p class="card-message" id="apiConfigMessage"></p>
-              <div class="modal-actions">
-                <button class="button primary" id="uploadApiConfig" type="submit">
-                  <span class="icon" data-icon="key"></span>
-                  保存配置
-                </button>
-              </div>
-            </form>
+            <div class="settings-forms">
+              <form class="api-config-form config-center-form" id="apiConfigForm" data-config-scope="image">
+                <div class="config-form-head">
+                  <div>
+                    <p class="card-kicker">Image API</p>
+                    <h3>生图配置</h3>
+                  </div>
+                  <span class="badge" id="imageApiInlineStatus">未配置</span>
+                </div>
+                <label class="config-field">
+                  <span>生图 API Key</span>
+                  <input id="apiKeyInput" type="password" autocomplete="off" />
+                </label>
+                <p class="config-note">生图 API URL 由服务端固定配置，页面不展示也不允许修改。</p>
+                <p class="card-message" id="apiConfigMessage"></p>
+                <div class="modal-actions">
+                  <button class="button primary" id="uploadApiConfig" type="submit">
+                    <span class="icon" data-icon="key"></span>
+                    保存生图配置
+                  </button>
+                </div>
+              </form>
+
+              <form class="api-config-form config-center-form" id="promptApiConfigForm" data-config-scope="prompt">
+                <div class="config-form-head">
+                  <div>
+                    <p class="card-kicker">Prompt API</p>
+                    <h3>提示词提取配置</h3>
+                  </div>
+                  <span class="badge" id="promptApiInlineStatus">未配置</span>
+                </div>
+                <label class="config-field">
+                  <span>提示词 API URL</span>
+                  <input id="promptApiUrlInput" type="url" autocomplete="off" placeholder="https://api.example.com/v1" />
+                </label>
+                <label class="config-field">
+                  <span>提示词 API Key</span>
+                  <input id="promptApiKeyInput" type="password" autocomplete="off" />
+                </label>
+                <label class="config-field">
+                  <span>提示词模型</span>
+                  <input id="promptApiModelInput" type="text" autocomplete="off" placeholder="gpt-4o-mini" />
+                </label>
+                <p class="config-note">只用于图片提示词提取，建议配置支持视觉理解的 GPT 兼容接口。</p>
+                <p class="card-message" id="promptApiConfigMessage"></p>
+                <div class="modal-actions">
+                  <button class="button primary" id="uploadPromptApiConfig" type="submit">
+                    <span class="icon" data-icon="prompt"></span>
+                    保存提示词配置
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </section>
 
