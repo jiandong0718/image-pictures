@@ -4,6 +4,8 @@
 
 主图既可以用提示词生成，也可以上传已有图片作为源图，再基于这张主图生成当前套图需要的衍生图。单肩背包平面图模式使用上传主图作为源图，并生成肩带部位图和包身部位图。
 
+页面顶部的“提示词提取”入口支持上传一张图片，并调用已配置的视觉模型提取可复用的中文详细生图提示词。
+
 ## 启动
 
 ```bash
@@ -35,6 +37,7 @@ http://127.0.0.1:4174
 CUSTOM_IMAGE_API_KEY=your-api-key-here
 CUSTOM_IMAGE_API_BASE=https://aicodelink.top/v1
 CUSTOM_IMAGE_MODEL=gpt-image-2
+CUSTOM_PROMPT_EXTRACT_MODEL=gpt-4o-mini
 ```
 
 每个浏览器窗口会自动分配一个独立套图编号，窗口之间互不影响；一套图包含 1 张主图和当前模式下的衍生图。生成结果会按数据顺序保存到独立文件夹：

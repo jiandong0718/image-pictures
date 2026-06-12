@@ -60,8 +60,13 @@ const PREFERRED_IMAGE_SIZE = `${PREFERRED_IMAGE_WIDTH}x${PREFERRED_IMAGE_HEIGHT}
 const REQUIRED_IMAGE_RATIO = "1:1";
 const IMAGE_API_BASE_ENV_KEY = "CUSTOM_IMAGE_API_BASE";
 const IMAGE_API_KEY_ENV_KEY = "CUSTOM_IMAGE_API_KEY";
+const PROMPT_EXTRACT_MODEL_ENV_KEY = "CUSTOM_PROMPT_EXTRACT_MODEL";
 const FALLBACK_IMAGE_API_BASE = "https://api.example.invalid/v1";
 const FIXED_IMAGE_API_BASE = resolveFixedImageApiBase();
+const FALLBACK_PROMPT_EXTRACT_MODEL = "gpt-4o-mini";
+const PROMPT_EXTRACTION_TIMEOUT_MS = 120000;
+const PROMPT_EXTRACTION_INSTRUCTION =
+  "请分析这张图片，并提取一段可直接用于 AI 生图的中文详细提示词。输出只需要提示词正文，不要解释。请覆盖主体、构图、视角、背景、光线、材质、颜色、细节、风格、镜头/渲染质感、画面氛围，并在最后补充适合电商或设计复刻的质量描述。";
 const IMAGE_SPEC_MODES = new Set(["square", "fixed"]);
 const MIN_IMAGE_SPEC_SIZE = 256;
 const MAX_IMAGE_SPEC_SIZE = 4096;
@@ -337,6 +342,158 @@ function buildImageGeneratorArgs({ skillScript, prompt, endpoint, outputDir, fil
     "--timeout",
     "180",
   ];
+}
+
+function getPromptExtractModel() {
+  return cleanPrompt(process.env[PROMPT_EXTRACT_MODEL_ENV_KEY] || "") || FALLBACK_PROMPT_EXTRACT_MODEL;
+}
+
+function getUploadedImageMime(upload) {
+  const ext = inferUploadedImageExt(upload.data, upload.mime);
+  if (!ext) {
+    throw new Error("只支持上传 PNG、JPG、WEBP 或 GIF 图片");
+  }
+  const mimeByExt = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    webp: "image/webp",
+    gif: "image/gif",
+  };
+  return mimeByExt[ext] || upload.mime;
+}
+
+function buildApiEndpoint(apiBase, endpointPath) {
+  const base = cleanPrompt(apiBase);
+  if (!base) {
+    throw new Error("API URL 未配置");
+  }
+  return new URL(endpointPath.replace(/^\/+/, ""), base.endsWith("/") ? base : `${base}/`).toString();
+}
+
+function buildPromptExtractionRequest({ imageData, mime, model = getPromptExtractModel() }) {
+  if (!Buffer.isBuffer(imageData) || !imageData.length) {
+    throw new Error("上传图片不能为空");
+  }
+  if (!mime || !mime.startsWith("image/")) {
+    throw new Error("上传文件必须是图片");
+  }
+
+  return {
+    model,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: PROMPT_EXTRACTION_INSTRUCTION,
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:${mime};base64,${imageData.toString("base64")}`,
+            },
+          },
+        ],
+      },
+    ],
+    temperature: 0.2,
+    max_tokens: 1800,
+  };
+}
+
+function extractTextContent(content) {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        if (typeof item?.text === "string") {
+          return item.text;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+function parsePromptExtractionResponse(data) {
+  const chatContent = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text;
+  const outputText = data?.output_text;
+  const responseOutput = Array.isArray(data?.output)
+    ? data.output
+        .flatMap((item) => (Array.isArray(item?.content) ? item.content : []))
+        .map((item) => item?.text || "")
+        .filter(Boolean)
+        .join("\n")
+    : "";
+  const prompt = cleanPrompt(extractTextContent(chatContent) || outputText || responseOutput);
+  if (!prompt) {
+    throw new Error("API 未返回提示词内容");
+  }
+  return prompt;
+}
+
+function getApiErrorMessage(data, fallback = "") {
+  return (
+    cleanPrompt(data?.error?.message) ||
+    cleanPrompt(data?.error) ||
+    cleanPrompt(data?.message) ||
+    cleanPrompt(fallback)
+  );
+}
+
+async function callPromptExtractionApi({ upload, apiConfig = getRequiredRuntimeImageApiConfig(), fetchImpl = globalThis.fetch }) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("当前 Node.js 版本不支持 fetch，请升级到 Node.js 18 或更高版本");
+  }
+
+  const mime = getUploadedImageMime(upload);
+  const endpoint = buildApiEndpoint(apiConfig.apiBase, "chat/completions");
+  const requestBody = buildPromptExtractionRequest({
+    imageData: upload.data,
+    mime,
+    model: getPromptExtractModel(),
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROMPT_EXTRACTION_TIMEOUT_MS);
+
+  try {
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiConfig.apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    const data = raw ? JSON.parse(raw) : {};
+    if (!response.ok) {
+      throw new Error(getApiErrorMessage(data, raw) || `API 请求失败：${response.status}`);
+    }
+    return {
+      prompt: parsePromptExtractionResponse(data),
+      model: requestBody.model,
+    };
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("提示词提取请求超时");
+    }
+    if (error instanceof SyntaxError) {
+      throw new Error("API 响应不是有效 JSON");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function trimMultipartCrlf(buffer) {
@@ -1233,6 +1390,34 @@ async function handleApi(req, res, pathname, searchParams) {
     return;
   }
 
+  if (req.method === "POST" && pathname === "/api/prompts/extract") {
+    let apiConfig;
+    try {
+      apiConfig = getRequiredRuntimeImageApiConfig();
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+
+    try {
+      const upload = await readMultipartFile(req, "image");
+      const result = await callPromptExtractionApi({ upload, apiConfig });
+      sendJson(res, 200, {
+        ok: true,
+        prompt: result.prompt,
+        model: result.model,
+      });
+    } catch (error) {
+      const message = error.message || "提示词提取失败";
+      const statusCode =
+        message.includes("上传") || message.includes("只支持") || message.includes("没有找到")
+          ? 400
+          : 502;
+      sendError(res, statusCode, "提示词提取失败", message);
+    }
+    return;
+  }
+
   if (req.method === "POST" && pathname === "/api/image-sets") {
     const imageSet = await allocateImageSet();
     sendJson(res, 200, { ok: true, imageSet });
@@ -1414,8 +1599,11 @@ module.exports = {
   PREFERRED_IMAGE_WIDTH,
   REQUIRED_IMAGE_RATIO,
   assertImageSpecDimensions,
+  buildApiEndpoint,
   buildImageGeneratorArgs,
   buildImageGeneratorEnv,
+  buildPromptExtractionRequest,
+  callPromptExtractionApi,
   clearRuntimeImageApiConfig,
   clearOutputDirContents,
   describeImageSpec,
@@ -1429,6 +1617,7 @@ module.exports = {
   normalizeImageApiConfig,
   normalizeImageSpec,
   normalizeGeneratedImageFile,
+  parsePromptExtractionResponse,
   readImageDimensions,
   setRuntimeImageApiConfig,
 };

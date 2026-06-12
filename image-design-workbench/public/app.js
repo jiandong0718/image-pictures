@@ -4,6 +4,7 @@ const SHOULDER_BAG_FLAT_DERIVED_TYPES = ["shoulderBagStrap", "shoulderBagBody"];
 const TYPES = ["main", "derived", ...HAT_DERIVED_TYPES, ...SHOULDER_BAG_FLAT_DERIVED_TYPES];
 const DERIVED_TYPES = ["derived", ...HAT_DERIVED_TYPES, ...SHOULDER_BAG_FLAT_DERIVED_TYPES];
 const DEFAULT_PRODUCT_SET_MODE = "hat";
+const DEFAULT_ACTIVE_MODULE = "config";
 const PRODUCT_SET_MODES = {
   hat: {
     label: "帽子套图",
@@ -35,6 +36,41 @@ const PRODUCT_SET_MODES = {
     doneStatus: "两张部位图已生成",
     partialStatus: "部分部位图生成失败",
     mainUploadOnly: true,
+  },
+};
+const MODULES = {
+  config: {
+    kicker: "配置",
+    title: "配置中心",
+    subtitle: "保存 API Key 后解锁套图生成与提示词提取。",
+    requiresApiConfig: false,
+  },
+  hat: {
+    kicker: "套图工作流",
+    title: "帽子套图",
+    subtitle: "从主图开始生成白底、尺寸、细节、穿戴、场景和卖点图。",
+    productSetMode: "hat",
+    requiresApiConfig: true,
+  },
+  bag: {
+    kicker: "套图工作流",
+    title: "包包套图",
+    subtitle: "围绕包包主图生成详情页需要的衍生展示图。",
+    productSetMode: "bag",
+    requiresApiConfig: true,
+  },
+  shoulderBagFlat: {
+    kicker: "套图工作流",
+    title: "单肩背包平面图",
+    subtitle: "上传平面主图后生成肩带和包身两个结构部位图。",
+    productSetMode: "shoulderBagFlat",
+    requiresApiConfig: true,
+  },
+  promptExtractor: {
+    kicker: "工具",
+    title: "提示词提取",
+    subtitle: "上传参考图，生成可复用的详细中文生图提示词。",
+    requiresApiConfig: true,
   },
 };
 const STORAGE_KEY = "imageDesignWorkbench.session.v5";
@@ -85,6 +121,9 @@ const DEFAULT_PROMPTS = {
 
 let state = loadState();
 let imageSetRequest = null;
+let promptExtractionFile = null;
+let promptExtractionPreviewUrl = "";
+let promptExtractionLoading = false;
 
 function normalizeImageSpec(rawSpec = {}) {
   const mode = rawSpec.mode === "fixed" ? "fixed" : "square";
@@ -97,6 +136,15 @@ function normalizeImageSpec(rawSpec = {}) {
 
 function normalizeProductSetMode(value) {
   return PRODUCT_SET_MODES[value] ? value : DEFAULT_PRODUCT_SET_MODE;
+}
+
+function normalizeActiveModule(value) {
+  return MODULES[value] ? value : DEFAULT_ACTIVE_MODULE;
+}
+
+function getProductModule(mode) {
+  const normalized = normalizeProductSetMode(mode);
+  return MODULES[normalized] ? normalized : DEFAULT_PRODUCT_SET_MODE;
 }
 
 function getProductSetConfig() {
@@ -137,6 +185,11 @@ function readProductSetModeParam() {
   return raw ? normalizeProductSetMode(raw) : "";
 }
 
+function readActiveModuleParam() {
+  const raw = new URLSearchParams(window.location.search).get("module");
+  return raw ? normalizeActiveModule(raw) : "";
+}
+
 function readImageSpecParams() {
   try {
     const raw = new URLSearchParams(window.location.search).get("imageSpec");
@@ -156,7 +209,8 @@ function cleanStartupParams() {
     !url.searchParams.has("newSet") &&
     !url.searchParams.has("prompts") &&
     !url.searchParams.has("imageSpec") &&
-    !url.searchParams.has("productSetMode")
+    !url.searchParams.has("productSetMode") &&
+    !url.searchParams.has("module")
   ) {
     return;
   }
@@ -164,6 +218,7 @@ function cleanStartupParams() {
   url.searchParams.delete("prompts");
   url.searchParams.delete("imageSpec");
   url.searchParams.delete("productSetMode");
+  url.searchParams.delete("module");
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
@@ -171,14 +226,21 @@ function loadState() {
   const promptParams = readPromptParams();
   const imageSpecParams = readImageSpecParams();
   const productSetModeParam = readProductSetModeParam();
+  const activeModuleParam = readActiveModuleParam();
   const forceNewSet = shouldStartNewSet();
 
   try {
     const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "{}");
+    const productSetMode = normalizeProductSetMode(
+      productSetModeParam || (forceNewSet ? DEFAULT_PRODUCT_SET_MODE : saved.productSetMode),
+    );
     return {
-      productSetMode: normalizeProductSetMode(
-        productSetModeParam || (forceNewSet ? DEFAULT_PRODUCT_SET_MODE : saved.productSetMode),
+      activeModule: normalizeActiveModule(
+        activeModuleParam ||
+          (productSetModeParam ? getProductModule(productSetModeParam) : "") ||
+          (forceNewSet ? getProductModule(productSetMode) : saved.activeModule),
       ),
+      productSetMode,
       imageSet: forceNewSet ? null : saved.imageSet || null,
       prompts: { ...DEFAULT_PROMPTS, ...(forceNewSet ? {} : saved.prompts || {}), ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...(forceNewSet ? {} : saved.imageSpec || {}), ...imageSpecParams }),
@@ -187,8 +249,10 @@ function loadState() {
       loading: {},
     };
   } catch {
+    const productSetMode = normalizeProductSetMode(productSetModeParam);
     return {
-      productSetMode: normalizeProductSetMode(productSetModeParam),
+      activeModule: normalizeActiveModule(activeModuleParam || (productSetModeParam ? getProductModule(productSetMode) : "")),
+      productSetMode,
       imageSet: null,
       prompts: { ...DEFAULT_PROMPTS, ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...imageSpecParams }),
@@ -204,6 +268,7 @@ function saveState() {
     STORAGE_KEY,
     JSON.stringify({
       imageSet: state.imageSet,
+      activeModule: state.activeModule,
       productSetMode: state.productSetMode,
       prompts: state.prompts,
       imageSpec: state.imageSpec,
@@ -220,14 +285,77 @@ function updateImageSetView() {
 }
 
 function updateProductSetModeControl() {
-  const mode = qs("#productSetMode");
-  if (mode) {
-    mode.value = normalizeProductSetMode(state.productSetMode);
-  }
   const board = qs("#imageBoard");
   if (board) {
     board.dataset.productSet = normalizeProductSetMode(state.productSetMode);
   }
+}
+
+function isProductModule(moduleName = state.activeModule) {
+  return Boolean(MODULES[moduleName]?.productSetMode);
+}
+
+function updateWorkspaceView() {
+  const activeModule = normalizeActiveModule(state.activeModule);
+  const moduleConfig = MODULES[activeModule];
+  const isConfigured = Boolean(state.imageApiConfig?.uploaded);
+  const isProduct = isProductModule(activeModule);
+  const isPromptExtractor = activeModule === "promptExtractor";
+  const configPanel = qs("#configCenterPanel");
+  const promptPanel = qs("#promptExtractorPanel");
+  const board = qs("#imageBoard");
+  const title = qs("#workspaceTitle");
+  const kicker = qs("#workspaceKicker");
+  const subtitle = qs("#workspaceSubtitle");
+  const specControl = qs("#imageSpecControl");
+  const imageSetControl = qs("#imageSetControl");
+  const openNewWindow = qs("#openNewWindow");
+  const generateMainTop = qs("#generateMainTop");
+  const generateAll = qs("#generateAll");
+  const downloadAll = qs("#downloadAll");
+
+  title.textContent = moduleConfig.title;
+  kicker.textContent = moduleConfig.kicker;
+  subtitle.textContent = moduleConfig.subtitle || "";
+  configPanel.hidden = activeModule !== "config";
+  promptPanel.hidden = !isPromptExtractor;
+  board.hidden = !isProduct;
+  specControl.hidden = !isProduct;
+  imageSetControl.hidden = !isProduct;
+  openNewWindow.hidden = !isProduct;
+  generateMainTop.hidden = !isProduct || Boolean(getProductSetConfig().mainUploadOnly);
+  generateAll.hidden = !isProduct;
+  downloadAll.hidden = !isProduct;
+
+  qsa("[data-module]").forEach((item) => {
+    const moduleName = item.dataset.module;
+    const locked = MODULES[moduleName]?.requiresApiConfig && !isConfigured;
+    item.classList.toggle("active", moduleName === activeModule);
+    item.classList.toggle("locked", Boolean(locked));
+    item.setAttribute("aria-current", moduleName === activeModule ? "page" : "false");
+  });
+}
+
+function switchActiveModule(moduleName) {
+  const normalized = normalizeActiveModule(moduleName);
+  const moduleConfig = MODULES[normalized];
+  if (moduleConfig.requiresApiConfig && !state.imageApiConfig?.uploaded) {
+    state.activeModule = "config";
+    saveState();
+    render();
+    setStatus("请先在配置中心保存 API Key");
+    requestAnimationFrame(() => {
+      qs("#apiKeyInput")?.focus();
+    });
+    return;
+  }
+  state.activeModule = normalized;
+  if (moduleConfig.productSetMode) {
+    state.productSetMode = moduleConfig.productSetMode;
+  }
+  saveState();
+  render();
+  setStatus(moduleConfig.title);
 }
 
 function updateImageSpecControls() {
@@ -259,18 +387,90 @@ function setApiConfigMessage(message, kind = "") {
 }
 
 function openApiConfigDialog() {
-  updateApiConfigView();
+  state.activeModule = "config";
+  saveState();
+  render();
   setApiConfigMessage("");
-  qs("#apiConfigDialog").hidden = false;
   requestAnimationFrame(() => {
     qs("#apiKeyInput").focus();
   });
 }
 
 function closeApiConfigDialog() {
-  qs("#apiConfigDialog").hidden = true;
   setApiConfigMessage("");
   qs("#apiKeyInput").value = "";
+}
+
+function openPromptExtractorDialog() {
+  switchActiveModule("promptExtractor");
+  setPromptExtractorMessage("");
+  renderPromptExtractor();
+}
+
+function closePromptExtractorDialog() {
+  setPromptExtractorMessage("");
+}
+
+function clearPromptExtractionPreviewUrl() {
+  if (promptExtractionPreviewUrl) {
+    URL.revokeObjectURL(promptExtractionPreviewUrl);
+    promptExtractionPreviewUrl = "";
+  }
+}
+
+function setPromptExtractorMessage(message, kind = "") {
+  const el = qs("#promptExtractorMessage");
+  if (!el) {
+    return;
+  }
+  el.textContent = message || "";
+  el.classList.toggle("error", kind === "error");
+  el.classList.toggle("success", kind === "success");
+}
+
+function renderPromptExtractor() {
+  const preview = qs("#promptUploadPreview");
+  const meta = qs("#promptImageMeta");
+  const output = qs("#extractedPrompt");
+  const extractButton = qs("#extractPromptButton");
+  const copyButton = qs("#copyExtractedPrompt");
+  const hasFile = Boolean(promptExtractionFile);
+  const hasPrompt = Boolean(output?.value.trim());
+  const hasApiConfig = Boolean(state.imageApiConfig?.uploaded);
+
+  if (preview) {
+    if (promptExtractionLoading) {
+      preview.innerHTML = qs("#spinnerTemplate").innerHTML.replace("生成中", "提取中");
+    } else if (promptExtractionPreviewUrl) {
+      preview.innerHTML = "";
+      const img = document.createElement("img");
+      img.src = promptExtractionPreviewUrl;
+      img.alt = "待提取提示词的图片";
+      preview.appendChild(img);
+    } else {
+      preview.innerHTML = `
+        <div class="empty-state">
+          <span class="empty-icon" data-icon="image"></span>
+          <span>上传图片</span>
+        </div>
+      `;
+    }
+  }
+
+  if (meta) {
+    meta.textContent = hasFile
+      ? `${promptExtractionFile.name} · ${(promptExtractionFile.size / 1024 / 1024).toFixed(2)}MB`
+      : "支持 PNG、JPG、WEBP、GIF，最大 20MB";
+  }
+  if (extractButton) {
+    extractButton.disabled = !hasApiConfig || !hasFile || promptExtractionLoading;
+    extractButton.innerHTML = promptExtractionLoading
+      ? `<span class="spinner compact"></span>提取中`
+      : `<span class="icon" data-icon="prompt"></span>提取提示词`;
+  }
+  if (copyButton) {
+    copyButton.disabled = !hasPrompt || promptExtractionLoading;
+  }
 }
 
 async function ensureImageSet(forceNew = false) {
@@ -388,21 +588,24 @@ function updateBadges() {
 function updateControls() {
   const config = getProductSetConfig();
   const activeTypes = getActiveTypes();
+  const isProduct = isProductModule();
   const hasImageSet = Boolean(state.imageSet?.id);
   const hasApiConfig = Boolean(state.imageApiConfig?.uploaded);
   const hasMain = Boolean(state.images.main);
-  const anyLoading = Object.values(state.loading).some(Boolean);
+  const anyLoading = Object.values(state.loading).some(Boolean) || promptExtractionLoading;
   const anyImage = activeTypes.some((type) => Boolean(state.images[type]));
 
   qs("#generateAll").disabled = !hasApiConfig || !hasImageSet || !hasMain || anyLoading;
   qs("#generateAll").innerHTML = `<span class="icon" data-icon="layers"></span>${config.generateAllLabel}`;
   qs("#downloadAll").disabled = !hasImageSet || !anyImage || anyLoading;
-  qs("#generateMainTop").hidden = Boolean(config.mainUploadOnly);
+  qs("#generateMainTop").hidden = !isProduct || Boolean(config.mainUploadOnly);
   qs("#generateMainTop").disabled =
     Boolean(config.mainUploadOnly) || !hasApiConfig || !hasImageSet || Boolean(state.loading.main);
   qs("#uploadMainButton").disabled = !hasImageSet || Boolean(state.loading.main);
   qs("#uploadApiConfig").disabled = anyLoading;
-  qs("#openApiConfig").disabled = anyLoading;
+  qs("#extractPromptButton").disabled = !hasApiConfig || !promptExtractionFile || promptExtractionLoading;
+  qs("#copyExtractedPrompt").disabled =
+    promptExtractionLoading || !qs("#extractedPrompt").value.trim();
 
   for (const type of TYPES) {
     const card = qs(`[data-type="${type}"]`);
@@ -427,6 +630,7 @@ function updateControls() {
   qs("#prompt-main").closest(".prompt-field").hidden = Boolean(config.mainUploadOnly);
 
   updateBadges();
+  renderPromptExtractor();
 }
 
 function render() {
@@ -434,6 +638,7 @@ function render() {
   updateProductSetModeControl();
   updateImageSpecControls();
   updateApiConfigView();
+  updateWorkspaceView();
   for (const type of TYPES) {
     const textarea = qs(`#prompt-${type}`);
     if (textarea.value !== state.prompts[type]) {
@@ -489,6 +694,20 @@ async function apiUploadMain(file, imageSetId, imageSpec) {
   return data;
 }
 
+async function apiExtractPrompt(file) {
+  const formData = new FormData();
+  formData.append("image", file);
+  const response = await fetch("/api/prompts/extract", {
+    method: "POST",
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.details || data.error || "提示词提取失败");
+  }
+  return data;
+}
+
 function readLocalImageDimensions(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -526,6 +745,10 @@ async function loadApiConfigStatus() {
   try {
     const data = await apiGet("/api/image-config");
     state.imageApiConfig = { ...DEFAULT_IMAGE_API_CONFIG, ...(data.config || {}) };
+    if (!state.imageApiConfig.uploaded) {
+      state.activeModule = "config";
+      saveState();
+    }
     updateApiConfigView();
     updateControls();
     if (!state.imageApiConfig.uploaded) {
@@ -555,11 +778,13 @@ async function uploadApiConfig(event) {
   try {
     const data = await apiPost("/api/image-config", { apiKey });
     state.imageApiConfig = { ...DEFAULT_IMAGE_API_CONFIG, ...(data.config || {}) };
+    if (state.activeModule === "config") {
+      state.activeModule = getProductModule(state.productSetMode);
+    }
     qs("#apiKeyInput").value = "";
     setApiConfigMessage("API 配置已生效", "success");
-    closeApiConfigDialog();
-    updateApiConfigView();
-    updateControls();
+    saveState();
+    render();
     setStatus("API 配置已生效");
   } catch (error) {
     setApiConfigMessage(error.message, "error");
@@ -596,6 +821,7 @@ function openNewImageSetWindow() {
   url.searchParams.set("prompts", JSON.stringify(prompts));
   url.searchParams.set("imageSpec", JSON.stringify(imageSpec));
   url.searchParams.set("productSetMode", normalizeProductSetMode(state.productSetMode));
+  url.searchParams.set("module", getProductModule(state.productSetMode));
   window.open(url.toString(), "_blank", "noopener");
 }
 
@@ -683,6 +909,79 @@ async function uploadMain(file) {
     setLoading("main", false);
     render();
   }
+}
+
+async function selectPromptExtractionImage(file) {
+  if (!file) {
+    return;
+  }
+  if (!file.type.startsWith("image/")) {
+    setPromptExtractorMessage("请选择图片文件", "error");
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    setPromptExtractorMessage("上传图片不能超过 20MB", "error");
+    return;
+  }
+  try {
+    await readLocalImageDimensions(file);
+  } catch (error) {
+    setPromptExtractorMessage("无法读取图片，请上传 PNG、JPG、WEBP 或 GIF 图片", "error");
+    return;
+  }
+
+  clearPromptExtractionPreviewUrl();
+  promptExtractionFile = file;
+  promptExtractionPreviewUrl = URL.createObjectURL(file);
+  qs("#extractedPrompt").value = "";
+  setPromptExtractorMessage("图片已准备，可以提取提示词", "success");
+  renderPromptExtractor();
+  updateControls();
+}
+
+async function extractPromptFromImage() {
+  if (!state.imageApiConfig?.uploaded) {
+    setPromptExtractorMessage("请先保存 API 配置", "error");
+    setStatus("请先保存 API 配置");
+    return;
+  }
+  if (!promptExtractionFile) {
+    setPromptExtractorMessage("请先上传图片", "error");
+    return;
+  }
+
+  promptExtractionLoading = true;
+  setPromptExtractorMessage("");
+  setStatus("正在提取图片提示词");
+  updateControls();
+  try {
+    const data = await apiExtractPrompt(promptExtractionFile);
+    qs("#extractedPrompt").value = data.prompt || "";
+    setPromptExtractorMessage("提示词已提取", "success");
+    setStatus("提示词已提取");
+  } catch (error) {
+    setPromptExtractorMessage(error.message, "error");
+    setStatus("提示词提取失败");
+  } finally {
+    promptExtractionLoading = false;
+    updateControls();
+  }
+}
+
+async function copyExtractedPrompt() {
+  const prompt = qs("#extractedPrompt").value.trim();
+  if (!prompt) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(prompt);
+    setPromptExtractorMessage("已复制提示词", "success");
+    setStatus("已复制提示词");
+  } catch (error) {
+    qs("#extractedPrompt").select();
+    setPromptExtractorMessage("复制失败，请手动复制文本", "error");
+  }
+  renderPromptExtractor();
 }
 
 async function generateDerived(type) {
@@ -839,6 +1138,7 @@ async function clearState() {
   const imageSpec = collectImageSpec();
   sessionStorage.removeItem(STORAGE_KEY);
   state = {
+    activeModule: normalizeActiveModule(state.activeModule),
     productSetMode: normalizeProductSetMode(state.productSetMode),
     imageSet: null,
     prompts: { ...DEFAULT_PROMPTS },
@@ -868,6 +1168,7 @@ async function resetGeneratedCache() {
   }
 
   const productSetMode = normalizeProductSetMode(state.productSetMode);
+  const activeModule = normalizeActiveModule(state.activeModule);
   const imageSpec = collectImageSpec();
   const resetButton = qs("#resetGeneratedCache");
   resetButton.disabled = true;
@@ -876,6 +1177,7 @@ async function resetGeneratedCache() {
     const data = await apiPost("/api/image-sets/reset", {});
     sessionStorage.removeItem(STORAGE_KEY);
     state = {
+      activeModule,
       productSetMode,
       imageSet: data.imageSet,
       prompts: { ...DEFAULT_PROMPTS },
@@ -906,11 +1208,10 @@ function bindEvents() {
     });
   }
 
-  qs("#productSetMode").addEventListener("change", (event) => {
-    state.productSetMode = normalizeProductSetMode(event.target.value);
-    saveState();
-    render();
-    setStatus(`已切换到${getProductSetConfig().label}`);
+  qsa(".nav-item").forEach((button) => {
+    button.addEventListener("click", () => {
+      switchActiveModule(button.dataset.module);
+    });
   });
   qs("#imageSpecMode").addEventListener("change", () => {
     collectImageSpec();
@@ -923,18 +1224,24 @@ function bindEvents() {
   });
 
   qs("#generateMainTop").addEventListener("click", generateMain);
-  qs("#openApiConfig").addEventListener("click", openApiConfigDialog);
-  qs("#closeApiConfig").addEventListener("click", closeApiConfigDialog);
-  qs("#cancelApiConfig").addEventListener("click", closeApiConfigDialog);
-  qs("#apiConfigDialog").addEventListener("click", (event) => {
-    if (event.target === event.currentTarget) {
-      closeApiConfigDialog();
-    }
+  qs("#selectPromptImage").addEventListener("click", () => qs("#promptImageInput").click());
+  qs("#promptImageInput").addEventListener("change", async (event) => {
+    await selectPromptExtractionImage(event.target.files?.[0]);
+    event.target.value = "";
   });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !qs("#apiConfigDialog").hidden) {
-      closeApiConfigDialog();
-    }
+  qs("#extractPromptButton").addEventListener("click", extractPromptFromImage);
+  qs("#copyExtractedPrompt").addEventListener("click", copyExtractedPrompt);
+  qs("#promptUploadZone").addEventListener("dragover", (event) => {
+    event.preventDefault();
+    event.currentTarget.classList.add("dragging");
+  });
+  qs("#promptUploadZone").addEventListener("dragleave", (event) => {
+    event.currentTarget.classList.remove("dragging");
+  });
+  qs("#promptUploadZone").addEventListener("drop", async (event) => {
+    event.preventDefault();
+    event.currentTarget.classList.remove("dragging");
+    await selectPromptExtractionImage(event.dataTransfer.files?.[0]);
   });
   qs("#apiConfigForm").addEventListener("submit", uploadApiConfig);
   qs("#generateAll").addEventListener("click", generateAllDerived);

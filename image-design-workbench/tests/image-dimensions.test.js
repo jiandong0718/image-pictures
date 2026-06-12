@@ -6,8 +6,11 @@ const test = require("node:test");
 
 const {
   assertImageSpecDimensions,
+  buildApiEndpoint,
   buildImageGeneratorArgs,
   buildImageGeneratorEnv,
+  buildPromptExtractionRequest,
+  callPromptExtractionApi,
   clearRuntimeImageApiConfig,
   clearOutputDirContents,
   getBatchDerivedTypes,
@@ -19,6 +22,7 @@ const {
   getRuntimeImageApiConfigSummary,
   normalizeImageApiConfig,
   normalizeImageSpec,
+  parsePromptExtractionResponse,
   readImageDimensions,
   setRuntimeImageApiConfig,
 } = require("../server");
@@ -242,6 +246,93 @@ test("injects uploaded API config through process env instead of command args", 
   assert.equal(env.CUSTOM_IMAGE_API_BASE, "https://unit.test/v1");
   assert.equal(env.CUSTOM_IMAGE_API_KEY, "uploaded-key");
   assert.equal(env.PATH, "/bin");
+});
+
+test("builds prompt extraction payload without API secrets", () => {
+  const payload = buildPromptExtractionRequest({
+    imageData: Buffer.from("image-bytes"),
+    mime: "image/png",
+    model: "vision-unit-model",
+  });
+  const serialized = JSON.stringify(payload);
+
+  assert.equal(payload.model, "vision-unit-model");
+  assert.equal(payload.messages[0].role, "user");
+  assert.match(payload.messages[0].content[0].text, /详细提示词/);
+  assert.equal(
+    payload.messages[0].content[1].image_url.url,
+    "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+  );
+  assert.equal(serialized.includes("uploaded-key"), false);
+  assert.equal(serialized.includes("https://unit.test/v1"), false);
+});
+
+test("parses prompt extraction responses from compatible response shapes", () => {
+  assert.equal(
+    parsePromptExtractionResponse({
+      choices: [{ message: { content: "  详细中文提示词  " } }],
+    }),
+    "详细中文提示词",
+  );
+  assert.equal(
+    parsePromptExtractionResponse({
+      choices: [{ message: { content: [{ type: "text", text: "分段提示词" }] } }],
+    }),
+    "分段提示词",
+  );
+  assert.equal(parsePromptExtractionResponse({ output_text: "响应式提示词" }), "响应式提示词");
+  assert.throws(() => parsePromptExtractionResponse({ choices: [] }), /API 未返回提示词内容/);
+});
+
+test("calls prompt extraction API with Authorization header only", async () => {
+  let capturedUrl = "";
+  let capturedRequest = null;
+  const fetchImpl = async (url, request) => {
+    capturedUrl = url;
+    capturedRequest = request;
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ choices: [{ message: { content: "商品图详细提示词" } }] }),
+    };
+  };
+
+  const result = await callPromptExtractionApi({
+    upload: {
+      filename: "product.png",
+      mime: "image/png",
+      data: makePng(32, 32),
+    },
+    apiConfig: { apiBase: "https://unit.test/v1", apiKey: "uploaded-key" },
+    fetchImpl,
+  });
+  const body = JSON.parse(capturedRequest.body);
+
+  assert.equal(capturedUrl, buildApiEndpoint("https://unit.test/v1", "chat/completions"));
+  assert.equal(capturedRequest.headers.Authorization, "Bearer uploaded-key");
+  assert.equal(JSON.stringify(body).includes("uploaded-key"), false);
+  assert.match(body.messages[0].content[1].image_url.url, /^data:image\/png;base64,/);
+  assert.equal(result.prompt, "商品图详细提示词");
+});
+
+test("rejects unsupported prompt extraction uploads before calling the API", async () => {
+  let called = false;
+  await assert.rejects(
+    () =>
+      callPromptExtractionApi({
+        upload: {
+          filename: "notes.txt",
+          mime: "text/plain",
+          data: Buffer.from("not an image"),
+        },
+        apiConfig: { apiBase: "https://unit.test/v1", apiKey: "uploaded-key" },
+        fetchImpl: async () => {
+          called = true;
+        },
+      }),
+    /只支持上传 PNG、JPG、WEBP 或 GIF 图片/,
+  );
+  assert.equal(called, false);
 });
 
 test("clears generated output contents while keeping the output directory", async (t) => {
