@@ -7,11 +7,17 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <a class="skip-link" href="#mainContent">跳到主要内容</a>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="功能菜单">
+      <aside class="sidebar" id="sidebar" aria-label="功能菜单">
         <div class="brand-block">
-          <p class="eyebrow">Product Image Studio</p>
-          <h1>商品图片设计工作台</h1>
+          <div class="brand-copy">
+            <p class="eyebrow">Product Image Studio</p>
+            <h1>商品图片设计工作台</h1>
+          </div>
+          <button class="sidebar-toggle" id="toggleSidebar" type="button" aria-label="收起菜单" aria-expanded="true">
+            <span class="icon" data-icon="window"></span>
+          </button>
         </div>
         <nav class="side-nav">
           <p class="nav-label">配置</p>
@@ -24,21 +30,29 @@
           <p class="nav-label">套图工作流</p>
           <button class="nav-item" data-module="hat" data-product-set="hat" type="button">
             <span class="icon" data-icon="layers"></span>
-            <span>帽子套图</span>
+            <span>商品衍生图</span>
           </button>
           <button class="nav-item" data-module="bag" data-product-set="bag" type="button">
             <span class="icon" data-icon="image"></span>
-            <span>包包套图</span>
+            <span>商品微调图</span>
           </button>
           <button class="nav-item" data-module="shoulderBagFlat" data-product-set="shoulderBagFlat" type="button">
             <span class="icon" data-icon="copy"></span>
-            <span>单肩背包平面图</span>
+            <span>3D转平面</span>
           </button>
 
           <p class="nav-label">工具</p>
           <button class="nav-item" id="openPromptExtractor" data-module="promptExtractor" type="button">
             <span class="icon" data-icon="prompt"></span>
             <span>提示词提取</span>
+          </button>
+          <button class="nav-item" id="openPlayground" data-module="playground" type="button">
+            <span class="icon" data-icon="spark"></span>
+            <span>自由生图</span>
+          </button>
+          <button class="nav-item" data-module="fullPlayground" type="button">
+            <span class="icon" data-icon="window"></span>
+            <span>完整 Playground</span>
           </button>
         </nav>
       </aside>
@@ -51,43 +65,55 @@
             <p id="workspaceSubtitle">保存 API Key 后解锁所有生产模块。</p>
           </div>
           <div class="topbar-actions">
-            <div class="spec-control" id="imageSpecControl" aria-label="图片规格">
-              <label>
-                <span>图片规格</span>
-                <select id="imageSpecMode">
-                  <option value="square">1:1 方图</option>
-                  <option value="fixed">固定边长</option>
-                </select>
-              </label>
-              <label>
-                <span>请求边长</span>
-                <input id="imageSpecSize" type="number" min="256" max="4096" step="1" value="1024" />
-              </label>
+            <div class="topbar-settings">
+              <div class="spec-control" id="imageSpecControl" aria-label="图片规格">
+                <label>
+                  <span>图片规格</span>
+                  <select id="imageSpecMode">
+                    <option value="square">1:1 方图</option>
+                    <option value="fixed">固定边长</option>
+                  </select>
+                </label>
+                <label>
+                  <span>请求边长</span>
+                  <input id="imageSpecSize" type="number" min="256" max="4096" step="1" value="1024" />
+                </label>
+              </div>
+              <div class="fixed-size" id="imageSetControl" aria-label="当前套图">
+                <span>当前套图</span>
+                <strong id="imageSetName">--</strong>
+              </div>
             </div>
-            <div class="fixed-size" id="imageSetControl" aria-label="当前套图">
-              <span>当前套图</span>
-              <strong id="imageSetName">--</strong>
+            <div class="topbar-primary-actions" aria-label="主要操作">
+              <button class="button primary" id="generateMainTop" type="button">
+                <span class="icon" data-icon="spark"></span>
+                生成主图
+              </button>
+              <button class="button" id="generateAll" type="button" disabled>
+                <span class="icon" data-icon="layers"></span>
+                生成六张衍生图
+              </button>
             </div>
-            <button class="button" id="openNewWindow" type="button">
-              <span class="icon" data-icon="window"></span>
-              新套图窗口
-            </button>
-            <button class="button primary" id="generateMainTop" type="button">
-              <span class="icon" data-icon="spark"></span>
-              生成主图
-            </button>
-            <button class="button" id="generateAll" type="button" disabled>
-              <span class="icon" data-icon="layers"></span>
-              生成六张衍生图
-            </button>
-            <button class="button ghost" id="downloadAll" type="button" disabled>
-              <span class="icon" data-icon="download"></span>
-              下载全部
-            </button>
+            <details class="topbar-more" id="topbarMoreActions">
+              <summary class="button more-summary">
+                <span class="icon" data-icon="settings"></span>
+                更多
+              </summary>
+              <div class="more-menu">
+                <button class="button" id="openNewWindow" type="button">
+                  <span class="icon" data-icon="window"></span>
+                  新套图窗口
+                </button>
+                <button class="button ghost" id="downloadAll" type="button" disabled>
+                  <span class="icon" data-icon="download"></span>
+                  下载全部
+                </button>
+              </div>
+            </details>
           </div>
         </header>
 
-        <main class="workspace-main">
+        <main class="workspace-main" id="mainContent" tabindex="-1">
         <section class="status-strip" aria-live="polite">
           <div>
             <span class="status-dot"></span>
@@ -95,7 +121,6 @@
           </div>
           <div class="status-actions">
             <button class="text-button" id="clearState" type="button">清空页面</button>
-            <button class="text-button danger" id="resetGeneratedCache" type="button">重置缓存</button>
           </div>
         </section>
 
@@ -109,6 +134,22 @@
                 <span>生图 URL 服务端固定</span>
                 <span>提示词 API 单独配置</span>
                 <span>Key 不写入浏览器存储</span>
+              </div>
+              <div class="settings-checklist" id="settingsChecklist" aria-label="启动检查">
+                <div class="check-item" data-check-item="image">
+                  <span class="check-mark"></span>
+                  <div>
+                    <strong>保存生图 API Key</strong>
+                    <span>解锁主图、衍生图和自由生图。</span>
+                  </div>
+                </div>
+                <div class="check-item" data-check-item="prompt">
+                  <span class="check-mark"></span>
+                  <div>
+                    <strong>配置提示词提取 API</strong>
+                    <span>可选，用于从参考图提取中文详细提示词。</span>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="settings-forms">
@@ -163,6 +204,17 @@
                   </button>
                 </div>
               </form>
+
+              <section class="danger-zone" data-config-scope="all" aria-labelledby="dangerZoneTitle">
+                <div>
+                  <p class="card-kicker">Danger zone</p>
+                  <h3 id="dangerZoneTitle">生成缓存管理</h3>
+                  <p>仅在需要重新整理输出编号时使用。此操作会删除所有已生成图片文件。</p>
+                </div>
+                <button class="button danger-outline" id="resetGeneratedCache" type="button">
+                  重置生成缓存
+                </button>
+              </section>
             </div>
           </div>
         </section>
@@ -213,6 +265,110 @@
           </div>
         </section>
 
+        <section class="playground-page panel-view" id="playgroundPanel" hidden>
+          <div class="playground-layout">
+            <div class="playground-form image-card">
+              <div class="card-head">
+                <div>
+                  <p class="card-kicker">Image Playground</p>
+                  <h2>自由生图</h2>
+                </div>
+                <span class="badge" id="playgroundModeBadge">文生图</span>
+              </div>
+
+              <div class="segmented-control" aria-label="自由生图模式">
+                <button class="segment active" data-playground-mode="generate" type="button">文生图</button>
+                <button class="segment" data-playground-mode="edit" type="button">参考图编辑</button>
+              </div>
+
+              <label class="prompt-field">
+                <span>提示词</span>
+                <textarea id="playgroundPrompt" rows="8" placeholder="描述你想生成或编辑的商品图、构图、材质、光线和用途。"></textarea>
+              </label>
+
+              <div class="playground-controls">
+                <label class="config-field">
+                  <span>生成张数</span>
+                  <select id="playgroundCount">
+                    <option value="1">1 张</option>
+                    <option value="2">2 张</option>
+                    <option value="3">3 张</option>
+                    <option value="4">4 张</option>
+                  </select>
+                </label>
+                <label class="config-field">
+                  <span>背景参数</span>
+                  <select id="playgroundBackground">
+                    <option value="">默认</option>
+                    <option value="auto">auto</option>
+                    <option value="transparent">transparent</option>
+                    <option value="opaque">opaque</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="prompt-field">
+                <span>附加系统要求</span>
+                <textarea id="playgroundSystem" rows="3" placeholder="可选，例如：严格保留商品结构，不添加文字，不改变主体颜色。"></textarea>
+              </label>
+
+              <div class="playground-reference" id="playgroundReferenceWrap" hidden>
+                <div class="prompt-upload-preview compact" id="playgroundReferencePreview">
+                  <div class="empty-state">
+                    <span class="empty-icon" data-icon="image"></span>
+                    <span>选择参考图</span>
+                  </div>
+                </div>
+                <label class="config-field">
+                  <span>参考图</span>
+                  <select id="playgroundReferenceSelect">
+                    <option value="">暂无可选图片</option>
+                  </select>
+                </label>
+                <p class="prompt-upload-meta" id="playgroundReferenceMeta">可以使用当前套图里的已生成图片作为编辑参考</p>
+              </div>
+
+              <div class="card-actions">
+                <button class="button primary full" id="generatePlayground" type="button">
+                  <span class="icon" data-icon="spark"></span>
+                  生成图片
+                </button>
+                <button class="button" id="downloadPlaygroundAll" type="button" disabled>
+                  <span class="icon" data-icon="download"></span>
+                  下载结果
+                </button>
+              </div>
+              <p class="card-message" id="playgroundMessage"></p>
+            </div>
+
+            <div class="playground-results-panel">
+              <div class="section-head compact">
+                <div>
+                  <p class="card-kicker">Results</p>
+                  <h2>结果</h2>
+                </div>
+              </div>
+              <div class="playground-results" id="playgroundResults">
+                <div class="empty-state wide">
+                  <span class="empty-icon" data-icon="image"></span>
+                  <span>等待生成</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="full-playground-page panel-view" id="fullPlaygroundPanel" hidden>
+          <div class="embedded-playground-shell">
+            <iframe
+              class="embedded-playground-frame"
+              title="GPT Image Playground"
+              src="/gpt-image-playground/"
+              loading="lazy"
+            ></iframe>
+          </div>
+        </section>
+
         <section class="board" id="imageBoard">
           <article class="image-card main-card" data-type="main">
             <div class="card-head">
@@ -245,6 +401,9 @@
               <button class="icon-button" data-action="download" data-type="main" type="button" disabled title="下载主图" aria-label="下载主图">
                 <span class="icon" data-icon="download"></span>
               </button>
+              <button class="text-button reference-action" data-action="reference" data-type="main" type="button" disabled>
+                设为参考图
+              </button>
             </div>
             <p class="card-message" data-message="main"></p>
           </article>
@@ -274,6 +433,9 @@
               </button>
               <button class="icon-button" data-action="download" data-type="derived" type="button" disabled title="下载衍生图" aria-label="下载衍生图">
                 <span class="icon" data-icon="download"></span>
+              </button>
+              <button class="text-button reference-action" data-action="reference" data-type="derived" type="button" disabled>
+                设为参考图
               </button>
             </div>
             <p class="card-message" data-message="derived"></p>
@@ -305,6 +467,9 @@
               <button class="icon-button" data-action="download" data-type="shoulderBagStrap" type="button" disabled title="下载肩带部位图" aria-label="下载肩带部位图">
                 <span class="icon" data-icon="download"></span>
               </button>
+              <button class="text-button reference-action" data-action="reference" data-type="shoulderBagStrap" type="button" disabled>
+                设为参考图
+              </button>
             </div>
             <p class="card-message" data-message="shoulderBagStrap"></p>
           </article>
@@ -334,6 +499,9 @@
               </button>
               <button class="icon-button" data-action="download" data-type="shoulderBagBody" type="button" disabled title="下载包身部位图" aria-label="下载包身部位图">
                 <span class="icon" data-icon="download"></span>
+              </button>
+              <button class="text-button reference-action" data-action="reference" data-type="shoulderBagBody" type="button" disabled>
+                设为参考图
               </button>
             </div>
             <p class="card-message" data-message="shoulderBagBody"></p>
@@ -365,6 +533,9 @@
               <button class="icon-button" data-action="download" data-type="whiteBackground" type="button" disabled title="下载白色背景图" aria-label="下载白色背景图">
                 <span class="icon" data-icon="download"></span>
               </button>
+              <button class="text-button reference-action" data-action="reference" data-type="whiteBackground" type="button" disabled>
+                设为参考图
+              </button>
             </div>
             <p class="card-message" data-message="whiteBackground"></p>
           </article>
@@ -394,6 +565,9 @@
               </button>
               <button class="icon-button" data-action="download" data-type="dimensions" type="button" disabled title="下载尺寸标注图" aria-label="下载尺寸标注图">
                 <span class="icon" data-icon="download"></span>
+              </button>
+              <button class="text-button reference-action" data-action="reference" data-type="dimensions" type="button" disabled>
+                设为参考图
               </button>
             </div>
             <p class="card-message" data-message="dimensions"></p>
@@ -425,6 +599,9 @@
               <button class="icon-button" data-action="download" data-type="detail" type="button" disabled title="下载局部放大图" aria-label="下载局部放大图">
                 <span class="icon" data-icon="download"></span>
               </button>
+              <button class="text-button reference-action" data-action="reference" data-type="detail" type="button" disabled>
+                设为参考图
+              </button>
             </div>
             <p class="card-message" data-message="detail"></p>
           </article>
@@ -454,6 +631,9 @@
               </button>
               <button class="icon-button" data-action="download" data-type="worn" type="button" disabled title="下载人物穿戴图" aria-label="下载人物穿戴图">
                 <span class="icon" data-icon="download"></span>
+              </button>
+              <button class="text-button reference-action" data-action="reference" data-type="worn" type="button" disabled>
+                设为参考图
               </button>
             </div>
             <p class="card-message" data-message="worn"></p>
@@ -485,6 +665,9 @@
               <button class="icon-button" data-action="download" data-type="scene" type="button" disabled title="下载场景展示图" aria-label="下载场景展示图">
                 <span class="icon" data-icon="download"></span>
               </button>
+              <button class="text-button reference-action" data-action="reference" data-type="scene" type="button" disabled>
+                设为参考图
+              </button>
             </div>
             <p class="card-message" data-message="scene"></p>
           </article>
@@ -514,6 +697,9 @@
               </button>
               <button class="icon-button" data-action="download" data-type="sellingPoints" type="button" disabled title="下载卖点展示图" aria-label="下载卖点展示图">
                 <span class="icon" data-icon="download"></span>
+              </button>
+              <button class="text-button reference-action" data-action="reference" data-type="sellingPoints" type="button" disabled>
+                设为参考图
               </button>
             </div>
             <p class="card-message" data-message="sellingPoints"></p>

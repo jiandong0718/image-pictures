@@ -7,7 +7,7 @@ const DEFAULT_PRODUCT_SET_MODE = "hat";
 const DEFAULT_ACTIVE_MODULE = "config";
 const PRODUCT_SET_MODES = {
   hat: {
-    label: "帽子套图",
+    label: "商品衍生图",
     types: ["main", ...HAT_DERIVED_TYPES],
     derivedTypes: HAT_DERIVED_TYPES,
     generateAllLabel: "生成六张衍生图",
@@ -17,7 +17,7 @@ const PRODUCT_SET_MODES = {
     partialStatus: "部分衍生图生成失败",
   },
   bag: {
-    label: "包包套图",
+    label: "商品微调图",
     types: ["main", ...BAG_DERIVED_TYPES],
     derivedTypes: BAG_DERIVED_TYPES,
     generateAllLabel: "生成衍生图",
@@ -27,7 +27,7 @@ const PRODUCT_SET_MODES = {
     partialStatus: "衍生图生成失败",
   },
   shoulderBagFlat: {
-    label: "单肩背包平面图",
+    label: "3D转平面",
     types: ["main", ...SHOULDER_BAG_FLAT_DERIVED_TYPES],
     derivedTypes: SHOULDER_BAG_FLAT_DERIVED_TYPES,
     generateAllLabel: "生成两张部位图",
@@ -47,22 +47,22 @@ const MODULES = {
   },
   hat: {
     kicker: "套图工作流",
-    title: "帽子套图",
-    subtitle: "从主图开始生成白底、尺寸、细节、穿戴、场景和卖点图。",
+    title: "商品衍生图",
+    subtitle: "从商品主图扩展白底、尺寸、细节、穿戴、场景和卖点等详情图。",
     productSetMode: "hat",
     requiresApiConfig: true,
   },
   bag: {
     kicker: "套图工作流",
-    title: "包包套图",
-    subtitle: "围绕包包主图生成详情页需要的衍生展示图。",
+    title: "商品微调图",
+    subtitle: "基于商品主图做局部调整、风格延展或展示方式微调，保留主体一致性。",
     productSetMode: "bag",
     requiresApiConfig: true,
   },
   shoulderBagFlat: {
     kicker: "套图工作流",
-    title: "单肩背包平面图",
-    subtitle: "上传平面主图后生成肩带和包身两个结构部位图。",
+    title: "3D转平面",
+    subtitle: "上传 3D 商品图后生成适合电商详情页使用的平面结构部位图。",
     productSetMode: "shoulderBagFlat",
     requiresApiConfig: true,
   },
@@ -71,6 +71,18 @@ const MODULES = {
     title: "提示词提取",
     subtitle: "上传参考图，生成可复用的详细中文生图提示词。",
     requiresApiConfig: true,
+  },
+  playground: {
+    kicker: "工具",
+    title: "自由生图",
+    subtitle: "融合通用生图能力，用于临时创意、参考图编辑和多张候选探索。",
+    requiresApiConfig: true,
+  },
+  fullPlayground: {
+    kicker: "完整工具",
+    title: "GPT Image Playground",
+    subtitle: "完整迁移版图像生成工具，保留原项目的图库、参数、参考图、遮罩和 Agent 工作流。",
+    requiresApiConfig: false,
   },
 };
 const STORAGE_KEY = "imageDesignWorkbench.session.v5";
@@ -110,7 +122,7 @@ const DEFAULT_PROMPTS = {
   main:
     "为一款 3D 印花商品生成电商主图。商品居中展示，图案清晰，材质真实，光线干净，高级商业摄影风格，适合电商平台首图。",
   derived:
-    "基于主图生成一张包包商品衍生图。保留包包主体、颜色、材质和图案细节，按照我的要求调整场景、角度或展示方式，画面干净高级，适合电商详情页。",
+    "基于主图生成一张商品微调图。保留商品主体、颜色、材质和图案细节，按照我的要求调整场景、角度或展示方式，画面干净高级，适合电商详情页。",
   whiteBackground:
     "基于主图保留商品外观、颜色和 3D 印花细节，生成纯白背景电商图。商品完整居中，边缘干净，无多余道具。",
   dimensions:
@@ -124,9 +136,9 @@ const DEFAULT_PROMPTS = {
   sellingPoints:
     "基于主图生成卖点展示图。保留商品外观、颜色和 3D 印花细节，加入清晰卖点标注区域和简洁版式，不添加虚假参数。",
   shoulderBagStrap:
-    "基于上传的单肩背包平面图生成肩带部位图。保留背包颜色、材质、印花和五金细节，突出肩带连接、调节扣、走线和受力结构，画面干净，适合电商详情页。",
+    "基于上传的 3D 商品图生成平面肩带部位图。保留商品颜色、材质、印花和五金细节，突出肩带连接、调节扣、走线和受力结构，画面干净，适合电商详情页。",
   shoulderBagBody:
-    "基于上传的单肩背包平面图生成包身部位图。保留包型、颜色、材质和印花细节，突出包身轮廓、开合结构、边缘工艺和容量区域，画面干净，适合电商详情页。",
+    "基于上传的 3D 商品图生成平面包身部位图。保留包型、颜色、材质和印花细节，突出包身轮廓、开合结构、边缘工艺和容量区域，画面干净，适合电商详情页。",
 };
 
 let state = loadState();
@@ -134,6 +146,7 @@ let imageSetRequest = null;
 let promptExtractionFile = null;
 let promptExtractionPreviewUrl = "";
 let promptExtractionLoading = false;
+let playgroundLoading = false;
 
 function normalizeImageSpec(rawSpec = {}) {
   const mode = rawSpec.mode === "fixed" ? "fixed" : "square";
@@ -260,9 +273,20 @@ function loadState() {
       prompts: { ...DEFAULT_PROMPTS, ...(forceNewSet ? {} : saved.prompts || {}), ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...(forceNewSet ? {} : saved.imageSpec || {}), ...imageSpecParams }),
       images: forceNewSet ? {} : { ...(saved.images || {}) },
+      playground: {
+        mode: saved.playground?.mode === "edit" ? "edit" : "generate",
+        prompt: typeof saved.playground?.prompt === "string" ? saved.playground.prompt : "",
+        count: normalizePlaygroundCount(saved.playground?.count),
+        background: typeof saved.playground?.background === "string" ? saved.playground.background : "",
+        system: typeof saved.playground?.system === "string" ? saved.playground.system : "",
+        referenceImageId: typeof saved.playground?.referenceImageId === "string" ? saved.playground.referenceImageId : "",
+        results: Array.isArray(saved.playground?.results) ? saved.playground.results : [],
+        imageSet: saved.playground?.imageSet || null,
+      },
       imageApiConfig: { ...DEFAULT_IMAGE_API_CONFIG },
       promptApiConfig: { ...DEFAULT_PROMPT_API_CONFIG },
       loading: {},
+      sidebarCollapsed: Boolean(saved.sidebarCollapsed),
     };
   } catch {
     const productSetMode = normalizeProductSetMode(productSetModeParam);
@@ -274,9 +298,11 @@ function loadState() {
       prompts: { ...DEFAULT_PROMPTS, ...promptParams },
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...imageSpecParams }),
       images: {},
+      playground: getDefaultPlaygroundState(),
       imageApiConfig: { ...DEFAULT_IMAGE_API_CONFIG },
       promptApiConfig: { ...DEFAULT_PROMPT_API_CONFIG },
       loading: {},
+      sidebarCollapsed: false,
     };
   }
 }
@@ -292,8 +318,59 @@ function saveState() {
       prompts: state.prompts,
       imageSpec: state.imageSpec,
       images: state.images,
+      playground: state.playground,
+      sidebarCollapsed: Boolean(state.sidebarCollapsed),
     }),
   );
+}
+
+function shouldUseCollapsibleSidebar() {
+  return window.matchMedia("(min-width: 1121px)").matches;
+}
+
+function updateSidebarView() {
+  const appShell = qs(".app-shell");
+  const toggle = qs("#toggleSidebar");
+  const collapsed = Boolean(state.sidebarCollapsed && shouldUseCollapsibleSidebar());
+  appShell.dataset.sidebar = collapsed ? "collapsed" : "expanded";
+  toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  toggle.setAttribute("aria-label", collapsed ? "展开菜单" : "收起菜单");
+  toggle.title = collapsed ? "展开菜单" : "收起菜单";
+}
+
+function setSidebarCollapsed(collapsed, persist = true) {
+  state.sidebarCollapsed = Boolean(collapsed);
+  if (persist) {
+    saveState();
+  }
+  updateSidebarView();
+}
+
+function autoCollapseSidebar() {
+  if (shouldUseCollapsibleSidebar()) {
+    setSidebarCollapsed(true);
+  }
+}
+
+function getDefaultPlaygroundState() {
+  return {
+    mode: "generate",
+    prompt: "",
+    count: 1,
+    background: "",
+    system: "",
+    referenceImageId: "",
+    results: [],
+    imageSet: null,
+  };
+}
+
+function normalizePlaygroundCount(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return 1;
+  }
+  return Math.min(Math.max(parsed, 1), 4);
 }
 
 function updateImageSetView() {
@@ -310,6 +387,17 @@ function updateProductSetModeControl() {
   }
 }
 
+function updateSetupChecklist() {
+  const imageItem = qs('[data-check-item="image"]');
+  const promptItem = qs('[data-check-item="prompt"]');
+  if (imageItem) {
+    imageItem.classList.toggle("complete", Boolean(state.imageApiConfig?.uploaded));
+  }
+  if (promptItem) {
+    promptItem.classList.toggle("complete", Boolean(state.promptApiConfig?.uploaded));
+  }
+}
+
 function isProductModule(moduleName = state.activeModule) {
   return Boolean(MODULES[moduleName]?.productSetMode);
 }
@@ -320,6 +408,9 @@ function moduleHasRequiredConfig(moduleName) {
   }
   if (moduleName === "promptExtractor") {
     return Boolean(state.promptApiConfig?.uploaded);
+  }
+  if (moduleName === "playground") {
+    return Boolean(state.imageApiConfig?.uploaded);
   }
   return true;
 }
@@ -371,8 +462,16 @@ function updateWorkspaceView() {
   const moduleConfig = MODULES[activeModule];
   const isProduct = isProductModule(activeModule);
   const isPromptExtractor = activeModule === "promptExtractor";
+  const isPlayground = activeModule === "playground";
+  const isFullPlayground = activeModule === "fullPlayground";
+  const showsImageSpec = isProduct || isPlayground;
+  const topbar = qs(".topbar");
+  const topbarActions = qs(".topbar-actions");
+  const statusStrip = qs(".status-strip");
   const configPanel = qs("#configCenterPanel");
   const promptPanel = qs("#promptExtractorPanel");
+  const playgroundPanel = qs("#playgroundPanel");
+  const fullPlaygroundPanel = qs("#fullPlaygroundPanel");
   const board = qs("#imageBoard");
   const title = qs("#workspaceTitle");
   const kicker = qs("#workspaceKicker");
@@ -383,22 +482,40 @@ function updateWorkspaceView() {
   const generateMainTop = qs("#generateMainTop");
   const generateAll = qs("#generateAll");
   const downloadAll = qs("#downloadAll");
+  const moreActions = qs("#topbarMoreActions");
 
   title.textContent = moduleConfig.title;
   kicker.textContent = moduleConfig.kicker;
   subtitle.textContent = moduleConfig.subtitle || "";
+  if (topbar) {
+    topbar.hidden = isFullPlayground;
+  }
+  if (topbarActions) {
+    topbarActions.hidden = !showsImageSpec && !isProduct;
+  }
+  if (statusStrip) {
+    statusStrip.hidden = isFullPlayground;
+  }
   configPanel.hidden = activeModule !== "config";
   if (activeModule === "config") {
     updateConfigCenterView();
   }
   promptPanel.hidden = !isPromptExtractor;
+  playgroundPanel.hidden = !isPlayground;
+  fullPlaygroundPanel.hidden = !isFullPlayground;
   board.hidden = !isProduct;
-  specControl.hidden = !isProduct;
+  specControl.hidden = !showsImageSpec;
   imageSetControl.hidden = !isProduct;
   openNewWindow.hidden = !isProduct;
   generateMainTop.hidden = !isProduct || Boolean(getProductSetConfig().mainUploadOnly);
   generateAll.hidden = !isProduct;
   downloadAll.hidden = !isProduct;
+  if (moreActions) {
+    moreActions.hidden = !isProduct;
+    if (!isProduct) {
+      moreActions.open = false;
+    }
+  }
 
   qsa("[data-module]").forEach((item) => {
     const moduleName = item.dataset.module;
@@ -407,6 +524,18 @@ function updateWorkspaceView() {
     item.classList.toggle("locked", Boolean(locked));
     item.setAttribute("aria-current", moduleName === activeModule ? "page" : "false");
   });
+}
+
+function getFullPlaygroundFrame() {
+  return qs("#fullPlaygroundPanel iframe");
+}
+
+function notifyFullPlaygroundConfigChanged() {
+  const frame = getFullPlaygroundFrame();
+  if (!frame?.contentWindow) {
+    return;
+  }
+  frame.contentWindow.postMessage({ type: "image-workbench:config-changed" }, window.location.origin);
 }
 
 function switchActiveModule(moduleName) {
@@ -433,6 +562,9 @@ function switchActiveModule(moduleName) {
   }
   saveState();
   render();
+  requestAnimationFrame(() => {
+    qs("#mainContent")?.focus({ preventScroll: true });
+  });
   setStatus(moduleConfig.title);
 }
 
@@ -467,6 +599,8 @@ function updateApiConfigView() {
     promptInlineStatus.className = promptConfig.uploaded ? "badge ready" : "badge";
     promptInlineStatus.textContent = promptConfig.uploaded ? "已配置" : "未配置";
   }
+
+  updateSetupChecklist();
 }
 
 function setApiConfigMessage(message, kind = "") {
@@ -513,6 +647,115 @@ function openPromptExtractorDialog() {
 
 function closePromptExtractorDialog() {
   setPromptExtractorMessage("");
+}
+
+function setPlaygroundMessage(message, kind = "") {
+  const el = qs("#playgroundMessage");
+  if (!el) {
+    return;
+  }
+  el.textContent = message || "";
+  el.classList.toggle("error", kind === "error");
+  el.classList.toggle("success", kind === "success");
+}
+
+function getReferenceImageOptions() {
+  return TYPES.map((type) => state.images[type]).filter(Boolean);
+}
+
+function getPlaygroundReferenceImage() {
+  return getReferenceImageOptions().find((image) => image.id === state.playground.referenceImageId) || null;
+}
+
+function renderPlaygroundReference() {
+  const wrap = qs("#playgroundReferenceWrap");
+  const preview = qs("#playgroundReferencePreview");
+  const meta = qs("#playgroundReferenceMeta");
+  const select = qs("#playgroundReferenceSelect");
+  const options = getReferenceImageOptions();
+  const referenceImage = getPlaygroundReferenceImage();
+  wrap.hidden = state.playground.mode !== "edit";
+  if (wrap.hidden) {
+    return;
+  }
+  select.innerHTML = options.length
+    ? options
+        .map((image) => `<option value="${image.id}">${image.label || image.type} · ${image.filename || image.id}</option>`)
+        .join("")
+    : `<option value="">暂无可选图片</option>`;
+  select.value = referenceImage?.id || "";
+  if (referenceImage) {
+    preview.innerHTML = "";
+    const img = document.createElement("img");
+    img.src = `${referenceImage.url}?t=${encodeURIComponent(referenceImage.createdAt || "")}`;
+    img.alt = "自由生图参考图";
+    preview.appendChild(img);
+    meta.textContent = `${referenceImage.label || "参考图"} · ${referenceImage.filename || referenceImage.id}`;
+    return;
+  }
+  preview.innerHTML = `
+    <div class="empty-state">
+      <span class="empty-icon" data-icon="image"></span>
+      <span>选择参考图</span>
+    </div>
+  `;
+  meta.textContent = options.length
+    ? "点击下方套图结果可设为参考图"
+    : "当前还没有可用参考图，先在套图工作流生成或上传主图";
+}
+
+function renderPlaygroundResults() {
+  const results = qs("#playgroundResults");
+  const images = Array.isArray(state.playground.results) ? state.playground.results : [];
+  if (playgroundLoading) {
+    results.innerHTML = qs("#spinnerTemplate").innerHTML;
+    return;
+  }
+  if (!images.length) {
+    results.innerHTML = `
+      <div class="empty-state wide">
+        <span class="empty-icon" data-icon="image"></span>
+        <span>等待生成</span>
+      </div>
+    `;
+    return;
+  }
+  results.innerHTML = "";
+  images.forEach((image, index) => {
+    const item = document.createElement("article");
+    item.className = "playground-result";
+    item.innerHTML = `
+      <div class="preview">
+        <img src="${image.url}?t=${encodeURIComponent(image.createdAt || "")}" alt="自由生图结果 ${index + 1}" loading="lazy" />
+      </div>
+      <div class="playground-result-actions">
+        <span class="badge ready">结果 ${index + 1}</span>
+        <button class="icon-button" type="button" title="下载图片" aria-label="下载图片">
+          <span class="icon" data-icon="download"></span>
+        </button>
+      </div>
+    `;
+    item.querySelector("img").addEventListener("click", () => window.open(image.url, "_blank", "noopener"));
+    item.querySelector("button").addEventListener("click", () => {
+      window.location.href = image.downloadUrl;
+    });
+    results.appendChild(item);
+  });
+}
+
+function renderPlayground() {
+  const playground = state.playground || getDefaultPlaygroundState();
+  state.playground = playground;
+  qs("#playgroundPrompt").value = playground.prompt || "";
+  qs("#playgroundCount").value = String(normalizePlaygroundCount(playground.count));
+  qs("#playgroundBackground").value = playground.background || "";
+  qs("#playgroundSystem").value = playground.system || "";
+  qs("#playgroundModeBadge").textContent = playground.mode === "edit" ? "参考图编辑" : "文生图";
+  qsa("[data-playground-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.playgroundMode === playground.mode);
+  });
+  renderPlaygroundReference();
+  renderPlaygroundResults();
 }
 
 function clearPromptExtractionPreviewUrl() {
@@ -623,8 +866,9 @@ function setLoading(type, value) {
   const card = qs(`[data-type="${type}"]`);
   const preview = qs(`[data-preview="${type}"]`);
   card.classList.toggle("loading", value);
+  card.setAttribute("aria-busy", value ? "true" : "false");
   if (value) {
-    preview.innerHTML = qs("#spinnerTemplate").innerHTML;
+    preview.innerHTML = qs("#spinnerTemplate").innerHTML.replace("生成中", `${TYPE_LABELS[type]}生成中`);
   }
   updateControls();
 }
@@ -636,6 +880,49 @@ function imageIsFresh(type) {
   return Boolean(state.images[type]?.sourceMainId && state.images[type].sourceMainId === state.images.main?.id);
 }
 
+function setImageAsReference(type) {
+  const image = state.images[type];
+  if (!image) {
+    return;
+  }
+  state.playground = state.playground || getDefaultPlaygroundState();
+  state.playground.mode = "edit";
+  state.playground.referenceImageId = image.id;
+  state.activeModule = "playground";
+  saveState();
+  render();
+  setStatus(`${TYPE_LABELS[type]}已设为自由生图参考图`);
+}
+
+function getEmptyStateContent(type, isMainReady) {
+  if (type !== "main" && !isMainReady) {
+    return {
+      icon: "lock",
+      title: "需要主图",
+      detail: "先生成或上传主图，再继续生产这张详情图。",
+    };
+  }
+  if (type === "main" && getProductSetConfig().mainUploadOnly) {
+    return {
+      icon: "upload",
+      title: "上传源图",
+      detail: "3D 转平面模式需要先上传商品图作为参考。",
+    };
+  }
+  if (type === "main") {
+    return {
+      icon: "image",
+      title: "准备主图",
+      detail: "填写提示词生成，或上传已有商品图。",
+    };
+  }
+  return {
+    icon: "image",
+    title: "可生成",
+    detail: "检查提示词后点击生成，结果会自动归一化为方图。",
+  };
+}
+
 function renderPreview(type) {
   const preview = qs(`[data-preview="${type}"]`);
   const image = state.images[type];
@@ -644,7 +931,7 @@ function renderPreview(type) {
   preview.classList.toggle("locked", type !== "main" && !isMainReady);
 
   if (state.loading[type]) {
-    preview.innerHTML = qs("#spinnerTemplate").innerHTML;
+    preview.innerHTML = qs("#spinnerTemplate").innerHTML.replace("生成中", `${TYPE_LABELS[type]}生成中`);
     return;
   }
 
@@ -655,16 +942,22 @@ function renderPreview(type) {
     img.alt = TYPE_LABELS[type];
     img.loading = "lazy";
     img.addEventListener("click", () => window.open(image.url, "_blank", "noopener"));
+    img.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      setImageAsReference(type);
+    });
     preview.appendChild(img);
     return;
   }
 
-  const icon = type !== "main" && !isMainReady ? "lock" : "image";
-  const text = type !== "main" && !isMainReady ? "需要主图" : "等待生成";
+  const empty = getEmptyStateContent(type, isMainReady);
   preview.innerHTML = `
     <div class="empty-state">
-      <span class="empty-icon" data-icon="${icon}"></span>
-      <span>${text}</span>
+      <span class="empty-icon" data-icon="${empty.icon}"></span>
+      <span class="empty-copy">
+        <strong>${empty.title}</strong>
+        <small>${empty.detail}</small>
+      </span>
     </div>
   `;
 }
@@ -697,7 +990,7 @@ function updateControls() {
   const hasApiConfig = Boolean(state.imageApiConfig?.uploaded);
   const hasPromptApiConfig = Boolean(state.promptApiConfig?.uploaded);
   const hasMain = Boolean(state.images.main);
-  const anyLoading = Object.values(state.loading).some(Boolean) || promptExtractionLoading;
+  const anyLoading = Object.values(state.loading).some(Boolean) || promptExtractionLoading || playgroundLoading;
   const anyImage = activeTypes.some((type) => Boolean(state.images[type]));
 
   qs("#generateAll").disabled = !hasApiConfig || !hasImageSet || !hasMain || anyLoading;
@@ -712,11 +1005,18 @@ function updateControls() {
   qs("#extractPromptButton").disabled = !hasPromptApiConfig || !promptExtractionFile || promptExtractionLoading;
   qs("#copyExtractedPrompt").disabled =
     promptExtractionLoading || !qs("#extractedPrompt").value.trim();
+  qs("#generatePlayground").disabled = !hasApiConfig || playgroundLoading;
+  qs("#generatePlayground").innerHTML = playgroundLoading
+    ? `<span class="spinner compact"></span>生成中`
+    : `<span class="icon" data-icon="spark"></span>生成图片`;
+  qs("#downloadPlaygroundAll").disabled =
+    playgroundLoading || !(Array.isArray(state.playground?.results) && state.playground.results.length);
 
   for (const type of TYPES) {
     const card = qs(`[data-type="${type}"]`);
     const generateButton = qs(`[data-action="generate"][data-type="${type}"]`);
     const downloadButton = qs(`[data-action="download"][data-type="${type}"]`);
+    const referenceButton = qs(`[data-action="reference"][data-type="${type}"]`);
     const isActive = activeTypes.includes(type);
     const canGenerate =
       hasApiConfig &&
@@ -731,19 +1031,25 @@ function updateControls() {
         ? `<span class="icon" data-icon="spark"></span>${state.images.main ? "重新生成主图" : "生成主图"}`
         : `<span class="icon" data-icon="refresh"></span>${state.images[type] ? "重新生成" : "生成"}`;
     downloadButton.disabled = !isActive || !state.images[type] || anyLoading;
+    if (referenceButton) {
+      referenceButton.disabled = !isActive || !state.images[type] || anyLoading;
+    }
   }
 
   qs("#prompt-main").closest(".prompt-field").hidden = Boolean(config.mainUploadOnly);
 
   updateBadges();
   renderPromptExtractor();
+  renderPlayground();
 }
 
 function render() {
+  updateSidebarView();
   updateImageSetView();
   updateProductSetModeControl();
   updateImageSpecControls();
   updateApiConfigView();
+  updateSetupChecklist();
   updateWorkspaceView();
   for (const type of TYPES) {
     const textarea = qs(`#prompt-${type}`);
@@ -753,6 +1059,94 @@ function render() {
     renderPreview(type);
   }
   updateControls();
+}
+
+function collectPlaygroundInput() {
+  state.playground = state.playground || getDefaultPlaygroundState();
+  state.playground.prompt = qs("#playgroundPrompt").value.trim();
+  state.playground.count = normalizePlaygroundCount(qs("#playgroundCount").value);
+  state.playground.background = qs("#playgroundBackground").value.trim();
+  state.playground.system = qs("#playgroundSystem").value.trim();
+  saveState();
+  return state.playground;
+}
+
+async function generatePlaygroundImages() {
+  if (!state.imageApiConfig?.uploaded) {
+    setPlaygroundMessage("请先保存生图 API Key", "error");
+    setStatus("请先保存生图 API Key");
+    return;
+  }
+  const playground = collectPlaygroundInput();
+  if (!playground.prompt) {
+    setPlaygroundMessage("自由生图提示词不能为空", "error");
+    qs("#playgroundPrompt").focus();
+    return;
+  }
+  if (playground.mode === "edit" && !playground.referenceImageId) {
+    setPlaygroundMessage("参考图编辑需要先选择当前套图中的一张图片", "error");
+    return;
+  }
+
+  playgroundLoading = true;
+  setPlaygroundMessage("");
+  setStatus(playground.mode === "edit" ? "正在按参考图编辑" : "正在自由生图");
+  updateControls();
+  try {
+    const data = await apiPost("/api/playground/images", {
+      mode: playground.mode,
+      prompt: playground.prompt,
+      count: playground.count,
+      background: playground.background,
+      system: playground.system,
+      referenceImageId: playground.referenceImageId,
+      imageSpec: collectImageSpec(),
+    });
+    state.playground.results = data.images || [];
+    state.playground.imageSet = data.imageSet || null;
+    saveState();
+    setPlaygroundMessage(`已生成 ${state.playground.results.length} 张图片`, "success");
+    setStatus("自由生图已完成");
+  } catch (error) {
+    setPlaygroundMessage(error.message, "error");
+    setStatus("自由生图失败");
+  } finally {
+    playgroundLoading = false;
+    render();
+  }
+}
+
+async function downloadPlaygroundAll() {
+  const ids = (state.playground?.results || []).map((image) => image.id).filter(Boolean);
+  if (!ids.length) {
+    return;
+  }
+  setStatus("正在打包自由生图结果");
+  try {
+    const response = await fetch("/api/images/download-all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, imageSetId: state.playground?.imageSet?.id || "" }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.details || data.error || "打包下载失败");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = state.playground?.imageSet?.folderName
+      ? `playground-images-${state.playground.imageSet.folderName}.zip`
+      : "playground-images.zip";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setStatus("自由生图结果已打包下载");
+  } catch (error) {
+    setStatus(error.message);
+  }
 }
 
 async function apiPost(url, payload) {
@@ -901,6 +1295,7 @@ async function uploadApiConfig(event) {
     setApiConfigMessage("API 配置已生效", "success");
     saveState();
     render();
+    notifyFullPlaygroundConfigChanged();
     setStatus("API 配置已生效");
   } catch (error) {
     setApiConfigMessage(error.message, "error");
@@ -942,6 +1337,7 @@ async function uploadPromptApiConfig(event) {
     setPromptApiConfigMessage("提示词 API 配置已生效", "success");
     saveState();
     render();
+    notifyFullPlaygroundConfigChanged();
     setStatus("提示词 API 配置已生效");
   } catch (error) {
     setPromptApiConfigMessage(error.message, "error");
@@ -1302,6 +1698,7 @@ async function clearState() {
     prompts: { ...DEFAULT_PROMPTS },
     imageSpec,
     images: {},
+    playground: { ...getDefaultPlaygroundState(), imageSpec },
     imageApiConfig: state.imageApiConfig || { ...DEFAULT_IMAGE_API_CONFIG },
     promptApiConfig: state.promptApiConfig || { ...DEFAULT_PROMPT_API_CONFIG },
     loading: {},
@@ -1345,6 +1742,7 @@ async function resetGeneratedCache() {
       prompts: { ...DEFAULT_PROMPTS },
       imageSpec,
       images: {},
+      playground: getDefaultPlaygroundState(),
       imageApiConfig: state.imageApiConfig || { ...DEFAULT_IMAGE_API_CONFIG },
       promptApiConfig,
       loading: {},
@@ -1363,7 +1761,25 @@ async function resetGeneratedCache() {
   }
 }
 
+function handleFullPlaygroundMessage(event) {
+  if (event.origin !== window.location.origin || event.source !== getFullPlaygroundFrame()?.contentWindow) {
+    return;
+  }
+  const type = event.data?.type;
+  if (type === "image-workbench:clear-state") {
+    void clearState();
+  } else if (type === "image-workbench:reset-cache") {
+    void resetGeneratedCache();
+  } else if (type === "image-workbench:request-config") {
+    notifyFullPlaygroundConfigChanged();
+  }
+}
+
 function bindEvents() {
+  qsa(".card-message").forEach((message) => {
+    message.setAttribute("aria-live", "polite");
+  });
+
   for (const type of TYPES) {
     qs(`#prompt-${type}`).addEventListener("input", (event) => {
       state.prompts[type] = event.target.value;
@@ -1374,8 +1790,15 @@ function bindEvents() {
   qsa(".nav-item").forEach((button) => {
     button.addEventListener("click", () => {
       switchActiveModule(button.dataset.module);
+      if (button.dataset.module !== "config") {
+        autoCollapseSidebar();
+      }
     });
   });
+  qs("#toggleSidebar").addEventListener("click", () => {
+    setSidebarCollapsed(!state.sidebarCollapsed);
+  });
+  window.addEventListener("resize", updateSidebarView);
   qs("#imageSpecMode").addEventListener("change", () => {
     collectImageSpec();
   });
@@ -1406,12 +1829,33 @@ function bindEvents() {
     event.currentTarget.classList.remove("dragging");
     await selectPromptExtractionImage(event.dataTransfer.files?.[0]);
   });
+  qsa("[data-playground-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.playground = state.playground || getDefaultPlaygroundState();
+      state.playground.mode = button.dataset.playgroundMode === "edit" ? "edit" : "generate";
+      saveState();
+      render();
+    });
+  });
+  qs("#playgroundPrompt").addEventListener("input", collectPlaygroundInput);
+  qs("#playgroundCount").addEventListener("change", collectPlaygroundInput);
+  qs("#playgroundBackground").addEventListener("change", collectPlaygroundInput);
+  qs("#playgroundSystem").addEventListener("input", collectPlaygroundInput);
+  qs("#playgroundReferenceSelect").addEventListener("change", (event) => {
+    state.playground = state.playground || getDefaultPlaygroundState();
+    state.playground.referenceImageId = event.target.value;
+    saveState();
+    renderPlayground();
+  });
+  qs("#generatePlayground").addEventListener("click", generatePlaygroundImages);
+  qs("#downloadPlaygroundAll").addEventListener("click", downloadPlaygroundAll);
   qs("#apiConfigForm").addEventListener("submit", uploadApiConfig);
   qs("#promptApiConfigForm").addEventListener("submit", uploadPromptApiConfig);
   qs("#generateAll").addEventListener("click", generateAllDerived);
   qs("#downloadAll").addEventListener("click", downloadAll);
   qs("#clearState").addEventListener("click", clearState);
   qs("#resetGeneratedCache").addEventListener("click", resetGeneratedCache);
+  window.addEventListener("message", handleFullPlaygroundMessage);
   qs("#openNewWindow").addEventListener("click", openNewImageSetWindow);
   qs("#uploadMainButton").addEventListener("click", () => qs("#uploadMainInput").click());
   qs("#uploadMainInput").addEventListener("change", async (event) => {
@@ -1432,6 +1876,10 @@ function bindEvents() {
 
   qsa("[data-action='download']").forEach((button) => {
     button.addEventListener("click", () => downloadSingle(button.dataset.type));
+  });
+
+  qsa("[data-action='reference']").forEach((button) => {
+    button.addEventListener("click", () => setImageAsReference(button.dataset.type));
   });
 }
 

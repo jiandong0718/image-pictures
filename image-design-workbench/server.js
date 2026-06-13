@@ -8,6 +8,13 @@ const { spawn } = require("child_process");
 const ROOT_DIR = __dirname;
 const PROJECT_ROOT_DIR = path.resolve(ROOT_DIR, "..");
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
+const GPT_IMAGE_PLAYGROUND_BASE_PATH = "/gpt-image-playground/";
+const GPT_IMAGE_PLAYGROUND_DIST_DIR = path.join(
+  ROOT_DIR,
+  "vendor",
+  "gpt-image-playground",
+  "dist",
+);
 const OUTPUT_DIR = path.join(ROOT_DIR, "generated-images", "product-design");
 const EMBEDDED_SKILL_SCRIPT = path.join(
   ROOT_DIR,
@@ -72,6 +79,8 @@ const PROMPT_EXTRACTION_INSTRUCTION =
 const IMAGE_SPEC_MODES = new Set(["square", "fixed"]);
 const MIN_IMAGE_SPEC_SIZE = 256;
 const MAX_IMAGE_SPEC_SIZE = 4096;
+const PLAYGROUND_IMAGE_COUNT_MIN = 1;
+const PLAYGROUND_IMAGE_COUNT_MAX = 4;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const UPLOAD_MIME_EXT = {
   "image/png": "png",
@@ -81,6 +90,11 @@ const UPLOAD_MIME_EXT = {
 };
 
 const IMAGE_TYPES = {
+  playground: {
+    label: "自由生图",
+    prefix: "playground",
+    endpoint: "generations",
+  },
   main: {
     label: "主图",
     prefix: "main",
@@ -141,7 +155,7 @@ const HAT_BATCH_DERIVED_TYPES = [
   "scene",
   "sellingPoints",
 ];
-const DERIVED_TYPES = Object.keys(IMAGE_TYPES).filter((type) => type !== "main");
+const DERIVED_TYPES = Object.keys(IMAGE_TYPES).filter((type) => !["main", "playground"].includes(type));
 const IMAGE_SET_ID_PATTERN = /^\d{3,}$/;
 const IMAGE_FILE_PATTERN = /^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp|gif)$/i;
 let imageSetAllocationQueue = Promise.resolve();
@@ -344,6 +358,16 @@ function getRuntimeImageApiConfigSummary() {
   };
 }
 
+function getRuntimePlaygroundConfig() {
+  return {
+    uploaded: Boolean(runtimeImageApiConfig.apiBase && runtimeImageApiConfig.apiKey),
+    apiBase: runtimeImageApiConfig.apiBase,
+    apiKey: runtimeImageApiConfig.apiKey,
+    model: "gpt-image-2",
+    uploadedAt: runtimeImageApiConfig.uploadedAt,
+  };
+}
+
 function getRuntimePromptApiConfigSummary() {
   return {
     uploaded: Boolean(runtimePromptApiConfig.apiBase && runtimePromptApiConfig.apiKey),
@@ -411,8 +435,53 @@ function buildImageGeneratorEnv(baseEnv = process.env, apiConfig = getRequiredRu
   };
 }
 
-function buildImageGeneratorArgs({ skillScript, prompt, endpoint, outputDir, filenamePrefix, requestSize }) {
-  return [
+function clampInteger(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return fallback;
+  }
+  return Math.min(Math.max(parsed, min), max);
+}
+
+function normalizePlaygroundRequest(rawRequest = {}) {
+  const prompt = cleanPrompt(rawRequest.prompt);
+  if (!prompt) {
+    throw new Error("自由生图提示词不能为空");
+  }
+
+  const mode = rawRequest.mode === "edit" ? "edit" : "generate";
+  const count = clampInteger(
+    rawRequest.count,
+    PLAYGROUND_IMAGE_COUNT_MIN,
+    PLAYGROUND_IMAGE_COUNT_MIN,
+    PLAYGROUND_IMAGE_COUNT_MAX,
+  );
+  const background = cleanPrompt(rawRequest.background);
+  const system = cleanPrompt(rawRequest.system);
+
+  return {
+    mode,
+    prompt,
+    count,
+    background,
+    system,
+    imageSpec: normalizeImageSpec(rawRequest.imageSpec),
+    referenceImageId: cleanPrompt(rawRequest.referenceImageId),
+  };
+}
+
+function buildImageGeneratorArgs({
+  skillScript,
+  prompt,
+  endpoint,
+  outputDir,
+  filenamePrefix,
+  requestSize,
+  count = 1,
+  background = "",
+  system = "",
+}) {
+  const args = [
     skillScript,
     prompt,
     "--endpoint",
@@ -422,11 +491,20 @@ function buildImageGeneratorArgs({ skillScript, prompt, endpoint, outputDir, fil
     "--filename-prefix",
     filenamePrefix,
     "--n",
-    "1",
+    String(clampInteger(count, 1, 1, PLAYGROUND_IMAGE_COUNT_MAX)),
     "--size",
     requestSize,
     "--timeout",
     "180",
+  ];
+  if (background) {
+    args.push("--background", background);
+  }
+  if (system) {
+    args.push("--system", system);
+  }
+  return [
+    ...args,
   ];
 }
 
@@ -1144,14 +1222,23 @@ function parseGeneratedImagePath(stdout) {
   return lines.find((line) => /\.(png|jpg|jpeg|webp|gif)$/i.test(line)) || "";
 }
 
+function parseGeneratedImagePaths(stdout) {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.filter((line) => /\.(png|jpg|jpeg|webp|gif)$/i.test(line));
+}
+
 function makeImageRecord(filePath, type, prompt, sourceMainId = "") {
   const id = makeImageId(filePath);
   const filename = path.basename(filePath);
   const imageSetId = getImageSetIdFromImageId(id);
+  const imageTypeConfig = IMAGE_TYPES[type] || IMAGE_TYPES.playground;
   return {
     id,
     type,
-    label: IMAGE_TYPES[type].label,
+    label: imageTypeConfig.label,
     prompt,
     sourceMainId,
     imageSetId,
@@ -1161,6 +1248,67 @@ function makeImageRecord(filePath, type, prompt, sourceMainId = "") {
     downloadUrl: `/api/images/download/${encodeURIComponent(id)}`,
     createdAt: new Date().toISOString(),
   };
+}
+
+async function generatePlaygroundImages(rawRequest = {}) {
+  const request = normalizePlaygroundRequest(rawRequest);
+  if (!SKILL_SCRIPT || !fs.existsSync(SKILL_SCRIPT)) {
+    throw new Error(
+      `找不到生图脚本：${SKILL_SCRIPT || "未配置"}。` +
+        "请确认 CUSTOM_IMAGE_SKILL_SCRIPT 或 skills/custom-image-generator/scripts/image_generator.py",
+    );
+  }
+
+  const endpoint = request.mode === "edit" ? "edits" : "generations";
+  let sourceMainId = "";
+  let sourcePath = "";
+  if (endpoint === "edits") {
+    if (!request.referenceImageId) {
+      throw new Error("编辑模式需要先选择参考图");
+    }
+    sourcePath = resolveOutputFile(request.referenceImageId);
+    await fsp.access(sourcePath, fs.constants.R_OK);
+    sourceMainId = makeImageId(sourcePath);
+  }
+
+  const imageSet = await allocateImageSet();
+  const outputDir = imageSet.outputDir;
+  const apiConfig = getRequiredRuntimeImageApiConfig();
+  const args = buildImageGeneratorArgs({
+    skillScript: SKILL_SCRIPT,
+    prompt: request.prompt,
+    endpoint,
+    outputDir,
+    filenamePrefix: IMAGE_TYPES.playground.prefix,
+    requestSize: request.imageSpec.requestSize,
+    count: request.count,
+    background: request.background,
+    system: request.system,
+  });
+
+  if (endpoint === "edits") {
+    args.push("--image", sourcePath);
+  }
+
+  const { stdout, stderr } = await runPythonProcess(args, ROOT_DIR, buildImageGeneratorEnv(process.env, apiConfig));
+  const imagePaths = parseGeneratedImagePaths(stdout).filter((filePath) => !filePath.endsWith("-response.json"));
+  if (!imagePaths.length) {
+    throw new Error(stderr || stdout || "生图完成，但没有找到输出图片路径");
+  }
+
+  const images = [];
+  for (const imagePath of imagePaths) {
+    await fsp.access(imagePath, fs.constants.R_OK);
+    try {
+      await normalizeGeneratedImageFile(imagePath, request.imageSpec, IMAGE_TYPES.playground.label);
+    } catch (error) {
+      await fsp.unlink(imagePath).catch(() => {});
+      throw error;
+    }
+    images.push(makeImageRecord(imagePath, "playground", request.prompt, sourceMainId));
+  }
+
+  return { imageSet, images };
 }
 
 async function saveUploadedMain(req, imageSetId, imageSpec = normalizeImageSpec()) {
@@ -1293,7 +1441,7 @@ async function runPythonProcess(args, cwd, env = process.env) {
 async function serveStatic(req, res, pathname) {
   const safePath = pathname === "/" ? "/index.html" : pathname;
   const filePath = path.resolve(PUBLIC_DIR, `.${safePath}`);
-  if (!filePath.startsWith(path.resolve(PUBLIC_DIR))) {
+  if (!isPathInside(PUBLIC_DIR, filePath)) {
     sendError(res, 403, "禁止访问");
     return;
   }
@@ -1309,6 +1457,67 @@ async function serveStatic(req, res, pathname) {
   } catch (error) {
     sendError(res, 404, "页面资源不存在");
   }
+}
+
+function isPathInside(rootDir, candidatePath) {
+  const root = path.resolve(rootDir);
+  const candidate = path.resolve(candidatePath);
+  const relative = path.relative(root, candidate);
+  return Boolean(relative && !relative.startsWith("..") && !path.isAbsolute(relative)) || relative === "";
+}
+
+async function serveStaticFromDir(res, rootDir, relativePath, fallbackFile = "") {
+  const safeRelativePath = relativePath.replace(/^\/+/, "") || "index.html";
+  let filePath = path.resolve(rootDir, safeRelativePath);
+  if (!isPathInside(rootDir, filePath)) {
+    sendError(res, 403, "禁止访问");
+    return;
+  }
+
+  try {
+    const stat = await fsp.stat(filePath);
+    if (stat.isDirectory()) {
+      filePath = path.join(filePath, "index.html");
+    }
+    const data = await fsp.readFile(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, {
+      "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
+      "Cache-Control": "no-cache",
+    });
+    res.end(data);
+  } catch (error) {
+    if (fallbackFile) {
+      const fallbackPath = path.resolve(rootDir, fallbackFile);
+      if (!isPathInside(rootDir, fallbackPath)) {
+        sendError(res, 403, "禁止访问");
+        return;
+      }
+      try {
+        const data = await fsp.readFile(fallbackPath);
+        res.writeHead(200, {
+          "Content-Type": MIME_TYPES[path.extname(fallbackPath).toLowerCase()] || "text/html; charset=utf-8",
+          "Cache-Control": "no-cache",
+        });
+        res.end(data);
+        return;
+      } catch (fallbackError) {
+        sendError(res, 404, "页面资源不存在", fallbackError.message);
+        return;
+      }
+    }
+    sendError(res, 404, "页面资源不存在", error.message);
+  }
+}
+
+async function serveGptImagePlayground(req, res, pathname) {
+  if (!fs.existsSync(GPT_IMAGE_PLAYGROUND_DIST_DIR)) {
+    sendError(res, 503, "GPT Image Playground 尚未构建", "请先在 vendor/gpt-image-playground 下运行 npm run build");
+    return;
+  }
+
+  const relativePath = pathname.slice(GPT_IMAGE_PLAYGROUND_BASE_PATH.length);
+  await serveStaticFromDir(res, GPT_IMAGE_PLAYGROUND_DIST_DIR, relativePath, "index.html");
 }
 
 async function serveImage(req, res, id, attachment) {
@@ -1457,6 +1666,14 @@ async function handleApi(req, res, pathname, searchParams) {
     sendJson(res, 200, {
       ok: true,
       config: getRuntimeImageApiConfigSummary(),
+    });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/playground-config") {
+    sendJson(res, 200, {
+      ok: true,
+      config: getRuntimePlaygroundConfig(),
     });
     return;
   }
@@ -1659,6 +1876,32 @@ async function handleApi(req, res, pathname, searchParams) {
     return;
   }
 
+  if (req.method === "POST" && pathname === "/api/playground/images") {
+    const payload = await readJson(req);
+    try {
+      getRequiredRuntimeImageApiConfig();
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+    try {
+      const result = await generatePlaygroundImages(payload);
+      sendJson(res, 200, {
+        ok: true,
+        imageSet: result.imageSet,
+        images: result.images,
+      });
+    } catch (error) {
+      const message = error.message || "自由生图失败";
+      const statusCode =
+        message.includes("提示词") || message.includes("参考图") || message.includes("不存在")
+          ? 400
+          : 502;
+      sendError(res, statusCode, "自由生图失败", message);
+    }
+    return;
+  }
+
   if (req.method === "POST" && pathname === "/api/images/download-all") {
     const payload = await readJson(req);
     const ids = Array.isArray(payload.ids) ? payload.ids : [];
@@ -1692,6 +1935,15 @@ const server = http.createServer(async (req, res) => {
       await handleApi(req, res, url.pathname, url.searchParams);
       return;
     }
+    if (url.pathname === GPT_IMAGE_PLAYGROUND_BASE_PATH.slice(0, -1)) {
+      res.writeHead(302, { Location: GPT_IMAGE_PLAYGROUND_BASE_PATH });
+      res.end();
+      return;
+    }
+    if (url.pathname.startsWith(GPT_IMAGE_PLAYGROUND_BASE_PATH)) {
+      await serveGptImagePlayground(req, res, url.pathname);
+      return;
+    }
     await serveStatic(req, res, url.pathname);
   } catch (error) {
     sendError(res, 500, error.message || "服务处理失败");
@@ -1708,6 +1960,8 @@ module.exports = {
   PREFERRED_IMAGE_HEIGHT,
   PREFERRED_IMAGE_SIZE,
   PREFERRED_IMAGE_WIDTH,
+  GPT_IMAGE_PLAYGROUND_BASE_PATH,
+  GPT_IMAGE_PLAYGROUND_DIST_DIR,
   REQUIRED_IMAGE_RATIO,
   assertImageSpecDimensions,
   buildApiEndpoint,
@@ -1730,7 +1984,9 @@ module.exports = {
   getRuntimePromptApiConfigSummary,
   normalizeImageApiConfig,
   normalizeImageSpec,
+  normalizePlaygroundRequest,
   normalizePromptApiConfig,
+  parseGeneratedImagePaths,
   normalizeGeneratedImageFile,
   parsePromptExtractionResponse,
   readImageDimensions,

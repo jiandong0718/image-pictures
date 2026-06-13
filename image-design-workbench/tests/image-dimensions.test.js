@@ -5,6 +5,8 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  GPT_IMAGE_PLAYGROUND_BASE_PATH,
+  GPT_IMAGE_PLAYGROUND_DIST_DIR,
   assertImageSpecDimensions,
   buildApiEndpoint,
   buildImageGeneratorArgs,
@@ -25,7 +27,9 @@ const {
   getRuntimePromptApiConfigSummary,
   normalizeImageApiConfig,
   normalizeImageSpec,
+  normalizePlaygroundRequest,
   normalizePromptApiConfig,
+  parseGeneratedImagePaths,
   parsePromptExtractionResponse,
   readImageDimensions,
   setRuntimeImageApiConfig,
@@ -67,6 +71,13 @@ test("reads image dimensions from supported headers", () => {
   assert.deepEqual(readImageDimensions(makePng(1024, 1024)), { width: 1024, height: 1024 });
   assert.deepEqual(readImageDimensions(makeGif(800, 600)), { width: 800, height: 600 });
   assert.deepEqual(readImageDimensions(makeJpeg(1200, 900)), { width: 1200, height: 900 });
+});
+
+test("exposes built GPT Image Playground under a stable subpath", async () => {
+  assert.equal(GPT_IMAGE_PLAYGROUND_BASE_PATH, "/gpt-image-playground/");
+  const indexPath = path.join(GPT_IMAGE_PLAYGROUND_DIST_DIR, "index.html");
+  const indexHtml = await fs.readFile(indexPath, "utf8");
+  assert.match(indexHtml, /<div id="root"><\/div>/);
 });
 
 test("accepts any square image in square mode", () => {
@@ -179,6 +190,105 @@ test("supports product-specific derived image types without changing the default
     "shoulderBagBody",
   ]);
   assert.throws(() => getBatchDerivedTypes(["shoulderBagStrap", "unknown"]), /未知衍生图类型/);
+});
+
+test("normalizes playground requests with bounded count and image spec", () => {
+  assert.deepEqual(
+    normalizePlaygroundRequest({
+      prompt: "  生成一张商品图  ",
+      count: 9,
+      imageSpec: { mode: "fixed", size: 1200 },
+    }),
+    {
+      mode: "generate",
+      prompt: "生成一张商品图",
+      count: 4,
+      background: "",
+      system: "",
+      imageSpec: {
+        mode: "fixed",
+        size: 1200,
+        requestSize: "1200x1200",
+        ratio: "1:1",
+      },
+      referenceImageId: "",
+    },
+  );
+  assert.deepEqual(
+    normalizePlaygroundRequest({
+      mode: "edit",
+      prompt: "调整背景",
+      count: 2,
+      background: "transparent",
+      system: "保留主体",
+      referenceImageId: "001/main-test.png",
+    }),
+    {
+      mode: "edit",
+      prompt: "调整背景",
+      count: 2,
+      background: "transparent",
+      system: "保留主体",
+      imageSpec: {
+        mode: "square",
+        size: 1024,
+        requestSize: "1024x1024",
+        ratio: "1:1",
+      },
+      referenceImageId: "001/main-test.png",
+    },
+  );
+  assert.throws(() => normalizePlaygroundRequest({ prompt: "" }), /自由生图提示词不能为空/);
+});
+
+test("builds image generator args with optional playground parameters", () => {
+  assert.deepEqual(
+    buildImageGeneratorArgs({
+      skillScript: "/tmp/image_generator.py",
+      prompt: "商品图",
+      endpoint: "generations",
+      outputDir: "/tmp/out",
+      filenamePrefix: "playground",
+      requestSize: "1024x1024",
+      count: 3,
+      background: "transparent",
+      system: "不要文字",
+    }),
+    [
+      "/tmp/image_generator.py",
+      "商品图",
+      "--endpoint",
+      "generations",
+      "--output-dir",
+      "/tmp/out",
+      "--filename-prefix",
+      "playground",
+      "--n",
+      "3",
+      "--size",
+      "1024x1024",
+      "--timeout",
+      "180",
+      "--background",
+      "transparent",
+      "--system",
+      "不要文字",
+    ],
+  );
+});
+
+test("parses multiple generated image paths from generator output", () => {
+  assert.deepEqual(
+    parseGeneratedImagePaths(
+      [
+        "[OK] endpoint=generations images=2",
+        "/tmp/out/playground-20260101-01.png",
+        "/tmp/out/playground-20260101-02.webp",
+        "/tmp/out/playground-20260101-response.json",
+      ].join("\n"),
+    ),
+    ["/tmp/out/playground-20260101-01.png", "/tmp/out/playground-20260101-02.webp"],
+  );
 });
 
 test("requires uploaded runtime image API config", () => {
