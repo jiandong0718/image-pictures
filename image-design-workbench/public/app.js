@@ -628,7 +628,9 @@ function updateImageSetView() {
 function updateProductSetModeControl() {
   const board = qs("#imageBoard");
   if (board) {
-    board.dataset.productSet = normalizeProductSetMode(state.productSetMode);
+    const productSetMode = normalizeProductSetMode(state.productSetMode);
+    board.dataset.productSet = productSetMode;
+    board.classList.toggle("bag-workbench", productSetMode === "bag");
   }
 }
 

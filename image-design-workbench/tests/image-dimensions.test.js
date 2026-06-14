@@ -355,6 +355,38 @@ test("normalizes runtime image API config without exposing the key in summaries"
   assert.equal(runtimeConfig.uploadedAt, summary.uploadedAt);
 });
 
+test("loads runtime image API config from env files at startup", async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "image-workbench-env-"));
+  const serverCopyPath = path.join(tmpDir, "server.js");
+  const rootEnvPath = path.join(tmpDir, ".env");
+  const skillsDir = path.join(tmpDir, "skills", "custom-image-generator");
+  await fs.mkdir(skillsDir, { recursive: true });
+  await fs.copyFile(path.join(__dirname, "..", "server.js"), serverCopyPath);
+  await fs.writeFile(
+    rootEnvPath,
+    [
+      "CUSTOM_IMAGE_API_BASE=https://env.example/v1",
+      "CUSTOM_IMAGE_API_KEY=env-secret-key",
+    ].join("\n"),
+  );
+
+  const { spawnSync } = require("node:child_process");
+  const script = `
+    process.env.CUSTOM_IMAGE_API_BASE = "";
+    process.env.CUSTOM_IMAGE_API_KEY = "";
+    const server = require(${JSON.stringify(serverCopyPath)});
+    console.log(JSON.stringify(server.getRuntimeImageApiConfigSummary()));
+  `;
+  const result = spawnSync(process.execPath, ["-e", script], {
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0);
+  const summary = JSON.parse(result.stdout.trim());
+  assert.equal(summary.uploaded, true);
+  assert.equal(summary.hasApiKey, true);
+});
+
 test("rejects invalid runtime image API config", () => {
   assert.throws(() => normalizeImageApiConfig({ apiKey: "" }), /API Key 不能为空/);
   assert.throws(() => normalizeImageApiConfig({}), /API Key 不能为空/);

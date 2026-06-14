@@ -269,6 +269,10 @@ h2 {
   flex: 0 0 auto;
 }
 
+.topbar-download-all {
+  min-width: 148px;
+}
+
 .topbar-settings,
 .topbar-primary-actions {
   display: flex;
@@ -880,6 +884,95 @@ textarea:focus-visible {
   line-height: 1.55;
 }
 
+.app-shell[data-module="bag"] .product-toolbar {
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.app-shell[data-module="bag"] .product-toolbar-head {
+  align-items: center;
+}
+
+.app-shell[data-module="bag"] .product-toolbar-head h2 {
+  margin-top: 2px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.app-shell[data-module="bag"] .product-toolbar-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(176px, 200px);
+  gap: 10px;
+}
+
+.app-shell[data-module="bag"] .image-spec-panel {
+  grid-template-columns: minmax(220px, 0.82fr) minmax(320px, 1.18fr);
+  gap: 10px;
+}
+
+.app-shell[data-module="bag"] .image-spec-group {
+  gap: 8px;
+  padding: 10px;
+}
+
+.app-shell[data-module="bag"] .image-spec-group-head {
+  gap: 2px;
+}
+
+.app-shell[data-module="bag"] .image-spec-group-head small {
+  display: none;
+}
+
+.app-shell[data-module="bag"] .spec-chip-row,
+.app-shell[data-module="bag"] .spec-ratio-grid {
+  gap: 6px;
+}
+
+.app-shell[data-module="bag"] .spec-chip,
+.app-shell[data-module="bag"] .spec-ratio-card {
+  min-height: 34px;
+}
+
+.app-shell[data-module="bag"] .spec-chip {
+  padding: 0 10px;
+}
+
+.app-shell[data-module="bag"] .spec-custom-ratio {
+  gap: 8px;
+  padding-top: 0;
+}
+
+.app-shell[data-module="bag"] .spec-inline-field {
+  gap: 5px;
+}
+
+.app-shell[data-module="bag"] .spec-inline-field input {
+  height: 36px;
+}
+
+.app-shell[data-module="bag"] .product-toolbar-actions {
+  gap: 8px;
+  padding: 10px;
+}
+
+.app-shell[data-module="bag"] .product-toolbar-actions .button {
+  min-height: 38px;
+}
+
+.app-shell[data-module="bag"] .product-toolbar-note {
+  line-height: 1.35;
+}
+
+.app-shell[data-module="bag"] .topbar-actions {
+  align-items: center;
+}
+
+.app-shell[data-module="bag"] .topbar-download-all {
+  color: var(--primary-dark);
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+
 .section-head {
   display: flex;
   align-items: flex-start;
@@ -1432,7 +1525,9 @@ textarea:focus-visible {
 }
 
 .board[data-product-set="bag"] {
-  grid-template-columns: minmax(340px, 420px) minmax(440px, 1fr);
+  grid-template-columns: minmax(360px, 0.84fr) minmax(620px, 1.16fr);
+  gap: 12px;
+  align-items: start;
 }
 
 .board[data-product-set="hat"] {
@@ -1470,8 +1565,14 @@ textarea:focus-visible {
 }
 
 .board[data-product-set="bag"] .main-card {
-  gap: 14px;
+  gap: 10px;
+  min-width: 0;
+  height: auto;
   grid-row: auto;
+}
+
+.app-shell[data-module="bag"] .image-card {
+  padding: 12px;
 }
 
 .board[data-product-set="shoulderBagFlat"] .main-card {
@@ -1494,19 +1595,34 @@ textarea:focus-visible {
 
 .app-shell[data-module="bag"] .main-card-shell {
   grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
+  grid-template-rows: auto auto auto;
+  gap: 10px;
+}
+
+#imageBoard[data-product-set="bag"] .main-card .main-card-shell {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+#imageBoard[data-product-set="bag"] .main-card-stage,
+#imageBoard[data-product-set="bag"] .main-card-editor,
+#imageBoard[data-product-set="bag"] .main-card-action-panel {
+  grid-column: 1;
 }
 
 .app-shell[data-module="bag"] .main-card-stage {
-  gap: 10px;
+  gap: 8px;
 }
 
 .app-shell[data-module="bag"] .main-card-stage .preview {
   max-width: 100%;
+  min-height: clamp(260px, 46vh, 520px);
+  max-height: 560px;
+  aspect-ratio: 4 / 5;
 }
 
 .app-shell[data-module="bag"] .main-card-editor {
-  padding: 14px;
+  padding: 12px;
   background: linear-gradient(180deg, #f7fbfa, #f1f7f5);
 }
 
@@ -1563,26 +1679,34 @@ textarea:focus-visible {
 }
 
 .app-shell[data-module="bag"] .main-card .main-card-editor textarea {
-  min-height: 220px;
+  min-height: clamp(112px, 16vh, 150px);
+  max-height: 170px;
 }
 
 .app-shell[data-module="bag"] .main-card-action-panel {
   grid-column: 1;
-  padding: 14px;
+  padding: 12px;
   background: linear-gradient(180deg, #f7fbfa, #f8fbfd);
 }
 
 .app-shell[data-module="bag"] .main-card-action-panel .card-actions {
-  grid-template-columns: 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .app-shell[data-module="bag"] .main-card-action-panel .button.primary.full {
   min-width: 0;
 }
 
+.app-shell[data-module="bag"] .main-card-action-panel .main-card-meta-actions {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(44px, 0.32fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
 .app-shell[data-module="bag"] .main-card-action-panel .card-message {
-  min-height: 64px;
+  min-height: 28px;
+  padding: 8px 10px;
 }
 
 .main-card-action-panel {
@@ -1727,17 +1851,33 @@ textarea:focus-visible {
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) {
-  grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 14px;
-  min-height: 520px;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.95fr) minmax(0, 1.05fr);
+  grid-template-rows: auto auto auto auto;
+  gap: 12px 16px;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  align-content: start;
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-head,
-#imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-message,
 #imageBoard[data-product-set="shoulderBagFlat"] .image-card:not(.main-card) .card-head,
 #imageBoard[data-product-set="shoulderBagFlat"] .image-card:not(.main-card) .card-message {
   grid-column: 1 / -1;
+}
+
+#imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+#imageBoard[data-product-set="bag"] .image-card:not(.main-card) .badge {
+  justify-self: end;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .preview,
@@ -1748,8 +1888,10 @@ textarea:focus-visible {
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .preview {
   grid-column: 1;
   grid-row: 2;
-  min-height: 220px;
-  align-self: start;
+  min-height: clamp(220px, 36vh, 360px);
+  max-height: 380px;
+  aspect-ratio: 4 / 3;
+  align-self: stretch;
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .prompt-field,
@@ -1759,12 +1901,18 @@ textarea:focus-visible {
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .prompt-field {
+  grid-column: 2;
   grid-row: 2;
+  min-width: 0;
+  align-self: stretch;
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-actions {
-  grid-column: 1 / -1;
+  grid-column: 2;
   grid-row: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  align-items: center;
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) textarea,
@@ -1774,9 +1922,10 @@ textarea:focus-visible {
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) textarea {
-  min-height: 220px;
+  min-height: clamp(220px, 36vh, 360px);
   max-height: none;
   height: 100%;
+  resize: vertical;
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .prompt-field {
@@ -1785,16 +1934,23 @@ textarea:focus-visible {
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-actions {
   gap: 8px;
-  align-items: flex-start;
+  align-items: center;
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .reference-action {
-  min-height: 36px;
-  padding: 0 8px;
+  grid-column: 1 / -1;
+  min-height: 42px;
+  padding: 0 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-message {
-  min-height: 24px;
+  grid-column: 2;
+  grid-row: 4;
+  min-height: 28px;
+  padding: 0 2px;
 }
 
 .card-head {
@@ -2122,9 +2278,29 @@ textarea:focus {
   }
 
   .main-card-shell,
-  .board[data-product-set="bag"] .main-card .main-card-shell,
   .board[data-product-set="shoulderBagFlat"] .main-card .main-card-shell {
     grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  }
+
+  .board[data-product-set="bag"] {
+    grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.22fr);
+    gap: 10px;
+  }
+
+  .board[data-product-set="bag"] .main-card {
+    grid-column: auto;
+  }
+
+  .board[data-product-set="bag"] .main-card .main-card-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .board[data-product-set="bag"] .main-card-action-panel {
+    grid-column: 1 / -1;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) {
+    grid-template-columns: minmax(200px, 0.92fr) minmax(0, 1.08fr);
   }
 
   .main-card-action-panel {
@@ -2145,6 +2321,48 @@ textarea:focus {
 
   .board[data-product-set="hat"] .image-card:not(.main-card) {
     grid-template-columns: minmax(132px, 156px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .app-shell[data-module="bag"] .product-toolbar-grid,
+  .app-shell[data-module="bag"] .image-spec-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell[data-module="bag"] .product-toolbar-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .preview,
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .prompt-field,
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-message {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .preview {
+    min-height: 220px;
+    max-height: none;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) textarea {
+    min-height: 180px;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-actions {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -2277,6 +2495,8 @@ textarea:focus {
   #imageBoard[data-product-set="bag"] .image-card:not(.main-card),
   #imageBoard[data-product-set="shoulderBagFlat"] .image-card:not(.main-card) {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
   }
 
   .board[data-product-set="hat"] .image-card:not(.main-card) .prompt-field {
@@ -2297,6 +2517,21 @@ textarea:focus {
   #imageBoard[data-product-set="shoulderBagFlat"] .image-card:not(.main-card) .prompt-field,
   #imageBoard[data-product-set="shoulderBagFlat"] .image-card:not(.main-card) .card-actions {
     grid-column: 1;
+    grid-row: auto;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .preview {
+    grid-column: 1;
+    grid-row: auto;
+    min-height: 170px;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) .card-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #imageBoard[data-product-set="bag"] .image-card:not(.main-card) textarea {
+    min-height: 150px;
   }
 
   .prompt-extractor-grid {

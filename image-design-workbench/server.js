@@ -174,7 +174,7 @@ const IMAGE_FILE_PATTERN = /^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp|gif)$/i;
 let imageSetAllocationQueue = Promise.resolve();
 let runtimeImageApiConfig = {
   apiBase: FIXED_IMAGE_API_BASE,
-  apiKey: "",
+  apiKey: resolveImageApiKey(),
   uploadedAt: "",
 };
 let runtimePromptApiConfig = {
@@ -307,6 +307,14 @@ function resolveFixedImageApiBase() {
     readEnvValueFromFile(path.join(ROOT_DIR, ".env"), IMAGE_API_BASE_ENV_KEY) ||
     readEnvValueFromFile(path.join(PROJECT_ROOT_DIR, "skills", "custom-image-generator", ".env"), IMAGE_API_BASE_ENV_KEY) ||
     FALLBACK_IMAGE_API_BASE
+  );
+}
+
+function resolveImageApiKey() {
+  return (
+    cleanPrompt(process.env[IMAGE_API_KEY_ENV_KEY] || "") ||
+    readEnvValueFromFile(path.join(ROOT_DIR, ".env"), IMAGE_API_KEY_ENV_KEY) ||
+    readEnvValueFromFile(path.join(PROJECT_ROOT_DIR, "skills", "custom-image-generator", ".env"), IMAGE_API_KEY_ENV_KEY)
   );
 }
 

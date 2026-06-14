@@ -65,25 +65,17 @@
             <p id="workspaceSubtitle">保存 API Key 后解锁所有生产模块。</p>
           </div>
           <div class="topbar-actions">
-            <details class="topbar-more" id="topbarMoreActions">
-              <summary class="button more-summary">
-                <span class="icon" data-icon="settings"></span>
-                更多
-              </summary>
-              <div class="more-menu">
-                <button class="button" id="openNewWindow" type="button">
-                  <span class="icon" data-icon="window"></span>
-                  新套图窗口
-                </button>
-                <button class="button ghost" id="downloadAll" type="button" disabled>
-                  <span class="icon" data-icon="download"></span>
-                  下载全部
-                </button>
-                <button class="button ghost" id="clearState" type="button">
-                  清空页面
-                </button>
-              </div>
-            </details>
+            <button class="button ghost topbar-download-all" id="downloadAll" type="button" disabled>
+              <span class="icon" data-icon="download"></span>
+              下载全部
+            </button>
+            <button class="button" id="openNewWindow" type="button">
+              <span class="icon" data-icon="window"></span>
+              新套图窗口
+            </button>
+            <button class="button ghost" id="clearState" type="button">
+              清空页面
+            </button>
           </div>
         </header>
 
