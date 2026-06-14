@@ -1436,7 +1436,7 @@ export default function SettingsModal() {
                 <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-500/15 dark:bg-blue-500/10">
                   <div className="mb-1 text-sm font-semibold text-blue-700 dark:text-blue-300">跟随工作台全局配置</div>
                   <div data-selectable-text className="text-[13px] leading-relaxed text-blue-700/75 dark:text-blue-200/75">
-                    完整 Playground 已使用左侧工作台「配置中心」保存的生图 API。需要更换 Key 时，请回到工作台配置中心修改；这里不再维护第二套 API 配置。
+                    绘图聚集地已使用左侧工作台「配置中心」保存的生图 API。需要更换 Key 时，请回到工作台配置中心修改；这里不再维护第二套 API 配置。
                   </div>
                 </div>
                 <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-white/[0.06] dark:bg-white/[0.02]">
@@ -2077,7 +2077,7 @@ export default function SettingsModal() {
                   <div className="mb-5 flex h-[88px] w-[88px] items-center justify-center rounded-full border border-gray-200/80 bg-gray-50/50 text-gray-800 transition-colors group-hover:bg-gray-100 dark:border-white/[0.08] dark:bg-white/[0.02] dark:text-gray-100 dark:group-hover:bg-white/[0.06]">
                     <GithubIcon className="h-11 w-11" />
                   </div>
-                  <h4 className="text-[17px] font-bold text-gray-800 dark:text-gray-100">GPT Image Playground</h4>
+                  <h4 className="text-[17px] font-bold text-gray-800 dark:text-gray-100">绘图聚集地</h4>
                   <p className="mt-1.5 text-[13px] text-gray-500 transition-colors group-hover:text-gray-700 dark:text-gray-400 dark:group-hover:text-gray-300">
                     @CookSleep
                   </p>

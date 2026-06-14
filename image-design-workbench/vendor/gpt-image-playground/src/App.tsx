@@ -122,6 +122,9 @@ export default function App() {
   useEffect(() => {
     if (!isEmbeddedInWorkbench()) return
 
+    document.documentElement.classList.add('workbench-embed')
+    document.documentElement.classList.remove('theme-dark')
+
     let disposed = false
     const syncConfig = async () => {
       const config = await fetchWorkbenchPlaygroundConfig()
@@ -140,6 +143,7 @@ export default function App() {
 
     return () => {
       disposed = true
+      document.documentElement.classList.remove('workbench-embed')
       window.removeEventListener('message', handleMessage)
     }
   }, [])

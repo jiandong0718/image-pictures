@@ -52,7 +52,7 @@
           </button>
           <button class="nav-item" data-module="fullPlayground" type="button">
             <span class="icon" data-icon="window"></span>
-            <span>完整 Playground</span>
+            <span>绘图聚集地</span>
           </button>
         </nav>
       </aside>
@@ -65,35 +65,6 @@
             <p id="workspaceSubtitle">保存 API Key 后解锁所有生产模块。</p>
           </div>
           <div class="topbar-actions">
-            <div class="topbar-settings">
-              <div class="spec-control" id="imageSpecControl" aria-label="图片规格">
-                <label>
-                  <span>图片规格</span>
-                  <select id="imageSpecMode">
-                    <option value="square">1:1 方图</option>
-                    <option value="fixed">固定边长</option>
-                  </select>
-                </label>
-                <label>
-                  <span>请求边长</span>
-                  <input id="imageSpecSize" type="number" min="256" max="4096" step="1" value="1024" />
-                </label>
-              </div>
-              <div class="fixed-size" id="imageSetControl" aria-label="当前套图">
-                <span>当前套图</span>
-                <strong id="imageSetName">--</strong>
-              </div>
-            </div>
-            <div class="topbar-primary-actions" aria-label="主要操作">
-              <button class="button primary" id="generateMainTop" type="button">
-                <span class="icon" data-icon="spark"></span>
-                生成主图
-              </button>
-              <button class="button" id="generateAll" type="button" disabled>
-                <span class="icon" data-icon="layers"></span>
-                生成六张衍生图
-              </button>
-            </div>
             <details class="topbar-more" id="topbarMoreActions">
               <summary class="button more-summary">
                 <span class="icon" data-icon="settings"></span>
@@ -108,19 +79,85 @@
                   <span class="icon" data-icon="download"></span>
                   下载全部
                 </button>
+                <button class="button ghost" id="clearState" type="button">
+                  清空页面
+                </button>
               </div>
             </details>
           </div>
         </header>
 
         <main class="workspace-main" id="mainContent" tabindex="-1">
-        <section class="status-strip" aria-live="polite">
-          <div>
-            <span class="status-dot"></span>
-            <span id="globalStatus">准备就绪</span>
+        <p class="sr-only" id="globalStatus" aria-live="polite">准备就绪</p>
+
+        <section class="product-toolbar panel-view" id="productToolbar" hidden>
+          <div class="product-toolbar-head">
+            <div>
+              <p class="card-kicker">工作区控制</p>
+              <h2>输出规格与批量操作</h2>
+            </div>
+            <div class="fixed-size compact" id="imageSetControl" aria-label="当前套图">
+              <span>当前套图</span>
+              <strong id="imageSetName">--</strong>
+            </div>
           </div>
-          <div class="status-actions">
-            <button class="text-button" id="clearState" type="button">清空页面</button>
+          <div class="product-toolbar-grid">
+            <section class="image-spec-panel" id="imageSpecControl" aria-label="图片规格">
+              <div class="image-spec-group">
+                <div class="image-spec-group-head">
+                  <span>基准分辨率</span>
+                  <small>以长边作为输出基准，可选预设或手动输入。</small>
+                </div>
+                <div class="spec-chip-row" role="group" aria-label="基准分辨率">
+                  <button class="spec-chip" data-image-size-preset="1k" type="button">1K</button>
+                  <button class="spec-chip" data-image-size-preset="2k" type="button">2K</button>
+                  <button class="spec-chip" data-image-size-preset="4k" type="button">4K</button>
+                  <button class="spec-chip ghost" id="imageSpecCustomSizeButton" type="button">自定义</button>
+                </div>
+                <label class="spec-inline-field" id="imageSpecCustomSizeWrap">
+                  <span>自定义长边</span>
+                  <input id="imageSpecCustomSize" type="number" min="256" max="4096" step="1" value="1024" />
+                </label>
+              </div>
+
+              <div class="image-spec-group">
+                <div class="image-spec-group-head">
+                  <span>图像比例</span>
+                  <small>支持常用横竖版比例，也可以自定义宽高比。</small>
+                </div>
+                <div class="spec-ratio-grid" role="group" aria-label="图像比例">
+                  <button class="spec-ratio-card" data-image-ratio-preset="1:1" type="button">1:1</button>
+                  <button class="spec-ratio-card" data-image-ratio-preset="3:2" type="button">3:2</button>
+                  <button class="spec-ratio-card" data-image-ratio-preset="2:3" type="button">2:3</button>
+                  <button class="spec-ratio-card" data-image-ratio-preset="16:9" type="button">16:9</button>
+                  <button class="spec-ratio-card" data-image-ratio-preset="9:16" type="button">9:16</button>
+                  <button class="spec-ratio-card" data-image-ratio-preset="4:3" type="button">4:3</button>
+                  <button class="spec-ratio-card" data-image-ratio-preset="3:4" type="button">3:4</button>
+                  <button class="spec-ratio-card" data-image-ratio-preset="21:9" type="button">21:9</button>
+                </div>
+                <div class="spec-custom-ratio">
+                  <button class="spec-chip ghost" id="imageSpecCustomRatioButton" type="button">自定义比例</button>
+                  <div class="spec-custom-ratio-fields" id="imageSpecCustomRatioWrap">
+                    <label class="spec-inline-field">
+                      <span>宽</span>
+                      <input id="imageSpecCustomRatioWidth" type="number" min="1" max="99" step="1" value="1" />
+                    </label>
+                    <label class="spec-inline-field">
+                      <span>高</span>
+                      <input id="imageSpecCustomRatioHeight" type="number" min="1" max="99" step="1" value="1" />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <aside class="product-toolbar-actions" aria-label="批量操作">
+              <button class="button" id="generateAll" type="button" disabled>
+                <span class="icon" data-icon="layers"></span>
+                生成六张衍生图
+              </button>
+              <p class="product-toolbar-note">先完成主图，再批量生成整套详情图。</p>
+            </aside>
           </div>
         </section>
 
@@ -281,7 +318,7 @@
                 <button class="segment" data-playground-mode="edit" type="button">参考图编辑</button>
               </div>
 
-              <label class="prompt-field">
+              <label class="prompt-field playground-prompt-field">
                 <span>提示词</span>
                 <textarea id="playgroundPrompt" rows="8" placeholder="描述你想生成或编辑的商品图、构图、材质、光线和用途。"></textarea>
               </label>
@@ -307,7 +344,7 @@
                 </label>
               </div>
 
-              <label class="prompt-field">
+              <label class="prompt-field playground-system-field">
                 <span>附加系统要求</span>
                 <textarea id="playgroundSystem" rows="3" placeholder="可选，例如：严格保留商品结构，不添加文字，不改变主体颜色。"></textarea>
               </label>
@@ -360,9 +397,16 @@
 
         <section class="full-playground-page panel-view" id="fullPlaygroundPanel" hidden>
           <div class="embedded-playground-shell">
+            <div class="embedded-playground-head">
+              <div>
+                <p class="card-kicker">完整工具</p>
+                <h2>绘图聚集地</h2>
+              </div>
+              <span class="badge strong">沉浸模式</span>
+            </div>
             <iframe
               class="embedded-playground-frame"
-              title="GPT Image Playground"
+              title="绘图聚集地"
               src="/gpt-image-playground/"
               loading="lazy"
             ></iframe>
@@ -378,34 +422,47 @@
               </div>
               <span class="badge strong">源图</span>
             </div>
-            <div class="preview" data-preview="main">
-              <div class="empty-state">
-                <span class="empty-icon" data-icon="image"></span>
-                <span>等待生成</span>
+            <div class="main-card-shell">
+              <div class="main-card-stage">
+                <div class="preview" data-preview="main">
+                  <div class="empty-state">
+                    <span class="empty-icon" data-icon="image"></span>
+                    <span>等待生成</span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <label class="prompt-field">
-              <span>提示词</span>
-              <textarea id="prompt-main" rows="6"></textarea>
-            </label>
-            <div class="card-actions">
-              <button class="button primary full" data-action="generate" data-type="main" type="button">
-                <span class="icon" data-icon="spark"></span>
-                生成主图
-              </button>
-              <button class="button" id="uploadMainButton" type="button">
-                <span class="icon" data-icon="upload"></span>
-                上传主图
-              </button>
+              <div class="main-card-editor">
+                <label class="prompt-field prompt-field-main">
+                  <div class="prompt-field-head">
+                    <span>提示词</span>
+                    <small>聚焦商品主体、材质、光线和展示方式，保持主图表达简洁明确。</small>
+                  </div>
+                  <textarea id="prompt-main" rows="6"></textarea>
+                </label>
+              </div>
+              <div class="main-card-action-panel">
+                <div class="card-actions">
+                  <button class="button primary full" data-action="generate" data-type="main" type="button">
+                    <span class="icon" data-icon="spark"></span>
+                    生成主图
+                  </button>
+                  <button class="button" id="uploadMainButton" type="button">
+                    <span class="icon" data-icon="upload"></span>
+                    上传主图
+                  </button>
+                  <div class="main-card-meta-actions">
+                    <button class="icon-button" data-action="download" data-type="main" type="button" disabled title="下载主图" aria-label="下载主图">
+                      <span class="icon" data-icon="download"></span>
+                    </button>
+                    <button class="reference-action" data-action="reference" data-type="main" type="button" disabled>
+                      设为参考图
+                    </button>
+                  </div>
+                </div>
+                <p class="card-message" data-message="main"></p>
+              </div>
               <input id="uploadMainInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
-              <button class="icon-button" data-action="download" data-type="main" type="button" disabled title="下载主图" aria-label="下载主图">
-                <span class="icon" data-icon="download"></span>
-              </button>
-              <button class="text-button reference-action" data-action="reference" data-type="main" type="button" disabled>
-                设为参考图
-              </button>
             </div>
-            <p class="card-message" data-message="main"></p>
           </article>
 
           <article class="image-card" data-type="derived" hidden>
@@ -716,6 +773,7 @@
       </div>
     </template>
 
+    <script src="/product-workspaces.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

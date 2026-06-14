@@ -80,21 +80,15 @@ test("exposes built GPT Image Playground under a stable subpath", async () => {
   assert.match(indexHtml, /<div id="root"><\/div>/);
 });
 
-test("accepts any square image in square mode", () => {
+test("enforces default output spec dimensions exactly", () => {
   assert.doesNotThrow(() => assertImageSpecDimensions(makePng(1024, 1024)));
-  assert.doesNotThrow(() => assertImageSpecDimensions(makePng(1254, 1254)));
+  assert.throws(
+    () => assertImageSpecDimensions(makePng(1254, 1254), undefined, "测试图片"),
+    /测试图片尺寸必须是 1024x1024（1:1）/,
+  );
   assert.throws(
     () => assertImageSpecDimensions(makePng(1024, 768), undefined, "测试图片"),
-    /测试图片必须是 1:1 方图/,
-  );
-});
-
-test("optionally enforces fixed square size", () => {
-  const fixedSpec = normalizeImageSpec({ mode: "fixed", size: 1024 });
-  assert.doesNotThrow(() => assertImageSpecDimensions(makePng(1024, 1024), fixedSpec));
-  assert.throws(
-    () => assertImageSpecDimensions(makePng(1254, 1254), fixedSpec, "测试图片"),
-    /测试图片尺寸必须是 1024x1024/,
+    /测试图片尺寸必须是 1024x1024（1:1）/,
   );
 });
 
@@ -106,40 +100,65 @@ test("rejects unreadable image dimensions", () => {
   );
 });
 
-test("plans generated image normalization for square mode", () => {
+test("supports preset and custom image specs", () => {
+  const widescreenSpec = normalizeImageSpec({ sizePreset: "2k", ratioPreset: "16:9" });
+  assert.equal(widescreenSpec.width, 2048);
+  assert.equal(widescreenSpec.height, 1152);
+  assert.equal(widescreenSpec.requestSize, "2048x1152");
+  assert.equal(widescreenSpec.ratio, "16:9");
+
+  const customSpec = normalizeImageSpec({
+    sizeMode: "custom",
+    customSize: 1500,
+    ratioPreset: "custom",
+    customRatioWidth: 3,
+    customRatioHeight: 5,
+  });
+  assert.equal(customSpec.width, 900);
+  assert.equal(customSpec.height, 1500);
+  assert.equal(customSpec.requestSize, "900x1500");
+  assert.equal(customSpec.ratio, "3:5");
+});
+
+test("plans generated image normalization for the default square preset", () => {
   assert.deepEqual(getImageNormalizationPlan({ width: 1024, height: 1024 }), {
     needsNormalization: false,
-    cropSize: 0,
+    cropWidth: 0,
+    cropHeight: 0,
     targetWidth: 0,
     targetHeight: 0,
   });
   assert.deepEqual(getImageNormalizationPlan({ width: 1254, height: 1254 }), {
-    needsNormalization: false,
-    cropSize: 0,
-    targetWidth: 0,
-    targetHeight: 0,
+    needsNormalization: true,
+    cropWidth: 0,
+    cropHeight: 0,
+    targetWidth: 1024,
+    targetHeight: 1024,
   });
   assert.deepEqual(getImageNormalizationPlan({ width: 1400, height: 1000 }), {
     needsNormalization: true,
-    cropSize: 1000,
-    targetWidth: 0,
-    targetHeight: 0,
+    cropWidth: 1000,
+    cropHeight: 1000,
+    targetWidth: 1024,
+    targetHeight: 1024,
   });
 });
 
-test("plans generated image normalization for fixed mode", () => {
-  const fixedSpec = normalizeImageSpec({ mode: "fixed", size: 1024 });
-  assert.deepEqual(getImageNormalizationPlan({ width: 1254, height: 1254 }, fixedSpec), {
-    needsNormalization: true,
-    cropSize: 0,
-    targetWidth: 1024,
-    targetHeight: 1024,
+test("plans generated image normalization for non-square presets", () => {
+  const widescreenSpec = normalizeImageSpec({ sizePreset: "2k", ratioPreset: "16:9" });
+  assert.deepEqual(getImageNormalizationPlan({ width: 2048, height: 1152 }, widescreenSpec), {
+    needsNormalization: false,
+    cropWidth: 0,
+    cropHeight: 0,
+    targetWidth: 0,
+    targetHeight: 0,
   });
-  assert.deepEqual(getImageNormalizationPlan({ width: 1400, height: 1000 }, fixedSpec), {
+  assert.deepEqual(getImageNormalizationPlan({ width: 3200, height: 2000 }, widescreenSpec), {
     needsNormalization: true,
-    cropSize: 1000,
-    targetWidth: 1024,
-    targetHeight: 1024,
+    cropWidth: 3200,
+    cropHeight: 1800,
+    targetWidth: 2048,
+    targetHeight: 1152,
   });
 });
 
@@ -148,9 +167,10 @@ test("builds ImageMagick normalization commands for Linux", () => {
     "convert",
     {
       needsNormalization: true,
-      cropSize: 1000,
-      targetWidth: 1024,
-      targetHeight: 1024,
+      cropWidth: 3200,
+      cropHeight: 1800,
+      targetWidth: 2048,
+      targetHeight: 1152,
     },
     "/tmp/product.png",
   );
@@ -158,11 +178,11 @@ test("builds ImageMagick normalization commands for Linux", () => {
   assert.deepEqual(commands, [
     {
       command: "convert",
-      args: ["/tmp/product.png", "-gravity", "center", "-crop", "1000x1000+0+0", "+repage", "/tmp/product.png"],
+      args: ["/tmp/product.png", "-gravity", "center", "-crop", "3200x1800+0+0", "+repage", "/tmp/product.png"],
     },
     {
       command: "convert",
-      args: ["/tmp/product.png", "-resize", "1024x1024!", "/tmp/product.png"],
+      args: ["/tmp/product.png", "-resize", "2048x1152!", "/tmp/product.png"],
     },
   ]);
 });
@@ -206,8 +226,15 @@ test("normalizes playground requests with bounded count and image spec", () => {
       background: "",
       system: "",
       imageSpec: {
-        mode: "fixed",
+        sizeMode: "custom",
+        sizePreset: "1k",
+        customSize: 1200,
+        ratioPreset: "1:1",
+        customRatioWidth: 1,
+        customRatioHeight: 1,
         size: 1200,
+        width: 1200,
+        height: 1200,
         requestSize: "1200x1200",
         ratio: "1:1",
       },
@@ -230,8 +257,15 @@ test("normalizes playground requests with bounded count and image spec", () => {
       background: "transparent",
       system: "保留主体",
       imageSpec: {
-        mode: "square",
+        sizeMode: "preset",
+        sizePreset: "1k",
+        customSize: 1024,
+        ratioPreset: "1:1",
+        customRatioWidth: 1,
+        customRatioHeight: 1,
         size: 1024,
+        width: 1024,
+        height: 1024,
         requestSize: "1024x1024",
         ratio: "1:1",
       },

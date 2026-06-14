@@ -5,6 +5,7 @@ const TYPES = ["main", "derived", ...HAT_DERIVED_TYPES, ...SHOULDER_BAG_FLAT_DER
 const DERIVED_TYPES = ["derived", ...HAT_DERIVED_TYPES, ...SHOULDER_BAG_FLAT_DERIVED_TYPES];
 const DEFAULT_PRODUCT_SET_MODE = "hat";
 const DEFAULT_ACTIVE_MODULE = "config";
+const PRODUCT_WORKSPACE_MODES = ["hat", "bag", "shoulderBagFlat"];
 const PRODUCT_SET_MODES = {
   hat: {
     label: "商品衍生图",
@@ -80,13 +81,35 @@ const MODULES = {
   },
   fullPlayground: {
     kicker: "完整工具",
-    title: "GPT Image Playground",
-    subtitle: "完整迁移版图像生成工具，保留原项目的图库、参数、参考图、遮罩和 Agent 工作流。",
+    title: "绘图聚集地",
+    subtitle: "完整图像创作工作区，保留图库、参数、参考图、遮罩和 Agent 工作流。",
     requiresApiConfig: false,
   },
 };
 const STORAGE_KEY = "imageDesignWorkbench.session.v5";
-const DEFAULT_IMAGE_SPEC = { mode: "square", size: 1024 };
+const IMAGE_SIZE_PRESETS = {
+  "1k": 1024,
+  "2k": 2048,
+  "4k": 4096,
+};
+const IMAGE_RATIO_PRESETS = {
+  "1:1": [1, 1],
+  "3:2": [3, 2],
+  "2:3": [2, 3],
+  "16:9": [16, 9],
+  "9:16": [9, 16],
+  "4:3": [4, 3],
+  "3:4": [3, 4],
+  "21:9": [21, 9],
+};
+const DEFAULT_IMAGE_SPEC = {
+  sizeMode: "preset",
+  sizePreset: "1k",
+  customSize: 1024,
+  ratioPreset: "1:1",
+  customRatioWidth: 1,
+  customRatioHeight: 1,
+};
 const DEFAULT_IMAGE_API_CONFIG = {
   uploaded: false,
   hasApiKey: false,
@@ -141,20 +164,86 @@ const DEFAULT_PROMPTS = {
     "基于上传的 3D 商品图生成平面包身部位图。保留包型、颜色、材质和印花细节，突出包身轮廓、开合结构、边缘工艺和容量区域，画面干净，适合电商详情页。",
 };
 
+const {
+  createProductWorkspaces,
+  getProductWorkspace,
+} = globalThis.ProductWorkspaces || {};
+
 let state = loadState();
-let imageSetRequest = null;
+let imageSetRequests = {};
 let promptExtractionFile = null;
 let promptExtractionPreviewUrl = "";
 let promptExtractionLoading = false;
 let playgroundLoading = false;
 
 function normalizeImageSpec(rawSpec = {}) {
-  const mode = rawSpec.mode === "fixed" ? "fixed" : "square";
-  const parsedSize = Number(rawSpec.size);
-  const size = Number.isInteger(parsedSize)
-    ? Math.min(Math.max(parsedSize, MIN_IMAGE_SPEC_SIZE), MAX_IMAGE_SPEC_SIZE)
-    : DEFAULT_IMAGE_SPEC.size;
-  return { mode, size };
+  const legacyMode = rawSpec.mode === "fixed" ? "fixed" : rawSpec.mode === "square" ? "square" : "";
+  const legacySize = Number(rawSpec.size);
+  const requestedSizeMode =
+    rawSpec.sizeMode === "custom" || (legacyMode === "fixed" && !Object.values(IMAGE_SIZE_PRESETS).includes(legacySize))
+      ? "custom"
+      : "preset";
+  const requestedSizePreset =
+    typeof rawSpec.sizePreset === "string" && Object.hasOwn(IMAGE_SIZE_PRESETS, rawSpec.sizePreset)
+      ? rawSpec.sizePreset
+      : Object.entries(IMAGE_SIZE_PRESETS).find(([, value]) => value === legacySize)?.[0] || DEFAULT_IMAGE_SPEC.sizePreset;
+  const customSize = Number.isInteger(Number(rawSpec.customSize))
+    ? Math.min(Math.max(Number(rawSpec.customSize), MIN_IMAGE_SPEC_SIZE), MAX_IMAGE_SPEC_SIZE)
+    : Number.isInteger(legacySize)
+      ? Math.min(Math.max(legacySize, MIN_IMAGE_SPEC_SIZE), MAX_IMAGE_SPEC_SIZE)
+      : DEFAULT_IMAGE_SPEC.customSize;
+  const size = requestedSizeMode === "custom" ? customSize : IMAGE_SIZE_PRESETS[requestedSizePreset];
+
+  const rawRatioPreset =
+    typeof rawSpec.ratioPreset === "string" && (Object.hasOwn(IMAGE_RATIO_PRESETS, rawSpec.ratioPreset) || rawSpec.ratioPreset === "custom")
+      ? rawSpec.ratioPreset
+      : "";
+  const legacyRatio = typeof rawSpec.ratio === "string" ? rawSpec.ratio.trim() : "";
+  const requestedRatioPreset =
+    rawRatioPreset ||
+    (Object.hasOwn(IMAGE_RATIO_PRESETS, legacyRatio) ? legacyRatio : "") ||
+    (legacyMode ? "1:1" : DEFAULT_IMAGE_SPEC.ratioPreset);
+
+  const ratioWidthInput = Number(rawSpec.customRatioWidth);
+  const ratioHeightInput = Number(rawSpec.customRatioHeight);
+  const legacyRatioParts = legacyRatio.split(":").map((value) => Number(value));
+  const customRatioWidth = Number.isInteger(ratioWidthInput) && ratioWidthInput > 0
+    ? Math.min(ratioWidthInput, 99)
+    : Number.isInteger(legacyRatioParts[0]) && legacyRatioParts[0] > 0
+      ? Math.min(legacyRatioParts[0], 99)
+      : DEFAULT_IMAGE_SPEC.customRatioWidth;
+  const customRatioHeight = Number.isInteger(ratioHeightInput) && ratioHeightInput > 0
+    ? Math.min(ratioHeightInput, 99)
+    : Number.isInteger(legacyRatioParts[1]) && legacyRatioParts[1] > 0
+      ? Math.min(legacyRatioParts[1], 99)
+      : DEFAULT_IMAGE_SPEC.customRatioHeight;
+
+  const [ratioWidth, ratioHeight] = requestedRatioPreset === "custom"
+    ? [customRatioWidth, customRatioHeight]
+    : IMAGE_RATIO_PRESETS[requestedRatioPreset || DEFAULT_IMAGE_SPEC.ratioPreset] || IMAGE_RATIO_PRESETS[DEFAULT_IMAGE_SPEC.ratioPreset];
+
+  let width = size;
+  let height = size;
+  if (ratioWidth > ratioHeight) {
+    height = Math.max(1, Math.round((size * ratioHeight) / ratioWidth));
+  } else if (ratioHeight > ratioWidth) {
+    width = Math.max(1, Math.round((size * ratioWidth) / ratioHeight));
+  }
+
+  const ratio = `${ratioWidth}:${ratioHeight}`;
+  return {
+    sizeMode: requestedSizeMode,
+    sizePreset: requestedSizePreset,
+    customSize,
+    ratioPreset: requestedRatioPreset || DEFAULT_IMAGE_SPEC.ratioPreset,
+    customRatioWidth,
+    customRatioHeight,
+    size,
+    width,
+    height,
+    requestSize: `${width}x${height}`,
+    ratio,
+  };
 }
 
 function normalizeProductSetMode(value) {
@@ -249,6 +338,146 @@ function cleanStartupParams() {
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
+function attachActiveWorkspaceRefs(nextState) {
+  if (!createProductWorkspaces || !getProductWorkspace) {
+    throw new Error("Product workspace helpers are unavailable");
+  }
+  nextState.productWorkspaces = createProductWorkspaces({
+    modes: PRODUCT_WORKSPACE_MODES,
+    defaultPrompts: DEFAULT_PROMPTS,
+    savedWorkspaces: nextState.productWorkspaces,
+    activeMode: normalizeProductSetMode(nextState.productSetMode),
+    legacyWorkspace: {
+      imageSet: nextState.imageSet,
+      prompts: nextState.prompts,
+      images: nextState.images,
+    },
+    forceNew: false,
+  });
+  const workspace = getProductWorkspace(
+    nextState.productWorkspaces,
+    normalizeProductSetMode(nextState.productSetMode),
+    PRODUCT_WORKSPACE_MODES,
+    DEFAULT_PROMPTS,
+  );
+  nextState.imageSet = workspace.imageSet;
+  nextState.prompts = workspace.prompts;
+  nextState.images = workspace.images;
+  nextState.loading = workspace.loading;
+  nextState.messages = workspace.messages;
+  return nextState;
+}
+
+function syncActiveProductWorkspace() {
+  attachActiveWorkspaceRefs(state);
+  return getProductWorkspace(
+    state.productWorkspaces,
+    normalizeProductSetMode(state.productSetMode),
+    PRODUCT_WORKSPACE_MODES,
+    DEFAULT_PROMPTS,
+  );
+}
+
+function setWorkspaceImageSet(mode, imageSet) {
+  const workspace = getProductWorkspace(
+    state.productWorkspaces,
+    normalizeProductSetMode(mode),
+    PRODUCT_WORKSPACE_MODES,
+    DEFAULT_PROMPTS,
+  );
+  workspace.imageSet = imageSet || null;
+  if (normalizeProductSetMode(state.productSetMode) === normalizeProductSetMode(mode)) {
+    state.imageSet = workspace.imageSet;
+  }
+  return workspace.imageSet;
+}
+
+function setWorkspaceImage(mode, type, image) {
+  const workspace = getProductWorkspace(
+    state.productWorkspaces,
+    normalizeProductSetMode(mode),
+    PRODUCT_WORKSPACE_MODES,
+    DEFAULT_PROMPTS,
+  );
+  if (image) {
+    workspace.images[type] = image;
+  } else {
+    delete workspace.images[type];
+  }
+  if (normalizeProductSetMode(state.productSetMode) === normalizeProductSetMode(mode)) {
+    state.images = workspace.images;
+  }
+}
+
+function setWorkspaceMessage(mode, type, message, kind = "") {
+  const workspace = getProductWorkspace(
+    state.productWorkspaces,
+    normalizeProductSetMode(mode),
+    PRODUCT_WORKSPACE_MODES,
+    DEFAULT_PROMPTS,
+  );
+  workspace.messages[type] = { text: message || "", kind: kind || "" };
+  if (normalizeProductSetMode(state.productSetMode) === normalizeProductSetMode(mode)) {
+    const el = qs(`[data-message="${type}"]`);
+    el.textContent = message || "";
+    el.classList.toggle("error", kind === "error");
+    el.classList.toggle("success", kind === "success");
+  }
+}
+
+function setWorkspaceLoading(mode, type, value) {
+  const workspace = getProductWorkspace(
+    state.productWorkspaces,
+    normalizeProductSetMode(mode),
+    PRODUCT_WORKSPACE_MODES,
+    DEFAULT_PROMPTS,
+  );
+  workspace.loading[type] = Boolean(value);
+  if (normalizeProductSetMode(state.productSetMode) !== normalizeProductSetMode(mode)) {
+    return;
+  }
+  state.loading = workspace.loading;
+  const card = qs(`[data-type="${type}"]`);
+  const preview = qs(`[data-preview="${type}"]`);
+  card.classList.toggle("loading", value);
+  card.setAttribute("aria-busy", value ? "true" : "false");
+  if (value) {
+    preview.innerHTML = qs("#spinnerTemplate").innerHTML.replace("生成中", `${TYPE_LABELS[type]}生成中`);
+  }
+  updateControls();
+}
+
+function setActiveWorkspaceImageSet(imageSet) {
+  return setWorkspaceImageSet(state.productSetMode, imageSet);
+}
+
+function resetActiveProductWorkspace(imageSet = null) {
+  const workspace = syncActiveProductWorkspace();
+  workspace.imageSet = imageSet;
+  workspace.prompts = { ...DEFAULT_PROMPTS };
+  workspace.images = {};
+  workspace.loading = {};
+  workspace.messages = {};
+  state.imageSet = workspace.imageSet;
+  state.prompts = workspace.prompts;
+  state.images = workspace.images;
+  state.loading = workspace.loading;
+  state.messages = workspace.messages;
+}
+
+function resetAllProductWorkspaces(imageSet = null) {
+  for (const mode of PRODUCT_WORKSPACE_MODES) {
+    state.productWorkspaces[mode] = {
+      imageSet: mode === normalizeProductSetMode(state.productSetMode) ? imageSet : null,
+      prompts: { ...DEFAULT_PROMPTS },
+      images: {},
+      loading: {},
+      messages: {},
+    };
+  }
+  syncActiveProductWorkspace();
+}
+
 function loadState() {
   const promptParams = readPromptParams();
   const imageSpecParams = readImageSpecParams();
@@ -261,7 +490,7 @@ function loadState() {
     const productSetMode = normalizeProductSetMode(
       productSetModeParam || (forceNewSet ? DEFAULT_PRODUCT_SET_MODE : saved.productSetMode),
     );
-    return {
+    return attachActiveWorkspaceRefs({
       activeModule: normalizeActiveModule(
         activeModuleParam ||
           (productSetModeParam ? getProductModule(productSetModeParam) : "") ||
@@ -269,10 +498,22 @@ function loadState() {
       ),
       configScope: normalizeConfigScope(forceNewSet ? DEFAULT_CONFIG_SCOPE : saved.configScope),
       productSetMode,
-      imageSet: forceNewSet ? null : saved.imageSet || null,
-      prompts: { ...DEFAULT_PROMPTS, ...(forceNewSet ? {} : saved.prompts || {}), ...promptParams },
+      productWorkspaces: createProductWorkspaces({
+        modes: PRODUCT_WORKSPACE_MODES,
+        defaultPrompts: DEFAULT_PROMPTS,
+        savedWorkspaces: forceNewSet ? {} : saved.productWorkspaces,
+        activeMode: productSetMode,
+        legacyWorkspace: forceNewSet
+          ? null
+          : {
+              imageSet: saved.imageSet || null,
+              prompts: saved.prompts || {},
+              images: saved.images || {},
+            },
+        forceNew: forceNewSet,
+        promptOverrides: promptParams,
+      }),
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...(forceNewSet ? {} : saved.imageSpec || {}), ...imageSpecParams }),
-      images: forceNewSet ? {} : { ...(saved.images || {}) },
       playground: {
         mode: saved.playground?.mode === "edit" ? "edit" : "generate",
         prompt: typeof saved.playground?.prompt === "string" ? saved.playground.prompt : "",
@@ -287,23 +528,29 @@ function loadState() {
       promptApiConfig: { ...DEFAULT_PROMPT_API_CONFIG },
       loading: {},
       sidebarCollapsed: Boolean(saved.sidebarCollapsed),
-    };
+    });
   } catch {
     const productSetMode = normalizeProductSetMode(productSetModeParam);
-    return {
+    return attachActiveWorkspaceRefs({
       activeModule: normalizeActiveModule(activeModuleParam || (productSetModeParam ? getProductModule(productSetMode) : "")),
       configScope: DEFAULT_CONFIG_SCOPE,
       productSetMode,
-      imageSet: null,
-      prompts: { ...DEFAULT_PROMPTS, ...promptParams },
+      productWorkspaces: createProductWorkspaces({
+        modes: PRODUCT_WORKSPACE_MODES,
+        defaultPrompts: DEFAULT_PROMPTS,
+        savedWorkspaces: {},
+        activeMode: productSetMode,
+        legacyWorkspace: null,
+        forceNew: false,
+        promptOverrides: promptParams,
+      }),
       imageSpec: normalizeImageSpec({ ...DEFAULT_IMAGE_SPEC, ...imageSpecParams }),
-      images: {},
       playground: getDefaultPlaygroundState(),
       imageApiConfig: { ...DEFAULT_IMAGE_API_CONFIG },
       promptApiConfig: { ...DEFAULT_PROMPT_API_CONFIG },
       loading: {},
       sidebarCollapsed: false,
-    };
+    });
   }
 }
 
@@ -311,13 +558,11 @@ function saveState() {
   sessionStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
-      imageSet: state.imageSet,
       activeModule: state.activeModule,
       configScope: state.configScope,
       productSetMode: state.productSetMode,
-      prompts: state.prompts,
+      productWorkspaces: state.productWorkspaces,
       imageSpec: state.imageSpec,
-      images: state.images,
       playground: state.playground,
       sidebarCollapsed: Boolean(state.sidebarCollapsed),
     }),
@@ -465,36 +710,45 @@ function updateWorkspaceView() {
   const isPlayground = activeModule === "playground";
   const isFullPlayground = activeModule === "fullPlayground";
   const showsImageSpec = isProduct || isPlayground;
+  const showsTopbarActions = activeModule !== "config" && !isFullPlayground;
   const topbar = qs(".topbar");
   const topbarActions = qs(".topbar-actions");
-  const statusStrip = qs(".status-strip");
+  const topbarSettings = qs(".topbar-settings");
+  const topbarPrimaryActions = qs(".topbar-primary-actions");
   const configPanel = qs("#configCenterPanel");
   const promptPanel = qs("#promptExtractorPanel");
   const playgroundPanel = qs("#playgroundPanel");
   const fullPlaygroundPanel = qs("#fullPlaygroundPanel");
   const board = qs("#imageBoard");
+  const productToolbar = qs("#productToolbar");
   const title = qs("#workspaceTitle");
   const kicker = qs("#workspaceKicker");
   const subtitle = qs("#workspaceSubtitle");
   const specControl = qs("#imageSpecControl");
   const imageSetControl = qs("#imageSetControl");
   const openNewWindow = qs("#openNewWindow");
-  const generateMainTop = qs("#generateMainTop");
   const generateAll = qs("#generateAll");
   const downloadAll = qs("#downloadAll");
   const moreActions = qs("#topbarMoreActions");
+  const appShell = qs(".app-shell");
 
   title.textContent = moduleConfig.title;
   kicker.textContent = moduleConfig.kicker;
   subtitle.textContent = moduleConfig.subtitle || "";
+  if (appShell) {
+    appShell.dataset.module = activeModule;
+  }
   if (topbar) {
     topbar.hidden = isFullPlayground;
   }
   if (topbarActions) {
-    topbarActions.hidden = !showsImageSpec && !isProduct;
+    topbarActions.hidden = !showsTopbarActions;
   }
-  if (statusStrip) {
-    statusStrip.hidden = isFullPlayground;
+  if (topbarSettings) {
+    topbarSettings.hidden = !showsImageSpec && !isProduct;
+  }
+  if (topbarPrimaryActions) {
+    topbarPrimaryActions.hidden = !isProduct;
   }
   configPanel.hidden = activeModule !== "config";
   if (activeModule === "config") {
@@ -503,16 +757,22 @@ function updateWorkspaceView() {
   promptPanel.hidden = !isPromptExtractor;
   playgroundPanel.hidden = !isPlayground;
   fullPlaygroundPanel.hidden = !isFullPlayground;
+  if (productToolbar) {
+    productToolbar.hidden = !isProduct;
+  }
   board.hidden = !isProduct;
-  specControl.hidden = !showsImageSpec;
+  specControl.hidden = !isProduct;
   imageSetControl.hidden = !isProduct;
   openNewWindow.hidden = !isProduct;
-  generateMainTop.hidden = !isProduct || Boolean(getProductSetConfig().mainUploadOnly);
   generateAll.hidden = !isProduct;
   downloadAll.hidden = !isProduct;
   if (moreActions) {
-    moreActions.hidden = !isProduct;
+    moreActions.hidden = !showsTopbarActions;
     if (!isProduct) {
+      openNewWindow.hidden = true;
+      downloadAll.hidden = true;
+    }
+    if (!showsTopbarActions) {
       moreActions.open = false;
     }
   }
@@ -559,6 +819,7 @@ function switchActiveModule(moduleName) {
   }
   if (moduleConfig.productSetMode) {
     state.productSetMode = moduleConfig.productSetMode;
+    syncActiveProductWorkspace();
   }
   saveState();
   render();
@@ -570,10 +831,41 @@ function switchActiveModule(moduleName) {
 
 function updateImageSpecControls() {
   const spec = normalizeImageSpec(state.imageSpec);
-  const mode = qs("#imageSpecMode");
-  const size = qs("#imageSpecSize");
-  mode.value = spec.mode;
-  size.value = String(spec.size);
+  qsa("[data-image-size-preset]").forEach((button) => {
+    button.classList.toggle("active", spec.sizeMode === "preset" && button.dataset.imageSizePreset === spec.sizePreset);
+    button.setAttribute("aria-pressed", button.classList.contains("active") ? "true" : "false");
+  });
+  qsa("[data-image-ratio-preset]").forEach((button) => {
+    button.classList.toggle("active", spec.ratioPreset !== "custom" && button.dataset.imageRatioPreset === spec.ratioPreset);
+    button.setAttribute("aria-pressed", button.classList.contains("active") ? "true" : "false");
+  });
+  const customSizeButton = qs("#imageSpecCustomSizeButton");
+  const customRatioButton = qs("#imageSpecCustomRatioButton");
+  const customSizeWrap = qs("#imageSpecCustomSizeWrap");
+  const customRatioWrap = qs("#imageSpecCustomRatioWrap");
+  const customSize = qs("#imageSpecCustomSize");
+  const customRatioWidth = qs("#imageSpecCustomRatioWidth");
+  const customRatioHeight = qs("#imageSpecCustomRatioHeight");
+
+  customSizeButton?.classList.toggle("active", spec.sizeMode === "custom");
+  customSizeButton?.setAttribute("aria-pressed", spec.sizeMode === "custom" ? "true" : "false");
+  customRatioButton?.classList.toggle("active", spec.ratioPreset === "custom");
+  customRatioButton?.setAttribute("aria-pressed", spec.ratioPreset === "custom" ? "true" : "false");
+  if (customSizeWrap) {
+    customSizeWrap.hidden = spec.sizeMode !== "custom";
+  }
+  if (customRatioWrap) {
+    customRatioWrap.hidden = spec.ratioPreset !== "custom";
+  }
+  if (customSize) {
+    customSize.value = String(spec.customSize);
+  }
+  if (customRatioWidth) {
+    customRatioWidth.value = String(spec.customRatioWidth);
+  }
+  if (customRatioHeight) {
+    customRatioHeight.value = String(spec.customRatioHeight);
+  }
 }
 
 function updateApiConfigView() {
@@ -821,25 +1113,26 @@ function renderPromptExtractor() {
 }
 
 async function ensureImageSet(forceNew = false) {
+  const mode = normalizeProductSetMode(state.productSetMode);
   if (!forceNew && state.imageSet?.id) {
     return state.imageSet;
   }
-  if (!forceNew && imageSetRequest) {
-    return imageSetRequest;
+  if (!forceNew && imageSetRequests[mode]) {
+    return imageSetRequests[mode];
   }
 
-  imageSetRequest = apiPost("/api/image-sets", {})
+  imageSetRequests[mode] = apiPost("/api/image-sets", {})
     .then((data) => {
-      state.imageSet = data.imageSet;
+      setWorkspaceImageSet(mode, data.imageSet);
       saveState();
       updateImageSetView();
-      return state.imageSet;
+      return data.imageSet;
     })
     .finally(() => {
-      imageSetRequest = null;
+      delete imageSetRequests[mode];
     });
 
-  return imageSetRequest;
+  return imageSetRequests[mode];
 }
 
 function qs(selector, root = document) {
@@ -851,26 +1144,18 @@ function qsa(selector, root = document) {
 }
 
 function setStatus(message) {
-  qs("#globalStatus").textContent = message;
+  const status = qs("#globalStatus");
+  if (status) {
+    status.textContent = message;
+  }
 }
 
 function setMessage(type, message, kind = "") {
-  const el = qs(`[data-message="${type}"]`);
-  el.textContent = message || "";
-  el.classList.toggle("error", kind === "error");
-  el.classList.toggle("success", kind === "success");
+  setWorkspaceMessage(state.productSetMode, type, message, kind);
 }
 
 function setLoading(type, value) {
-  state.loading[type] = value;
-  const card = qs(`[data-type="${type}"]`);
-  const preview = qs(`[data-preview="${type}"]`);
-  card.classList.toggle("loading", value);
-  card.setAttribute("aria-busy", value ? "true" : "false");
-  if (value) {
-    preview.innerHTML = qs("#spinnerTemplate").innerHTML.replace("生成中", `${TYPE_LABELS[type]}生成中`);
-  }
-  updateControls();
+  setWorkspaceLoading(state.productSetMode, type, value);
 }
 
 function imageIsFresh(type) {
@@ -919,7 +1204,7 @@ function getEmptyStateContent(type, isMainReady) {
   return {
     icon: "image",
     title: "可生成",
-    detail: "检查提示词后点击生成，结果会自动归一化为方图。",
+    detail: "检查提示词后点击生成，结果会自动归一化为当前选定的输出比例。",
   };
 }
 
@@ -996,9 +1281,6 @@ function updateControls() {
   qs("#generateAll").disabled = !hasApiConfig || !hasImageSet || !hasMain || anyLoading;
   qs("#generateAll").innerHTML = `<span class="icon" data-icon="layers"></span>${config.generateAllLabel}`;
   qs("#downloadAll").disabled = !hasImageSet || !anyImage || anyLoading;
-  qs("#generateMainTop").hidden = !isProduct || Boolean(config.mainUploadOnly);
-  qs("#generateMainTop").disabled =
-    Boolean(config.mainUploadOnly) || !hasApiConfig || !hasImageSet || Boolean(state.loading.main);
   qs("#uploadMainButton").disabled = !hasImageSet || Boolean(state.loading.main);
   qs("#uploadApiConfig").disabled = anyLoading;
   qs("#uploadPromptApiConfig").disabled = anyLoading;
@@ -1056,6 +1338,11 @@ function render() {
     if (textarea.value !== state.prompts[type]) {
       textarea.value = state.prompts[type];
     }
+    const messageState = state.messages?.[type] || { text: "", kind: "" };
+    const message = qs(`[data-message="${type}"]`);
+    message.textContent = messageState.text || "";
+    message.classList.toggle("error", messageState.kind === "error");
+    message.classList.toggle("success", messageState.kind === "success");
     renderPreview(type);
   }
   updateControls();
@@ -1180,8 +1467,12 @@ async function apiUploadMain(file, imageSetId, imageSpec) {
   const spec = normalizeImageSpec(imageSpec);
   const params = new URLSearchParams({
     imageSetId,
-    imageSpecMode: spec.mode,
-    imageSpecSize: String(spec.size),
+    imageSpecSizeMode: spec.sizeMode,
+    imageSpecSizePreset: spec.sizePreset,
+    imageSpecCustomSize: String(spec.customSize),
+    imageSpecRatioPreset: spec.ratioPreset,
+    imageSpecCustomRatioWidth: String(spec.customRatioWidth),
+    imageSpecCustomRatioHeight: String(spec.customRatioHeight),
   });
   const response = await fetch(`/api/images/main/upload?${params.toString()}`, {
     method: "POST",
@@ -1232,10 +1523,7 @@ function collectPrompt(type) {
 }
 
 function collectImageSpec() {
-  state.imageSpec = normalizeImageSpec({
-    mode: qs("#imageSpecMode").value,
-    size: qs("#imageSpecSize").value,
-  });
+  state.imageSpec = normalizeImageSpec(state.imageSpec);
   saveState();
   updateImageSpecControls();
   return state.imageSpec;
@@ -1349,11 +1637,8 @@ async function uploadPromptApiConfig(event) {
 }
 
 function imageSpecError(dimensions, spec) {
-  if (dimensions.width !== dimensions.height) {
-    return `上传主图必须是 1:1 方图，当前是 ${dimensions.width} x ${dimensions.height}`;
-  }
-  if (spec.mode === "fixed" && dimensions.width !== spec.size) {
-    return `上传主图必须是 ${spec.size} x ${spec.size}，当前是 ${dimensions.width} x ${dimensions.height}`;
+  if (dimensions.width !== spec.width || dimensions.height !== spec.height) {
+    return `上传主图必须是 ${spec.width} x ${spec.height}（${spec.ratio}），当前是 ${dimensions.width} x ${dimensions.height}`;
   }
   return "";
 }
@@ -1379,6 +1664,7 @@ function openNewImageSetWindow() {
 }
 
 async function generateMain() {
+  const workspaceMode = normalizeProductSetMode(state.productSetMode);
   if (!state.imageApiConfig?.uploaded) {
     setStatus("请先保存 API 配置");
     return;
@@ -1403,20 +1689,27 @@ async function generateMain() {
   setStatus("正在生成主图");
   try {
     const data = await apiPost("/api/images/main", { prompt, imageSetId: imageSet.id, imageSpec });
-    state.images.main = data.image;
+    setWorkspaceImage(workspaceMode, "main", data.image);
     saveState();
-    setMessage("main", "主图已生成", "success");
-    setStatus(getProductSetConfig().readyStatus);
+    setWorkspaceMessage(workspaceMode, "main", "主图已生成", "success");
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      setStatus(PRODUCT_SET_MODES[workspaceMode].readyStatus);
+    }
   } catch (error) {
-    setMessage("main", error.message, "error");
-    setStatus("主图生成失败");
+    setWorkspaceMessage(workspaceMode, "main", error.message, "error");
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      setStatus("主图生成失败");
+    }
   } finally {
-    setLoading("main", false);
-    render();
+    setWorkspaceLoading(workspaceMode, "main", false);
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      render();
+    }
   }
 }
 
 async function uploadMain(file) {
+  const workspaceMode = normalizeProductSetMode(state.productSetMode);
   if (!file) {
     return;
   }
@@ -1451,16 +1744,22 @@ async function uploadMain(file) {
   setStatus("正在上传主图");
   try {
     const data = await apiUploadMain(file, imageSet.id, imageSpec);
-    state.images.main = data.image;
+    setWorkspaceImage(workspaceMode, "main", data.image);
     saveState();
-    setMessage("main", "已上传为主图", "success");
-    setStatus(getProductSetConfig().readyStatus);
+    setWorkspaceMessage(workspaceMode, "main", "已上传为主图", "success");
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      setStatus(PRODUCT_SET_MODES[workspaceMode].readyStatus);
+    }
   } catch (error) {
-    setMessage("main", error.message, "error");
-    setStatus("主图上传失败");
+    setWorkspaceMessage(workspaceMode, "main", error.message, "error");
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      setStatus("主图上传失败");
+    }
   } finally {
-    setLoading("main", false);
-    render();
+    setWorkspaceLoading(workspaceMode, "main", false);
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      render();
+    }
   }
 }
 
@@ -1538,6 +1837,7 @@ async function copyExtractedPrompt() {
 }
 
 async function generateDerived(type) {
+  const workspaceMode = normalizeProductSetMode(state.productSetMode);
   if (!state.imageApiConfig?.uploaded) {
     setStatus("请先保存 API 配置");
     return;
@@ -1565,20 +1865,27 @@ async function generateDerived(type) {
       imageSetId: imageSet.id,
       imageSpec,
     });
-    state.images[type] = data.image;
+    setWorkspaceImage(workspaceMode, type, data.image);
     saveState();
-    setMessage(type, `${TYPE_LABELS[type]}已生成`, "success");
-    setStatus(`${TYPE_LABELS[type]}已生成`);
+    setWorkspaceMessage(workspaceMode, type, `${TYPE_LABELS[type]}已生成`, "success");
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      setStatus(`${TYPE_LABELS[type]}已生成`);
+    }
   } catch (error) {
-    setMessage(type, error.message, "error");
-    setStatus(`${TYPE_LABELS[type]}生成失败`);
+    setWorkspaceMessage(workspaceMode, type, error.message, "error");
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      setStatus(`${TYPE_LABELS[type]}生成失败`);
+    }
   } finally {
-    setLoading(type, false);
-    render();
+    setWorkspaceLoading(workspaceMode, type, false);
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      render();
+    }
   }
 }
 
 async function generateAllDerived() {
+  const workspaceMode = normalizeProductSetMode(state.productSetMode);
   if (!state.imageApiConfig?.uploaded) {
     setStatus("请先保存 API 配置");
     return;
@@ -1621,24 +1928,30 @@ async function generateAllDerived() {
 
     for (const type of derivedTypes) {
       if (data.results?.[type]) {
-        state.images[type] = data.results[type];
-        setMessage(type, `${TYPE_LABELS[type]}已生成`, "success");
+        setWorkspaceImage(workspaceMode, type, data.results[type]);
+        setWorkspaceMessage(workspaceMode, type, `${TYPE_LABELS[type]}已生成`, "success");
       } else if (data.errors?.[type]) {
-        setMessage(type, data.errors[type], "error");
+        setWorkspaceMessage(workspaceMode, type, data.errors[type], "error");
       }
     }
     saveState();
-    setStatus(data.ok ? config.doneStatus : config.partialStatus);
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      setStatus(data.ok ? config.doneStatus : config.partialStatus);
+    }
   } catch (error) {
     for (const type of derivedTypes) {
-      setMessage(type, error.message, "error");
+      setWorkspaceMessage(workspaceMode, type, error.message, "error");
     }
-    setStatus("衍生图生成失败");
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      setStatus("衍生图生成失败");
+    }
   } finally {
     for (const type of derivedTypes) {
-      setLoading(type, false);
+      setWorkspaceLoading(workspaceMode, type, false);
     }
-    render();
+    if (normalizeProductSetMode(state.productSetMode) === workspaceMode) {
+      render();
+    }
   }
 }
 
@@ -1689,23 +2002,14 @@ async function clearState() {
     return;
   }
   const imageSpec = collectImageSpec();
-  sessionStorage.removeItem(STORAGE_KEY);
-  state = {
-    activeModule: normalizeActiveModule(state.activeModule),
-    configScope: normalizeConfigScope(state.configScope),
-    productSetMode: normalizeProductSetMode(state.productSetMode),
-    imageSet: null,
-    prompts: { ...DEFAULT_PROMPTS },
-    imageSpec,
-    images: {},
-    playground: { ...getDefaultPlaygroundState(), imageSpec },
-    imageApiConfig: state.imageApiConfig || { ...DEFAULT_IMAGE_API_CONFIG },
-    promptApiConfig: state.promptApiConfig || { ...DEFAULT_PROMPT_API_CONFIG },
-    loading: {},
-  };
+  resetActiveProductWorkspace(null);
+  state.imageSpec = imageSpec;
+  state.playground = { ...getDefaultPlaygroundState(), imageSpec };
+  state.loading = {};
   for (const type of TYPES) {
     setMessage(type, "");
   }
+  saveState();
   render();
   setStatus("正在分配新的套图文件夹");
   try {
@@ -1733,20 +2037,16 @@ async function resetGeneratedCache() {
   setStatus("正在重置生成缓存");
   try {
     const data = await apiPost("/api/image-sets/reset", {});
-    sessionStorage.removeItem(STORAGE_KEY);
-    state = {
-      activeModule,
-      configScope,
-      productSetMode,
-      imageSet: data.imageSet,
-      prompts: { ...DEFAULT_PROMPTS },
-      imageSpec,
-      images: {},
-      playground: getDefaultPlaygroundState(),
-      imageApiConfig: state.imageApiConfig || { ...DEFAULT_IMAGE_API_CONFIG },
-      promptApiConfig,
-      loading: {},
-    };
+    imageSetRequests = {};
+    state.activeModule = activeModule;
+    state.configScope = configScope;
+    state.productSetMode = productSetMode;
+    state.imageSpec = imageSpec;
+    state.playground = getDefaultPlaygroundState();
+    state.imageApiConfig = state.imageApiConfig || { ...DEFAULT_IMAGE_API_CONFIG };
+    state.promptApiConfig = promptApiConfig;
+    state.loading = {};
+    resetAllProductWorkspaces(data.imageSet);
     for (const type of TYPES) {
       setMessage(type, "");
     }
@@ -1799,17 +2099,80 @@ function bindEvents() {
     setSidebarCollapsed(!state.sidebarCollapsed);
   });
   window.addEventListener("resize", updateSidebarView);
-  qs("#imageSpecMode").addEventListener("change", () => {
+  qsa("[data-image-size-preset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.imageSpec = normalizeImageSpec({
+        ...state.imageSpec,
+        sizeMode: "preset",
+        sizePreset: button.dataset.imageSizePreset,
+      });
+      collectImageSpec();
+    });
+  });
+  qs("#imageSpecCustomSizeButton").addEventListener("click", () => {
+    state.imageSpec = normalizeImageSpec({
+      ...state.imageSpec,
+      sizeMode: "custom",
+      customSize: qs("#imageSpecCustomSize").value,
+    });
+    collectImageSpec();
+    qs("#imageSpecCustomSize").focus();
+  });
+  qs("#imageSpecCustomSize").addEventListener("change", () => {
+    state.imageSpec = normalizeImageSpec({
+      ...state.imageSpec,
+      sizeMode: "custom",
+      customSize: qs("#imageSpecCustomSize").value,
+    });
     collectImageSpec();
   });
-  qs("#imageSpecSize").addEventListener("change", () => {
+  qs("#imageSpecCustomSize").addEventListener("blur", () => {
+    state.imageSpec = normalizeImageSpec({
+      ...state.imageSpec,
+      sizeMode: "custom",
+      customSize: qs("#imageSpecCustomSize").value,
+    });
     collectImageSpec();
   });
-  qs("#imageSpecSize").addEventListener("blur", () => {
-    collectImageSpec();
+  qsa("[data-image-ratio-preset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.imageSpec = normalizeImageSpec({
+        ...state.imageSpec,
+        ratioPreset: button.dataset.imageRatioPreset,
+      });
+      collectImageSpec();
+    });
   });
-
-  qs("#generateMainTop").addEventListener("click", generateMain);
+  qs("#imageSpecCustomRatioButton").addEventListener("click", () => {
+    state.imageSpec = normalizeImageSpec({
+      ...state.imageSpec,
+      ratioPreset: "custom",
+      customRatioWidth: qs("#imageSpecCustomRatioWidth").value,
+      customRatioHeight: qs("#imageSpecCustomRatioHeight").value,
+    });
+    collectImageSpec();
+    qs("#imageSpecCustomRatioWidth").focus();
+  });
+  ["#imageSpecCustomRatioWidth", "#imageSpecCustomRatioHeight"].forEach((selector) => {
+    qs(selector).addEventListener("change", () => {
+      state.imageSpec = normalizeImageSpec({
+        ...state.imageSpec,
+        ratioPreset: "custom",
+        customRatioWidth: qs("#imageSpecCustomRatioWidth").value,
+        customRatioHeight: qs("#imageSpecCustomRatioHeight").value,
+      });
+      collectImageSpec();
+    });
+    qs(selector).addEventListener("blur", () => {
+      state.imageSpec = normalizeImageSpec({
+        ...state.imageSpec,
+        ratioPreset: "custom",
+        customRatioWidth: qs("#imageSpecCustomRatioWidth").value,
+        customRatioHeight: qs("#imageSpecCustomRatioHeight").value,
+      });
+      collectImageSpec();
+    });
+  });
   qs("#selectPromptImage").addEventListener("click", () => qs("#promptImageInput").click());
   qs("#promptImageInput").addEventListener("change", async (event) => {
     await selectPromptExtractionImage(event.target.files?.[0]);

@@ -64,7 +64,21 @@ const PORT = Number(process.env.PORT || 4174);
 const PREFERRED_IMAGE_WIDTH = 1024;
 const PREFERRED_IMAGE_HEIGHT = 1024;
 const PREFERRED_IMAGE_SIZE = `${PREFERRED_IMAGE_WIDTH}x${PREFERRED_IMAGE_HEIGHT}`;
-const REQUIRED_IMAGE_RATIO = "1:1";
+const IMAGE_SIZE_PRESETS = {
+  "1k": 1024,
+  "2k": 2048,
+  "4k": 4096,
+};
+const IMAGE_RATIO_PRESETS = {
+  "1:1": [1, 1],
+  "3:2": [3, 2],
+  "2:3": [2, 3],
+  "16:9": [16, 9],
+  "9:16": [9, 16],
+  "4:3": [4, 3],
+  "3:4": [3, 4],
+  "21:9": [21, 9],
+};
 const IMAGE_API_BASE_ENV_KEY = "CUSTOM_IMAGE_API_BASE";
 const IMAGE_API_KEY_ENV_KEY = "CUSTOM_IMAGE_API_KEY";
 const PROMPT_API_BASE_ENV_KEY = "CUSTOM_PROMPT_API_BASE";
@@ -76,7 +90,6 @@ const FALLBACK_PROMPT_EXTRACT_MODEL = "gpt-4o-mini";
 const PROMPT_EXTRACTION_TIMEOUT_MS = 120000;
 const PROMPT_EXTRACTION_INSTRUCTION =
   "请分析这张图片，并提取一段可直接用于 AI 生图的中文详细提示词。输出只需要提示词正文，不要解释。请覆盖主体、构图、视角、背景、光线、材质、颜色、细节、风格、镜头/渲染质感、画面氛围，并在最后补充适合电商或设计复刻的质量描述。";
-const IMAGE_SPEC_MODES = new Set(["square", "fixed"]);
 const MIN_IMAGE_SPEC_SIZE = 256;
 const MAX_IMAGE_SPEC_SIZE = 4096;
 const PLAYGROUND_IMAGE_COUNT_MIN = 1;
@@ -900,16 +913,63 @@ function readImageDimensions(data) {
 }
 
 function normalizeImageSpec(rawSpec = {}) {
-  const mode = IMAGE_SPEC_MODES.has(rawSpec?.mode) ? rawSpec.mode : "square";
-  const parsedSize = Number(rawSpec?.size);
-  const size = Number.isInteger(parsedSize)
-    ? Math.min(Math.max(parsedSize, MIN_IMAGE_SPEC_SIZE), MAX_IMAGE_SPEC_SIZE)
-    : PREFERRED_IMAGE_WIDTH;
+  const legacyMode = rawSpec?.mode === "fixed" ? "fixed" : rawSpec?.mode === "square" ? "square" : "";
+  const legacySize = Number(rawSpec?.size);
+  const sizeMode =
+    rawSpec?.sizeMode === "custom" || (legacyMode === "fixed" && !Object.values(IMAGE_SIZE_PRESETS).includes(legacySize))
+      ? "custom"
+      : "preset";
+  const sizePreset =
+    typeof rawSpec?.sizePreset === "string" && Object.hasOwn(IMAGE_SIZE_PRESETS, rawSpec.sizePreset)
+      ? rawSpec.sizePreset
+      : Object.entries(IMAGE_SIZE_PRESETS).find(([, value]) => value === legacySize)?.[0] || "1k";
+  const customSize = Number.isInteger(Number(rawSpec?.customSize))
+    ? clampInteger(rawSpec.customSize, PREFERRED_IMAGE_WIDTH, MIN_IMAGE_SPEC_SIZE, MAX_IMAGE_SPEC_SIZE)
+    : Number.isInteger(legacySize)
+      ? clampInteger(legacySize, PREFERRED_IMAGE_WIDTH, MIN_IMAGE_SPEC_SIZE, MAX_IMAGE_SPEC_SIZE)
+      : PREFERRED_IMAGE_WIDTH;
+  const size = sizeMode === "custom" ? customSize : IMAGE_SIZE_PRESETS[sizePreset];
+  const legacyRatio = typeof rawSpec?.ratio === "string" ? rawSpec.ratio.trim() : "";
+  const ratioPreset =
+    typeof rawSpec?.ratioPreset === "string" && (Object.hasOwn(IMAGE_RATIO_PRESETS, rawSpec.ratioPreset) || rawSpec.ratioPreset === "custom")
+      ? rawSpec.ratioPreset
+      : Object.hasOwn(IMAGE_RATIO_PRESETS, legacyRatio)
+        ? legacyRatio
+        : "1:1";
+  const legacyRatioParts = legacyRatio.split(":").map((value) => Number(value));
+  const customRatioWidth = Number.isInteger(Number(rawSpec?.customRatioWidth)) && Number(rawSpec.customRatioWidth) > 0
+    ? Math.min(Number(rawSpec.customRatioWidth), 99)
+    : Number.isInteger(legacyRatioParts[0]) && legacyRatioParts[0] > 0
+      ? Math.min(legacyRatioParts[0], 99)
+      : 1;
+  const customRatioHeight = Number.isInteger(Number(rawSpec?.customRatioHeight)) && Number(rawSpec.customRatioHeight) > 0
+    ? Math.min(Number(rawSpec.customRatioHeight), 99)
+    : Number.isInteger(legacyRatioParts[1]) && legacyRatioParts[1] > 0
+      ? Math.min(legacyRatioParts[1], 99)
+      : 1;
+  const [ratioWidth, ratioHeight] = ratioPreset === "custom"
+    ? [customRatioWidth, customRatioHeight]
+    : IMAGE_RATIO_PRESETS[ratioPreset] || IMAGE_RATIO_PRESETS["1:1"];
+  let width = size;
+  let height = size;
+  if (ratioWidth > ratioHeight) {
+    height = Math.max(1, Math.round((size * ratioHeight) / ratioWidth));
+  } else if (ratioHeight > ratioWidth) {
+    width = Math.max(1, Math.round((size * ratioWidth) / ratioHeight));
+  }
+  const ratio = `${ratioWidth}:${ratioHeight}`;
   return {
-    mode,
+    sizeMode,
+    sizePreset,
+    customSize,
+    ratioPreset,
+    customRatioWidth,
+    customRatioHeight,
     size,
-    requestSize: `${size}x${size}`,
-    ratio: REQUIRED_IMAGE_RATIO,
+    width,
+    height,
+    requestSize: `${width}x${height}`,
+    ratio,
   };
 }
 
@@ -943,15 +1003,17 @@ function getBatchDerivedTypes(types) {
 
 function describeImageSpec(spec) {
   const normalized = normalizeImageSpec(spec);
-  return normalized.mode === "fixed"
-    ? `${normalized.size}x${normalized.size}（${REQUIRED_IMAGE_RATIO}）`
-    : `${REQUIRED_IMAGE_RATIO} 方图`;
+  return `${normalized.width}x${normalized.height}（${normalized.ratio}）`;
 }
 
 function imageSpecFromSearchParams(searchParams) {
   return normalizeImageSpec({
-    mode: searchParams.get("imageSpecMode"),
-    size: searchParams.get("imageSpecSize"),
+    sizeMode: searchParams.get("imageSpecSizeMode"),
+    sizePreset: searchParams.get("imageSpecSizePreset"),
+    customSize: searchParams.get("imageSpecCustomSize"),
+    ratioPreset: searchParams.get("imageSpecRatioPreset"),
+    customRatioWidth: searchParams.get("imageSpecCustomRatioWidth"),
+    customRatioHeight: searchParams.get("imageSpecCustomRatioHeight"),
   });
 }
 
@@ -961,15 +1023,9 @@ function assertImageSpecDimensions(data, spec = normalizeImageSpec(), label = "�
   if (!dimensions) {
     throw new Error(`${label}无法读取图片尺寸，请使用 PNG、JPG、WEBP 或 GIF 图片`);
   }
-  if (dimensions.width !== dimensions.height) {
-    throw new Error(`${label}必须是 ${REQUIRED_IMAGE_RATIO} 方图，当前是 ${dimensions.width}x${dimensions.height}`);
-  }
-  if (
-    normalized.mode === "fixed" &&
-    (dimensions.width !== normalized.size || dimensions.height !== normalized.size)
-  ) {
+  if (dimensions.width !== normalized.width || dimensions.height !== normalized.height) {
     throw new Error(
-      `${label}尺寸必须是 ${normalized.size}x${normalized.size}（${REQUIRED_IMAGE_RATIO}），` +
+      `${label}尺寸必须是 ${normalized.width}x${normalized.height}（${normalized.ratio}），` +
         `当前是 ${dimensions.width}x${dimensions.height}`,
     );
   }
@@ -986,19 +1042,31 @@ function getImageNormalizationPlan(dimensions, spec = normalizeImageSpec()) {
   if (!dimensions) {
     return {
       needsNormalization: false,
-      cropSize: 0,
+      cropWidth: 0,
+      cropHeight: 0,
       targetWidth: 0,
       targetHeight: 0,
     };
   }
-  const needsCrop = dimensions.width !== dimensions.height;
-  const squareSize = needsCrop ? Math.min(dimensions.width, dimensions.height) : dimensions.width;
-  const needsResize = normalized.mode === "fixed" && squareSize !== normalized.size;
+  const currentRatio = dimensions.width / dimensions.height;
+  const targetRatio = normalized.width / normalized.height;
+  let cropWidth = dimensions.width;
+  let cropHeight = dimensions.height;
+  if (Math.abs(currentRatio - targetRatio) > 0.0001) {
+    if (currentRatio > targetRatio) {
+      cropWidth = Math.max(1, Math.round(dimensions.height * targetRatio));
+    } else {
+      cropHeight = Math.max(1, Math.round(dimensions.width / targetRatio));
+    }
+  }
+  const needsCrop = cropWidth !== dimensions.width || cropHeight !== dimensions.height;
+  const needsResize = cropWidth !== normalized.width || cropHeight !== normalized.height;
   return {
     needsNormalization: needsCrop || needsResize,
-    cropSize: needsCrop ? Math.min(dimensions.width, dimensions.height) : 0,
-    targetWidth: needsResize ? normalized.size : 0,
-    targetHeight: needsResize ? normalized.size : 0,
+    cropWidth: needsCrop ? cropWidth : 0,
+    cropHeight: needsCrop ? cropHeight : 0,
+    targetWidth: needsResize ? normalized.width : 0,
+    targetHeight: needsResize ? normalized.height : 0,
   };
 }
 
@@ -1007,7 +1075,7 @@ function getImageNormalizerCommands(command, plan, filePath) {
   const commands = [];
   const isImageMagick = commandName === "convert" || commandName === "magick";
 
-  if (plan.cropSize) {
+  if (plan.cropWidth && plan.cropHeight) {
     if (isImageMagick) {
       commands.push({
         command,
@@ -1016,7 +1084,7 @@ function getImageNormalizerCommands(command, plan, filePath) {
           "-gravity",
           "center",
           "-crop",
-          `${plan.cropSize}x${plan.cropSize}+0+0`,
+          `${plan.cropWidth}x${plan.cropHeight}+0+0`,
           "+repage",
           filePath,
         ],
@@ -1024,7 +1092,7 @@ function getImageNormalizerCommands(command, plan, filePath) {
     } else {
       commands.push({
         command,
-        args: ["--cropToHeightWidth", String(plan.cropSize), String(plan.cropSize), filePath],
+        args: ["--cropToHeightWidth", String(plan.cropHeight), String(plan.cropWidth), filePath],
       });
     }
   }
@@ -1318,7 +1386,7 @@ async function saveUploadedMain(req, imageSetId, imageSpec = normalizeImageSpec(
   if (!ext) {
     throw new Error("只支持上传 PNG、JPG、WEBP 或 GIF 图片");
   }
-  // 上传主图不限制尺寸/比例，落盘后再归一化为 1:1，保证生成阶段为方图。
+  // 上传主图不限制原始尺寸/比例，落盘后统一归一化为当前选定的输出规格。
 
   const outputDir = resolveImageSetDir(imageSetId);
   await fsp.mkdir(outputDir, { recursive: true });
@@ -1655,7 +1723,7 @@ async function handleApi(req, res, pathname, searchParams) {
       skillScriptExists: Boolean(SKILL_SCRIPT && fs.existsSync(SKILL_SCRIPT)),
       skillScriptCandidates: SKILL_SCRIPT_CANDIDATES,
       defaultImageSpec: normalizeImageSpec(),
-      requiredImageRatio: REQUIRED_IMAGE_RATIO,
+      defaultImageRatio: normalizeImageSpec().ratio,
       imageApiConfig: getRuntimeImageApiConfigSummary(),
       promptApiConfig: getRuntimePromptApiConfigSummary(),
     });
@@ -1962,7 +2030,6 @@ module.exports = {
   PREFERRED_IMAGE_WIDTH,
   GPT_IMAGE_PLAYGROUND_BASE_PATH,
   GPT_IMAGE_PLAYGROUND_DIST_DIR,
-  REQUIRED_IMAGE_RATIO,
   assertImageSpecDimensions,
   buildApiEndpoint,
   buildImageGeneratorArgs,
