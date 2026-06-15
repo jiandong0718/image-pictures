@@ -1,44 +1,27 @@
-const HAT_DERIVED_TYPES = ["whiteBackground", "dimensions", "detail", "worn", "scene", "sellingPoints"];
-const BAG_DERIVED_TYPES = ["derived"];
-const SHOULDER_BAG_FLAT_DERIVED_TYPES = ["shoulderBagStrap", "shoulderBagBody"];
-const TYPES = ["main", "derived", ...HAT_DERIVED_TYPES, ...SHOULDER_BAG_FLAT_DERIVED_TYPES];
-const DERIVED_TYPES = ["derived", ...HAT_DERIVED_TYPES, ...SHOULDER_BAG_FLAT_DERIVED_TYPES];
 const DEFAULT_PRODUCT_SET_MODE = "hat";
 const DEFAULT_ACTIVE_MODULE = "config";
 const PRODUCT_WORKSPACE_MODES = ["hat", "bag", "shoulderBagFlat"];
-const PRODUCT_SET_MODES = {
-  hat: {
-    label: "商品衍生图",
-    types: ["main", ...HAT_DERIVED_TYPES],
-    derivedTypes: HAT_DERIVED_TYPES,
-    generateAllLabel: "生成六张衍生图",
-    readyStatus: "主图已准备，可以继续生成六张衍生图",
-    generatingStatus: "正在同时生成六张衍生图",
-    doneStatus: "六张衍生图已生成",
-    partialStatus: "部分衍生图生成失败",
-  },
-  bag: {
-    label: "商品微调图",
-    types: ["main", ...BAG_DERIVED_TYPES],
-    derivedTypes: BAG_DERIVED_TYPES,
-    generateAllLabel: "生成衍生图",
-    readyStatus: "主图已准备，可以继续生成衍生图",
-    generatingStatus: "正在生成衍生图",
-    doneStatus: "衍生图已生成",
-    partialStatus: "衍生图生成失败",
-  },
-  shoulderBagFlat: {
-    label: "3D转平面",
-    types: ["main", ...SHOULDER_BAG_FLAT_DERIVED_TYPES],
-    derivedTypes: SHOULDER_BAG_FLAT_DERIVED_TYPES,
-    generateAllLabel: "生成两张部位图",
-    readyStatus: "主图已准备，可以继续生成两张部位图",
-    generatingStatus: "正在同时生成两张部位图",
-    doneStatus: "两张部位图已生成",
-    partialStatus: "部分部位图生成失败",
-    mainUploadOnly: true,
-  },
-};
+const PRODUCT_SET_DEFINITIONS = globalThis.ImageDesignProductSets || {};
+const PRODUCT_SET_MODES = PRODUCT_WORKSPACE_MODES.reduce((modes, mode) => {
+  const definition = PRODUCT_SET_DEFINITIONS[mode];
+  if (!definition) {
+    throw new Error(`Missing product set definition: ${mode}`);
+  }
+  modes[mode] = {
+    label: definition.label,
+    types: ["main", ...definition.derivedTypes],
+    derivedTypes: definition.derivedTypes,
+    generateAllLabel: definition.generateAllLabel,
+    readyStatus: definition.readyStatus,
+    generatingStatus: definition.generatingStatus,
+    doneStatus: definition.doneStatus,
+    partialStatus: definition.partialStatus,
+    mainUploadOnly: Boolean(definition.mainUploadOnly),
+  };
+  return modes;
+}, {});
+const TYPES = ["main", ...new Set(PRODUCT_WORKSPACE_MODES.flatMap((mode) => PRODUCT_SET_MODES[mode].derivedTypes))];
+const DERIVED_TYPES = TYPES.filter((type) => type !== "main");
 const MODULES = {
   config: {
     kicker: "配置",
@@ -46,37 +29,14 @@ const MODULES = {
     subtitle: "保存 API Key 后解锁套图生成与提示词提取。",
     requiresApiConfig: false,
   },
-  hat: {
-    kicker: "套图工作流",
-    title: "商品衍生图",
-    subtitle: "从商品主图扩展白底、尺寸、细节、穿戴、场景和卖点等详情图。",
-    productSetMode: "hat",
-    requiresApiConfig: true,
-  },
-  bag: {
-    kicker: "套图工作流",
-    title: "商品微调图",
-    subtitle: "基于商品主图做局部调整、风格延展或展示方式微调，保留主体一致性。",
-    productSetMode: "bag",
-    requiresApiConfig: true,
-  },
-  shoulderBagFlat: {
-    kicker: "套图工作流",
-    title: "3D转平面",
-    subtitle: "上传 3D 商品图后生成适合电商详情页使用的平面结构部位图。",
-    productSetMode: "shoulderBagFlat",
-    requiresApiConfig: true,
-  },
+  ...PRODUCT_WORKSPACE_MODES.reduce((modules, mode) => {
+    modules[mode] = PRODUCT_SET_DEFINITIONS[mode].module;
+    return modules;
+  }, {}),
   promptExtractor: {
     kicker: "工具",
     title: "提示词提取",
     subtitle: "上传参考图，生成可复用的详细中文生图提示词。",
-    requiresApiConfig: true,
-  },
-  playground: {
-    kicker: "工具",
-    title: "自由生图",
-    subtitle: "融合通用生图能力，用于临时创意、参考图编辑和多张候选探索。",
     requiresApiConfig: true,
   },
   fullPlayground: {
@@ -85,6 +45,12 @@ const MODULES = {
     subtitle: "完整图像创作工作区，保留图库、参数、参考图、遮罩和 Agent 工作流。",
     requiresApiConfig: false,
   },
+  playground: {
+    kicker: "工具",
+    title: "自由生图",
+    subtitle: "融合通用生图能力，用于临时创意、参考图编辑和多张候选探索。",
+    requiresApiConfig: true,
+  }
 };
 const STORAGE_KEY = "imageDesignWorkbench.session.v5";
 const IMAGE_SIZE_PRESETS = {
@@ -128,41 +94,17 @@ const CONFIG_SCOPES = new Set(["all", "image", "prompt"]);
 const MIN_IMAGE_SPEC_SIZE = 256;
 const MAX_IMAGE_SPEC_SIZE = 4096;
 
-const TYPE_LABELS = {
-  main: "主图",
-  derived: "衍生图",
-  whiteBackground: "白色背景图",
-  dimensions: "尺寸标注图",
-  detail: "局部放大图",
-  worn: "人物穿戴图",
-  scene: "场景展示图",
-  sellingPoints: "卖点展示图",
-  shoulderBagStrap: "肩带部位图",
-  shoulderBagBody: "包身部位图",
-};
+const TYPE_LABELS = PRODUCT_WORKSPACE_MODES.reduce(
+  (labels, mode) => ({ ...labels, ...PRODUCT_SET_DEFINITIONS[mode].typeLabels }),
+  { main: "主图" },
+);
 
-const DEFAULT_PROMPTS = {
+const DEFAULT_PROMPTS = PRODUCT_WORKSPACE_MODES.reduce((prompts, mode) => {
+  return { ...prompts, ...PRODUCT_SET_DEFINITIONS[mode].defaultPrompts };
+}, {
   main:
     "为一款 3D 印花商品生成电商主图。商品居中展示，图案清晰，材质真实，光线干净，高级商业摄影风格，适合电商平台首图。",
-  derived:
-    "基于主图生成一张商品微调图。保留商品主体、颜色、材质和图案细节，按照我的要求调整场景、角度或展示方式，画面干净高级，适合电商详情页。",
-  whiteBackground:
-    "基于主图保留商品外观、颜色和 3D 印花细节，生成纯白背景电商图。商品完整居中，边缘干净，无多余道具。",
-  dimensions:
-    "基于主图生成尺寸标注图。保留商品正面外观，添加清晰的尺寸辅助线、箭头和标注区域，画面整洁，适合商品详情页。",
-  detail:
-    "基于主图生成局部放大细节图。突出 3D 印花纹理、面料质感、边缘工艺和颜色层次，带局部放大窗口，商业详情页风格。",
-  worn:
-    "基于主图生成真实人物穿戴图。模特自然穿戴该商品，商品图案和颜色保持一致，姿态自然，背景简洁，适合电商展示。",
-  scene:
-    "基于主图生成生活场景展示图。保留商品外观、颜色和 3D 印花细节，将商品自然放置在简洁真实的使用场景中，适合商品详情页。",
-  sellingPoints:
-    "基于主图生成卖点展示图。保留商品外观、颜色和 3D 印花细节，加入清晰卖点标注区域和简洁版式，不添加虚假参数。",
-  shoulderBagStrap:
-    "基于上传的 3D 商品图生成平面肩带部位图。保留商品颜色、材质、印花和五金细节，突出肩带连接、调节扣、走线和受力结构，画面干净，适合电商详情页。",
-  shoulderBagBody:
-    "基于上传的 3D 商品图生成平面包身部位图。保留包型、颜色、材质和印花细节，突出包身轮廓、开合结构、边缘工艺和容量区域，画面干净，适合电商详情页。",
-};
+});
 
 const {
   createProductWorkspaces,
@@ -711,8 +653,10 @@ function updateWorkspaceView() {
   const isPromptExtractor = activeModule === "promptExtractor";
   const isPlayground = activeModule === "playground";
   const isFullPlayground = activeModule === "fullPlayground";
+  const isConfig = activeModule === "config";
   const showsImageSpec = isProduct || isPlayground;
   const showsTopbarActions = activeModule !== "config" && !isFullPlayground;
+  const showsProductSettings = isConfig && normalizeConfigScope(state.configScope) !== "prompt";
   const topbar = qs(".topbar");
   const topbarActions = qs(".topbar-actions");
   const topbarSettings = qs(".topbar-settings");
@@ -752,21 +696,21 @@ function updateWorkspaceView() {
   if (topbarPrimaryActions) {
     topbarPrimaryActions.hidden = !isProduct;
   }
-  configPanel.hidden = activeModule !== "config";
-  if (activeModule === "config") {
+  configPanel.hidden = !isConfig;
+  if (isConfig) {
     updateConfigCenterView();
   }
   promptPanel.hidden = !isPromptExtractor;
   playgroundPanel.hidden = !isPlayground;
   fullPlaygroundPanel.hidden = !isFullPlayground;
   if (productToolbar) {
-    productToolbar.hidden = !isProduct;
+    productToolbar.hidden = !showsProductSettings;
   }
   board.hidden = !isProduct;
-  specControl.hidden = !isProduct;
-  imageSetControl.hidden = !isProduct;
+  specControl.hidden = !showsProductSettings;
+  imageSetControl.hidden = !showsProductSettings;
   openNewWindow.hidden = !isProduct;
-  generateAll.hidden = !isProduct;
+  generateAll.hidden = !showsProductSettings;
   downloadAll.hidden = !isProduct;
   if (moreActions) {
     moreActions.hidden = !showsTopbarActions;
@@ -2100,7 +2044,9 @@ function bindEvents() {
   qs("#toggleSidebar").addEventListener("click", () => {
     setSidebarCollapsed(!state.sidebarCollapsed);
   });
-  window.addEventListener("resize", updateSidebarView);
+  window.addEventListener("resize", () => {
+    updateSidebarView();
+  });
   qsa("[data-image-size-preset]").forEach((button) => {
     button.addEventListener("click", () => {
       state.imageSpec = normalizeImageSpec({

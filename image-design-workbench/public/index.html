@@ -67,7 +67,7 @@
           <div class="topbar-actions">
             <button class="button ghost topbar-download-all" id="downloadAll" type="button" disabled>
               <span class="icon" data-icon="download"></span>
-              下载全部
+              下载套图
             </button>
             <button class="button" id="openNewWindow" type="button">
               <span class="icon" data-icon="window"></span>
@@ -81,77 +81,6 @@
 
         <main class="workspace-main" id="mainContent" tabindex="-1">
         <p class="sr-only" id="globalStatus" aria-live="polite">准备就绪</p>
-
-        <section class="product-toolbar panel-view" id="productToolbar" hidden>
-          <div class="product-toolbar-head">
-            <div>
-              <p class="card-kicker">工作区控制</p>
-              <h2>输出规格与批量操作</h2>
-            </div>
-            <div class="fixed-size compact" id="imageSetControl" aria-label="当前套图">
-              <span>当前套图</span>
-              <strong id="imageSetName">--</strong>
-            </div>
-          </div>
-          <div class="product-toolbar-grid">
-            <section class="image-spec-panel" id="imageSpecControl" aria-label="图片规格">
-              <div class="image-spec-group">
-                <div class="image-spec-group-head">
-                  <span>基准分辨率</span>
-                  <small>以长边作为输出基准，可选预设或手动输入。</small>
-                </div>
-                <div class="spec-chip-row" role="group" aria-label="基准分辨率">
-                  <button class="spec-chip" data-image-size-preset="1k" type="button">1K</button>
-                  <button class="spec-chip" data-image-size-preset="2k" type="button">2K</button>
-                  <button class="spec-chip" data-image-size-preset="4k" type="button">4K</button>
-                  <button class="spec-chip ghost" id="imageSpecCustomSizeButton" type="button">自定义</button>
-                </div>
-                <label class="spec-inline-field" id="imageSpecCustomSizeWrap">
-                  <span>自定义长边</span>
-                  <input id="imageSpecCustomSize" type="number" min="256" max="4096" step="1" value="1024" />
-                </label>
-              </div>
-
-              <div class="image-spec-group">
-                <div class="image-spec-group-head">
-                  <span>图像比例</span>
-                  <small>支持常用横竖版比例，也可以自定义宽高比。</small>
-                </div>
-                <div class="spec-ratio-grid" role="group" aria-label="图像比例">
-                  <button class="spec-ratio-card" data-image-ratio-preset="1:1" type="button">1:1</button>
-                  <button class="spec-ratio-card" data-image-ratio-preset="3:2" type="button">3:2</button>
-                  <button class="spec-ratio-card" data-image-ratio-preset="2:3" type="button">2:3</button>
-                  <button class="spec-ratio-card" data-image-ratio-preset="16:9" type="button">16:9</button>
-                  <button class="spec-ratio-card" data-image-ratio-preset="9:16" type="button">9:16</button>
-                  <button class="spec-ratio-card" data-image-ratio-preset="4:3" type="button">4:3</button>
-                  <button class="spec-ratio-card" data-image-ratio-preset="3:4" type="button">3:4</button>
-                  <button class="spec-ratio-card" data-image-ratio-preset="21:9" type="button">21:9</button>
-                </div>
-                <div class="spec-custom-ratio">
-                  <button class="spec-chip ghost" id="imageSpecCustomRatioButton" type="button">自定义比例</button>
-                  <div class="spec-custom-ratio-fields" id="imageSpecCustomRatioWrap">
-                    <label class="spec-inline-field">
-                      <span>宽</span>
-                      <input id="imageSpecCustomRatioWidth" type="number" min="1" max="99" step="1" value="1" />
-                    </label>
-                    <label class="spec-inline-field">
-                      <span>高</span>
-                      <input id="imageSpecCustomRatioHeight" type="number" min="1" max="99" step="1" value="1" />
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <aside class="product-toolbar-actions" aria-label="批量操作">
-              <button class="button" id="generateAll" type="button" disabled>
-                <span class="icon" data-icon="layers"></span>
-                生成六张衍生图
-              </button>
-              <p class="product-toolbar-note">先完成主图，再批量生成整套详情图。</p>
-            </aside>
-          </div>
-        </section>
 
         <section class="config-center panel-view" id="configCenterPanel">
           <div class="settings-layout">
@@ -246,6 +175,77 @@
               </section>
             </div>
           </div>
+
+          <section class="product-toolbar panel-view" id="productToolbar" data-config-scope="image" hidden>
+            <div class="product-toolbar-head">
+              <div>
+                <p class="card-kicker">工作区控制</p>
+                <h2>输出规格与批量操作</h2>
+              </div>
+              <div class="fixed-size compact" id="imageSetControl" aria-label="当前套图">
+                <span>当前套图</span>
+                <strong id="imageSetName">--</strong>
+              </div>
+            </div>
+            <div class="product-toolbar-grid">
+              <section class="image-spec-panel" id="imageSpecControl" aria-label="图片规格">
+                <div class="image-spec-group">
+                  <div class="image-spec-group-head">
+                    <span>基准分辨率</span>
+                    <small>以长边作为输出基准，可选预设或手动输入。</small>
+                  </div>
+                  <div class="spec-chip-row" role="group" aria-label="基准分辨率">
+                    <button class="spec-chip" data-image-size-preset="1k" type="button">1K</button>
+                    <button class="spec-chip" data-image-size-preset="2k" type="button">2K</button>
+                    <button class="spec-chip" data-image-size-preset="4k" type="button">4K</button>
+                    <button class="spec-chip ghost" id="imageSpecCustomSizeButton" type="button">自定义</button>
+                  </div>
+                  <label class="spec-inline-field" id="imageSpecCustomSizeWrap">
+                    <span>自定义长边</span>
+                    <input id="imageSpecCustomSize" type="number" min="256" max="4096" step="1" value="1024" />
+                  </label>
+                </div>
+
+                <div class="image-spec-group">
+                  <div class="image-spec-group-head">
+                    <span>图像比例</span>
+                    <small>支持常用横竖版比例，也可以自定义宽高比。</small>
+                  </div>
+                  <div class="spec-ratio-grid" role="group" aria-label="图像比例">
+                    <button class="spec-ratio-card" data-image-ratio-preset="1:1" type="button">1:1</button>
+                    <button class="spec-ratio-card" data-image-ratio-preset="3:2" type="button">3:2</button>
+                    <button class="spec-ratio-card" data-image-ratio-preset="2:3" type="button">2:3</button>
+                    <button class="spec-ratio-card" data-image-ratio-preset="16:9" type="button">16:9</button>
+                    <button class="spec-ratio-card" data-image-ratio-preset="9:16" type="button">9:16</button>
+                    <button class="spec-ratio-card" data-image-ratio-preset="4:3" type="button">4:3</button>
+                    <button class="spec-ratio-card" data-image-ratio-preset="3:4" type="button">3:4</button>
+                    <button class="spec-ratio-card" data-image-ratio-preset="21:9" type="button">21:9</button>
+                  </div>
+                  <div class="spec-custom-ratio">
+                    <button class="spec-chip ghost" id="imageSpecCustomRatioButton" type="button">自定义比例</button>
+                    <div class="spec-custom-ratio-fields" id="imageSpecCustomRatioWrap">
+                      <label class="spec-inline-field">
+                        <span>宽</span>
+                        <input id="imageSpecCustomRatioWidth" type="number" min="1" max="99" step="1" value="1" />
+                      </label>
+                      <label class="spec-inline-field">
+                        <span>高</span>
+                        <input id="imageSpecCustomRatioHeight" type="number" min="1" max="99" step="1" value="1" />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="product-toolbar-actions" aria-label="批量操作">
+                <button class="button" id="generateAll" type="button" disabled>
+                  <span class="icon" data-icon="layers"></span>
+                  生成六张衍生图
+                </button>
+                <p class="product-toolbar-note">先完成主图，再批量生成整套详情图。</p>
+              </aside>
+            </div>
+          </section>
         </section>
 
         <section class="prompt-extractor-page panel-view" id="promptExtractorPanel" hidden>
@@ -443,10 +443,11 @@
                     上传主图
                   </button>
                   <div class="main-card-meta-actions">
-                    <button class="icon-button" data-action="download" data-type="main" type="button" disabled title="下载主图" aria-label="下载主图">
+                    <button class="button" data-action="download" data-type="main" type="button" disabled>
                       <span class="icon" data-icon="download"></span>
+                      下载主图
                     </button>
-                    <button class="reference-action" data-action="reference" data-type="main" type="button" disabled>
+                    <button class="button reference-action" data-action="reference" data-type="main" type="button" disabled>
                       设为参考图
                     </button>
                   </div>
@@ -474,6 +475,20 @@
             <label class="prompt-field">
               <span>提示词</span>
               <textarea id="prompt-derived" rows="5"></textarea>
+              <span class="bag-commerce-board" aria-hidden="true">
+                <span class="commerce-board-copy">
+                  <strong>电商展示图</strong>
+                  <small>主视觉 · 场景 · 卖点</small>
+                </span>
+                <span class="commerce-board-frame">
+                  <img
+                    class="commerce-board-art"
+                    src="/assets/commerce-board-ethereal.svg"
+                    alt=""
+                    aria-hidden="true"
+                  />
+                </span>
+              </span>
             </label>
             <div class="card-actions">
               <button class="button full" data-action="generate" data-type="derived" type="button" disabled>
@@ -494,7 +509,7 @@
             <div class="card-head">
               <div>
                 <p class="card-kicker">Step 02</p>
-                <h2>肩带部位图</h2>
+                <h2>部位1图</h2>
               </div>
               <span class="badge" data-badge="shoulderBagStrap">待主图</span>
             </div>
@@ -513,7 +528,7 @@
                 <span class="icon" data-icon="refresh"></span>
                 生成
               </button>
-              <button class="icon-button" data-action="download" data-type="shoulderBagStrap" type="button" disabled title="下载肩带部位图" aria-label="下载肩带部位图">
+              <button class="icon-button" data-action="download" data-type="shoulderBagStrap" type="button" disabled title="下载部1图" aria-label="下载部位1图">
                 <span class="icon" data-icon="download"></span>
               </button>
               <button class="text-button reference-action" data-action="reference" data-type="shoulderBagStrap" type="button" disabled>
@@ -527,7 +542,7 @@
             <div class="card-head">
               <div>
                 <p class="card-kicker">Step 03</p>
-                <h2>包身部位图</h2>
+                <h2>部位2图</h2>
               </div>
               <span class="badge" data-badge="shoulderBagBody">待主图</span>
             </div>
@@ -766,6 +781,9 @@
     </template>
 
     <script src="/product-workspaces.js"></script>
+    <script src="/product-sets/hat.js"></script>
+    <script src="/product-sets/bag.js"></script>
+    <script src="/product-sets/shoulder-bag-flat.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>
