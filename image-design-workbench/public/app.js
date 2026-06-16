@@ -1227,7 +1227,7 @@ function updateControls() {
   qs("#generateAll").disabled = !hasApiConfig || !hasImageSet || !hasMain || anyLoading;
   qs("#generateAll").innerHTML = `<span class="icon" data-icon="layers"></span>${config.generateAllLabel}`;
   qs("#downloadAll").disabled = !hasImageSet || !anyImage || anyLoading;
-  qs("#uploadMainButton").disabled = !hasImageSet || Boolean(state.loading.main);
+  qs("#uploadMainButton").disabled = Boolean(state.loading.main);
   qs("#uploadApiConfig").disabled = anyLoading;
   qs("#uploadPromptApiConfig").disabled = anyLoading;
   qs("#extractPromptButton").disabled = !hasPromptApiConfig || !promptExtractionFile || promptExtractionLoading;

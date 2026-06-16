@@ -149,12 +149,12 @@ const IMAGE_TYPES = {
     endpoint: "edits",
   },
   shoulderBagStrap: {
-    label: "肩带部位图",
+    label: "部位1图",
     prefix: "shoulder-bag-strap",
     endpoint: "edits",
   },
   shoulderBagBody: {
-    label: "包身部位图",
+    label: "部位2图",
     prefix: "shoulder-bag-body",
     endpoint: "edits",
   },

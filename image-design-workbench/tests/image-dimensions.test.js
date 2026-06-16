@@ -190,9 +190,9 @@ test("builds ImageMagick normalization commands for Linux", () => {
 test("supports product-specific derived image types without changing the default hat batch set", () => {
   assert.equal(getImageTypeConfig("derived").label, "衍生图");
   assert.equal(getImageTypeConfig("derived").endpoint, "edits");
-  assert.equal(getImageTypeConfig("shoulderBagStrap").label, "肩带部位图");
+  assert.equal(getImageTypeConfig("shoulderBagStrap").label, "部位1图");
   assert.equal(getImageTypeConfig("shoulderBagStrap").prefix, "shoulder-bag-strap");
-  assert.equal(getImageTypeConfig("shoulderBagBody").label, "包身部位图");
+  assert.equal(getImageTypeConfig("shoulderBagBody").label, "部位2图");
   assert.equal(getImageTypeConfig("shoulderBagBody").endpoint, "edits");
   assert.ok(getDerivedImageTypes().includes("derived"));
   assert.ok(getDerivedImageTypes().includes("shoulderBagStrap"));
