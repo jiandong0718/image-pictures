@@ -2,6 +2,7 @@
 
 import { mountLayout } from "/shared/layout.js";
 import { apiGet, apiUpload } from "/shared/api.js";
+import { getDbRecord, putDbRecord } from "/shared/persistence.js";
 
 let file = null;
 let previewUrl = "";
@@ -9,6 +10,7 @@ let loading = false;
 let hasPromptConfig = false;
 
 const els = {};
+const DRAFT_KEY = "imageStudio:prompt:v1";
 
 function setMsg(text, kind = "") {
   els.msg.textContent = text || "";
@@ -40,6 +42,31 @@ function showPreview() {
   els.preview.innerHTML = `<div class="empty">点击或拖拽上传图片<br /><span class="mono" style="font-size: 11px">PNG / JPG / WEBP / GIF · ≤20MB</span></div>`;
 }
 
+function saveDraft() {
+  putDbRecord(DRAFT_KEY, {
+    file,
+    output: els.output?.value || "",
+    fileMeta: els.fileMeta?.textContent || "",
+  }).catch(() => {});
+}
+
+async function restoreDraft() {
+  const draft = await getDbRecord(DRAFT_KEY).catch(() => null);
+  if (!draft || typeof draft !== "object") {
+    return;
+  }
+  if (draft.file instanceof Blob) {
+    file = draft.file;
+    previewUrl = URL.createObjectURL(file);
+    els.fileMeta.textContent = draft.fileMeta || `${file.name || "已保存图片"} · ${(file.size / 1024 / 1024).toFixed(2)}MB`;
+  }
+  if (typeof draft.output === "string") {
+    els.output.value = draft.output;
+  }
+  showPreview();
+  renderState();
+}
+
 function selectFile(f) {
   if (!f) {
     return;
@@ -60,6 +87,7 @@ function selectFile(f) {
   els.output.value = "";
   els.fileMeta.textContent = `${f.name} · ${(f.size / 1024 / 1024).toFixed(2)}MB`;
   setMsg("图片已就绪，可以提取", "success");
+  saveDraft();
   showPreview();
   renderState();
 }
@@ -77,6 +105,7 @@ async function extract() {
     fd.append("image", file);
     const data = await apiUpload("/api/prompts/extract", fd);
     els.output.value = data.prompt || "";
+    saveDraft();
     setMsg("提示词已提取", "success");
   } catch (err) {
     setMsg(err.message, "error");
@@ -137,6 +166,7 @@ async function main() {
   });
   els.extractBtn.addEventListener("click", extract);
   els.copyBtn.addEventListener("click", copy);
+  els.output.addEventListener("input", saveDraft);
 
   try {
     const cfg = await apiGet("/api/prompt-config");
@@ -144,6 +174,7 @@ async function main() {
   } catch {
     hasPromptConfig = false;
   }
+  await restoreDraft();
   renderState();
 }
 

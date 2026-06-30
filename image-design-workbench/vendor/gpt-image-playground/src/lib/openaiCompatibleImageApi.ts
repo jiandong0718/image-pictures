@@ -26,6 +26,12 @@ function getStreamPartialImages(profile: ApiProfile): number {
   return profile.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES
 }
 
+function getWorkbenchCredits(payload: unknown): number | undefined {
+  if (!payload || typeof payload !== 'object') return undefined
+  const value = (payload as Record<string, unknown>).workbenchCredits
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
 function appendQuery(path: string, query?: Record<string, string>): string {
   if (!query || !Object.keys(query).length) return path
   const params = new URLSearchParams()
@@ -334,6 +340,7 @@ async function parseImagesApiResponse(payload: ImageApiResponse, mime: string, s
     actualParams,
     actualParamsList: images.map(() => actualParams),
     revisedPrompts,
+    workbenchCredits: getWorkbenchCredits(payload),
     ...(rawImageUrls.length ? { rawImageUrls } : {}),
   }
 }
@@ -406,6 +413,7 @@ async function parseImagesApiStreamResponse(
     actualParams,
     actualParamsList,
     revisedPrompts: completedItems.map((item) => item.revised_prompt),
+    workbenchCredits: getWorkbenchCredits(resultPayload),
   }
 }
 
@@ -470,6 +478,7 @@ async function parseResponsesApiStreamResponse(
     actualParams,
     actualParamsList: imageResults.map((result) => mergeActualParams(result.actualParams ?? {})),
     revisedPrompts: imageResults.map((result) => result.revisedPrompt),
+    workbenchCredits: getWorkbenchCredits(payload),
   }
 }
 
@@ -528,12 +537,24 @@ async function callImagesApiConcurrent(opts: CallApiOptions, profile: ApiProfile
     r.revisedPrompts?.length ? r.revisedPrompts : r.images.map(() => undefined),
   )
   const rawImageUrls = successfulResults.flatMap((r) => r.rawImageUrls ?? [])
+  const workbenchCredits = Math.min(
+    ...successfulResults
+      .map((r) => r.workbenchCredits)
+      .filter((value): value is number => typeof value === 'number'),
+  )
   const actualParams = mergeActualParams(
     successfulResults[0]?.actualParams ?? {},
     { n: images.length },
   )
 
-  return { images, actualParams, actualParamsList, revisedPrompts, ...(rawImageUrls.length ? { rawImageUrls } : {}) }
+  return {
+    images,
+    actualParams,
+    actualParamsList,
+    revisedPrompts,
+    ...(Number.isFinite(workbenchCredits) ? { workbenchCredits } : {}),
+    ...(rawImageUrls.length ? { rawImageUrls } : {}),
+  }
 }
 
 async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
@@ -1003,12 +1024,24 @@ async function callResponsesImageApi(opts: CallApiOptions, profile: ApiProfile):
     r.revisedPrompts?.length ? r.revisedPrompts : r.images.map(() => undefined),
   )
   const rawImageUrls = successfulResults.flatMap((r) => r.rawImageUrls ?? [])
+  const workbenchCredits = Math.min(
+    ...successfulResults
+      .map((r) => r.workbenchCredits)
+      .filter((value): value is number => typeof value === 'number'),
+  )
   const actualParams = mergeActualParams(
     successfulResults[0]?.actualParams ?? {},
     images.length === opts.params.n ? { n: opts.params.n } : { n: images.length },
   )
 
-  return { images, actualParams, actualParamsList, revisedPrompts, ...(rawImageUrls.length ? { rawImageUrls } : {}) }
+  return {
+    images,
+    actualParams,
+    actualParamsList,
+    revisedPrompts,
+    ...(Number.isFinite(workbenchCredits) ? { workbenchCredits } : {}),
+    ...(rawImageUrls.length ? { rawImageUrls } : {}),
+  }
 }
 
 async function callResponsesImageApiSingle(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
@@ -1072,6 +1105,7 @@ async function callResponsesImageApiSingle(opts: CallApiOptions, profile: ApiPro
         mergeActualParams(result.actualParams ?? {}),
       ),
       revisedPrompts: imageResults.map((result) => result.revisedPrompt),
+      workbenchCredits: getWorkbenchCredits(payload),
     }
   } finally {
     clearTimeout(timeoutId)

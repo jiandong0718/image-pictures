@@ -2,11 +2,38 @@
 
 import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost } from "/shared/api.js";
+import { createLocalState } from "/shared/persistence.js";
 
 let loading = false;
 let hasImageConfig = false;
 let results = [];
 const els = {};
+const storage = createLocalState("imageStudio:playground:v1");
+
+function readSavedState() {
+  const saved = storage.load(null);
+  return saved && typeof saved === "object" ? saved : null;
+}
+
+function saveState() {
+  storage.save({
+    prompt: els.prompt?.value || "",
+    count: els.count ? els.count.value : "1",
+    background: els.background ? els.background.value : "",
+    system: els.system?.value || "",
+    results,
+  });
+}
+
+function applySavedState() {
+  const saved = readSavedState();
+  if (!saved) return;
+  if (typeof saved.prompt === "string") els.prompt.value = saved.prompt;
+  if (typeof saved.count === "string") els.count.value = saved.count;
+  if (typeof saved.background === "string") els.background.value = saved.background;
+  if (typeof saved.system === "string") els.system.value = saved.system;
+  if (Array.isArray(saved.results)) results = saved.results;
+}
 
 function setMsg(text, kind = "") {
   els.msg.textContent = text || "";
@@ -69,6 +96,7 @@ async function generate(e) {
       system: els.system.value.trim(),
     });
     results = data.images || [];
+    saveState();
     if (typeof data.credits === "number") {
       setCredits(data.credits);
     }
@@ -99,6 +127,11 @@ async function main() {
     results: document.getElementById("results"),
   });
   els.form.addEventListener("submit", generate);
+  [els.prompt, els.count, els.background, els.system].forEach((el) => {
+    el.addEventListener("input", saveState);
+    el.addEventListener("change", saveState);
+  });
+  applySavedState();
 
   try {
     const cfg = await apiGet("/api/image-config");

@@ -2,8 +2,10 @@
 
 import { mountLayout } from "/shared/layout.js";
 import { apiGet, apiPost } from "/shared/api.js";
+import { createLocalState } from "/shared/persistence.js";
 
 let selected = null;
+const storage = createLocalState("imageStudio:admin:v1");
 
 const els = {
   keyword: document.getElementById("keyword"),
@@ -19,6 +21,28 @@ const els = {
 function setMsg(text, kind = "") {
   els.msg.textContent = text || "";
   els.msg.className = `msg ${kind}`;
+}
+
+function saveDraft() {
+  storage.save({
+    keyword: els.keyword.value,
+    amount: els.amount.value,
+    note: els.note.value,
+    selected,
+  });
+}
+
+function applyDraft() {
+  const draft = storage.load({});
+  if (!draft || typeof draft !== "object") {
+    return;
+  }
+  if (typeof draft.keyword === "string") els.keyword.value = draft.keyword;
+  if (typeof draft.amount === "string") els.amount.value = draft.amount;
+  if (typeof draft.note === "string") els.note.value = draft.note;
+  if (draft.selected && typeof draft.selected === "object") {
+    selectUser(draft.selected);
+  }
 }
 
 async function search() {
@@ -57,6 +81,7 @@ function selectUser(u) {
   els.target.innerHTML = `${u.username} <span class="mono" style="color: var(--ink-mute); font-size: 14px">#${u.id} · 当前 ${u.credits} 积分</span>`;
   els.rechargeBtn.disabled = false;
   setMsg("");
+  saveDraft();
   els.amount.focus();
 }
 
@@ -82,6 +107,7 @@ async function recharge() {
     els.note.value = "";
     selected = data.user;
     selectUser(data.user);
+    saveDraft();
     await search();
   } catch (err) {
     setMsg(err.message, "error");
@@ -95,7 +121,12 @@ async function main() {
   if (!ctx) {
     return;
   }
+  applyDraft();
   els.searchBtn.addEventListener("click", search);
+  [els.keyword, els.amount, els.note].forEach((el) => {
+    el.addEventListener("input", saveDraft);
+    el.addEventListener("change", saveDraft);
+  });
   els.keyword.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       search();

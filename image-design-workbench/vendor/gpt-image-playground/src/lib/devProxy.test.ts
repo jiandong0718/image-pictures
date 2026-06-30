@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildApiUrl } from './devProxy'
+import { buildApiUrl, normalizeBaseUrl } from './devProxy'
+
+describe('normalizeBaseUrl', () => {
+  it('keeps same-origin API paths as same-origin paths', () => {
+    expect(normalizeBaseUrl('/api/full-playground-proxy')).toBe('/api/full-playground-proxy')
+  })
+})
 
 describe('buildApiUrl', () => {
   it('uses the same-origin proxy prefix when API proxy is enabled', () => {
@@ -34,6 +40,12 @@ describe('buildApiUrl', () => {
   it('uses the configured API URL directly when API proxy is disabled', () => {
     expect(buildApiUrl('http://api.example.com/v1', 'responses', null, false)).toBe(
       'http://api.example.com/v1/responses',
+    )
+  })
+
+  it('uses same-origin API paths directly without adding v1', () => {
+    expect(buildApiUrl('/api/full-playground-proxy', 'images/generations', null, false)).toBe(
+      '/api/full-playground-proxy/images/generations',
     )
   })
 })

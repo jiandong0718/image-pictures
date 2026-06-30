@@ -28,6 +28,14 @@ function isEmbeddedInWorkbench() {
   return window.parent !== window
 }
 
+function normalizeWorkbenchTheme(value: unknown) {
+  return value === 'xianxia' ? 'xianxia' : 'tech'
+}
+
+function applyWorkbenchTheme(value: unknown) {
+  document.documentElement.dataset.workbenchTheme = normalizeWorkbenchTheme(value)
+}
+
 async function fetchWorkbenchPlaygroundConfig() {
   const response = await fetch('/api/playground-config', { cache: 'no-store' })
   if (!response.ok) return null
@@ -124,6 +132,7 @@ export default function App() {
 
     document.documentElement.classList.add('workbench-embed')
     document.documentElement.classList.remove('theme-dark')
+    applyWorkbenchTheme('tech')
 
     let disposed = false
     const syncConfig = async () => {
@@ -134,16 +143,20 @@ export default function App() {
       if (event.origin !== window.location.origin || event.source !== window.parent) return
       if (event.data?.type === 'image-workbench:config-changed') {
         void syncConfig()
+      } else if (event.data?.type === 'image-workbench:theme-changed') {
+        applyWorkbenchTheme(event.data.theme)
       }
     }
 
     window.addEventListener('message', handleMessage)
     window.parent.postMessage({ type: 'image-workbench:request-config' }, window.location.origin)
+    window.parent.postMessage({ type: 'image-workbench:request-theme' }, window.location.origin)
     void syncConfig()
 
     return () => {
       disposed = true
       document.documentElement.classList.remove('workbench-embed')
+      delete document.documentElement.dataset.workbenchTheme
       window.removeEventListener('message', handleMessage)
     }
   }, [])

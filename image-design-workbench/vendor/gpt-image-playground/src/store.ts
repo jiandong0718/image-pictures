@@ -1965,6 +1965,11 @@ async function resolveImageSizeParamsList(
   return images.map((_, index) => hasActualParams(preferred?.[index]) ? preferred?.[index] : fallback[index])
 }
 
+function notifyWorkbenchCredits(credits: number | undefined) {
+  if (typeof credits !== 'number' || !Number.isFinite(credits) || typeof window === 'undefined') return
+  window.parent?.postMessage({ type: 'image-workbench:credits-changed', credits }, window.location.origin)
+}
+
 async function completeRecoveredFalTask(task: TaskRecord, result: Awaited<ReturnType<typeof getFalQueuedImageResult>>) {
   const latest = useStore.getState().tasks.find((item) => item.id === task.id)
   if (!latest || latest.status === 'done') return
@@ -4052,6 +4057,7 @@ async function executeTask(taskId: string) {
         void persistTaskStreamPartialImage(taskId, partial.image)
       },
     })
+    notifyWorkbenchCredits(result.workbenchCredits)
 
     const latestBeforeSuccess = useStore.getState().tasks.find((t) => t.id === taskId)
     if (!latestBeforeSuccess || latestBeforeSuccess.status !== 'running') {

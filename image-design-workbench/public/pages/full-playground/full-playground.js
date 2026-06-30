@@ -2,4 +2,21 @@
 
 import { mountLayout } from "/shared/layout.js";
 
-mountLayout({ active: "full-playground", title: "绘图聚集地", crumb: "TOOLS" });
+function currentTheme() {
+  return document.documentElement.dataset.theme === "xianxia" ? "xianxia" : "tech";
+}
+
+function sendThemeToFrame() {
+  const frame = document.querySelector(".embed-card iframe");
+  frame?.contentWindow?.postMessage(
+    { type: "image-workbench:theme-changed", theme: currentTheme() },
+    window.location.origin,
+  );
+}
+
+mountLayout({ active: "full-playground", title: "绘图聚集地", crumb: "TOOLS" }).then((ctx) => {
+  if (!ctx) return;
+  const frame = document.querySelector(".embed-card iframe");
+  frame?.addEventListener("load", sendThemeToFrame);
+  sendThemeToFrame();
+});

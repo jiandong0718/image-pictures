@@ -103,6 +103,7 @@ const MAX_IMAGE_SPEC_SIZE = 4096;
 const PLAYGROUND_IMAGE_COUNT_MIN = 1;
 const PLAYGROUND_IMAGE_COUNT_MAX = 4;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_PROXY_UPLOAD_BYTES = 80 * 1024 * 1024;
 const UPLOAD_MIME_EXT = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -393,8 +394,8 @@ function getRuntimeImageApiConfigSummary() {
 function getRuntimePlaygroundConfig() {
   return {
     uploaded: Boolean(runtimeImageApiConfig.apiBase && runtimeImageApiConfig.apiKey),
-    apiBase: runtimeImageApiConfig.apiBase,
-    apiKey: runtimeImageApiConfig.apiKey,
+    apiBase: "/api/full-playground-proxy",
+    apiKey: "workbench-proxy",
     model: "gpt-image-2",
     uploadedAt: runtimeImageApiConfig.uploadedAt,
   };
@@ -564,6 +565,109 @@ function buildApiEndpoint(apiBase, endpointPath) {
     throw new Error("API URL 未配置");
   }
   return new URL(endpointPath.replace(/^\/+/, ""), base.endsWith("/") ? base : `${base}/`).toString();
+}
+
+function normalizeProxyPath(pathname) {
+  return pathname.replace(/^\/api\/full-playground-proxy\/?/, "").replace(/^\/+/, "");
+}
+
+function hasImageValue(item) {
+  if (!item || typeof item !== "object") {
+    return false;
+  }
+  return Boolean(
+    item.url ||
+    item.b64_json ||
+    item.image_url ||
+    item.image ||
+    item.result ||
+    item.data_url ||
+    item.base64,
+  );
+}
+
+function countImagesInNestedValue(value) {
+  if (!value) return 0;
+  if (Array.isArray(value)) {
+    return value.reduce((sum, item) => sum + countImagesInNestedValue(item), 0);
+  }
+  if (typeof value !== "object") {
+    return 0;
+  }
+  if (hasImageValue(value)) {
+    return 1;
+  }
+  const record = value;
+  let count = 0;
+  for (const key of ["content", "output", "images", "data"]) {
+    if (Array.isArray(record[key])) {
+      count += countImagesInNestedValue(record[key]);
+    }
+  }
+  return count;
+}
+
+function countImagesInApiResponse(payload) {
+  if (!payload || typeof payload !== "object") {
+    return 0;
+  }
+  const data = payload.data;
+  if (Array.isArray(data)) {
+    return countImagesInNestedValue(data);
+  }
+  const output = payload.output;
+  if (Array.isArray(output)) {
+    return countImagesInNestedValue(output);
+  }
+  return countImagesInNestedValue(payload);
+}
+
+function requestedImageCountFromJson(payload) {
+  const n = Number(payload?.n);
+  return Number.isInteger(n) && n > 0 ? Math.min(n, 16) : 1;
+}
+
+function parseMultipartTextFields(buffer, contentType) {
+  const boundaryMatch = String(contentType || "").match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  if (!boundaryMatch) {
+    return {};
+  }
+  const boundary = Buffer.from(`--${boundaryMatch[1] || boundaryMatch[2]}`);
+  const fields = {};
+  let cursor = buffer.indexOf(boundary);
+  while (cursor !== -1) {
+    const partStart = cursor + boundary.length;
+    const next = buffer.indexOf(boundary, partStart);
+    if (next === -1) break;
+    let part = buffer.subarray(partStart, next);
+    if (part.length >= 2 && part[0] === 13 && part[1] === 10) {
+      part = part.subarray(2);
+    }
+    part = trimMultipartCrlf(part);
+    const headerEnd = part.indexOf(Buffer.from("\r\n\r\n"));
+    if (headerEnd !== -1) {
+      const headerText = part.subarray(0, headerEnd).toString("utf8");
+      const body = part.subarray(headerEnd + 4);
+      const headers = {};
+      for (const line of headerText.split("\r\n")) {
+        const separator = line.indexOf(":");
+        if (separator !== -1) {
+          headers[line.slice(0, separator).trim().toLowerCase()] = line.slice(separator + 1).trim();
+        }
+      }
+      const disposition = headers["content-disposition"] || "";
+      const dispositionValues = parseContentDisposition(disposition);
+      if (dispositionValues.name && !dispositionValues.filename) {
+        fields[dispositionValues.name] = body.toString("utf8");
+      }
+    }
+    cursor = next;
+  }
+  return fields;
+}
+
+function requestedImageCountFromMultipart(buffer, contentType) {
+  return requestedImageCountFromJson(parseMultipartTextFields(buffer, contentType));
 }
 
 function buildPromptExtractionRequest({ imageData, mime, model = getPromptExtractModel() }) {
@@ -1792,6 +1896,101 @@ async function handleApi(req, res, pathname, searchParams) {
     return;
   }
 
+  if (req.method === "POST" && pathname.startsWith("/api/full-playground-proxy/")) {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    let apiConfig;
+    try {
+      apiConfig = getRequiredRuntimeImageApiConfig();
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+
+    const proxyPath = normalizeProxyPath(pathname);
+    if (!["images/generations", "images/edits"].includes(proxyPath)) {
+      sendError(res, 404, "绘图聚集地代理接口不存在");
+      return;
+    }
+
+    const contentType = req.headers["content-type"] || "";
+    let body;
+    let requestedCount = 1;
+    try {
+      body = await readRequestBuffer(req, MAX_PROXY_UPLOAD_BYTES);
+      if (contentType.includes("application/json")) {
+        const payload = body.length ? JSON.parse(body.toString("utf8")) : {};
+        requestedCount = requestedImageCountFromJson(payload);
+      } else if (contentType.includes("multipart/form-data")) {
+        requestedCount = requestedImageCountFromMultipart(body, contentType);
+      }
+      await accounts.assertEnoughCredits(user.id, requestedCount);
+    } catch (error) {
+      const statusCode = error.statusCode || (error.message?.includes("JSON") ? 400 : 402);
+      sendError(res, statusCode, error.message || "绘图聚集地请求不合法");
+      return;
+    }
+
+    let upstreamResponse;
+    let responseText = "";
+    try {
+      upstreamResponse = await fetch(buildApiEndpoint(apiConfig.apiBase, proxyPath), {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiConfig.apiKey}`,
+          "Content-Type": contentType,
+        },
+        body,
+      });
+      responseText = await upstreamResponse.text();
+    } catch (error) {
+      sendError(res, 502, "绘图聚集地生图请求失败", error.message);
+      return;
+    }
+
+    const upstreamContentType = upstreamResponse.headers.get("content-type") || "application/json; charset=utf-8";
+    if (!upstreamResponse.ok) {
+      res.writeHead(upstreamResponse.status, {
+        "Content-Type": upstreamContentType,
+        "Cache-Control": "no-store",
+      });
+      res.end(responseText);
+      return;
+    }
+
+    let payload;
+    try {
+      payload = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      res.writeHead(200, {
+        "Content-Type": upstreamContentType,
+        "Cache-Control": "no-store",
+      });
+      res.end(responseText);
+      return;
+    }
+
+    const generatedCount = countImagesInApiResponse(payload);
+    if (generatedCount > 0) {
+      try {
+        payload.workbenchCredits = await accounts.consumeCredits(
+          user.id,
+          generatedCount,
+          `绘图聚集地 ${generatedCount} 张`,
+        );
+      } catch (error) {
+        sendError(res, error.statusCode || 402, error.message);
+        return;
+      }
+    } else {
+      payload.workbenchCredits = (await accounts.getUserById(user.id))?.credits ?? 0;
+    }
+    sendJson(res, 200, payload);
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/api/health") {
     sendJson(res, 200, {
       ok: true,
@@ -2190,6 +2389,7 @@ module.exports = {
   clearRuntimeImageApiConfig,
   clearRuntimePromptApiConfig,
   clearOutputDirContents,
+  countImagesInApiResponse,
   describeImageSpec,
   getBatchDerivedTypes,
   getDerivedImageTypes,
@@ -2205,6 +2405,7 @@ module.exports = {
   normalizePlaygroundRequest,
   normalizePromptApiConfig,
   parseGeneratedImagePaths,
+  requestedImageCountFromJson,
   normalizeGeneratedImageFile,
   parsePromptExtractionResponse,
   readImageDimensions,

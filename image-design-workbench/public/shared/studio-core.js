@@ -4,6 +4,7 @@
 
 import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost, apiUpload } from "/shared/api.js";
+import { createLocalState } from "/shared/persistence.js";
 
 const SIZE_PRESETS = { "1k": 1024, "2k": 2048, "4k": 4096 };
 const RATIO_PRESETS = {
@@ -36,6 +37,7 @@ export function createStudio(config) {
   const { mode, crumb, title, derivedTypes, typeLabels, defaultPrompts, generateAllLabel, mainUploadOnly,
     mainLabel = "主图", mainBadge = "源图", derivedBadge = "衍生" } = config;
   const allTypes = ["main", ...derivedTypes];
+  const storage = createLocalState(`imageStudio:studio:${mode}:v1`);
   // 衍生数较多时用「主视图大图 + 延展网格」布局；少时保持均匀网格。
   const heroLayout = derivedTypes.length >= 3;
 
@@ -50,6 +52,40 @@ export function createStudio(config) {
 
   let board;
 
+  function readSavedState() {
+    const saved = storage.load(null);
+    return saved && typeof saved === "object" ? saved : null;
+  }
+
+  function applySavedState() {
+    const saved = readSavedState();
+    if (!saved) return;
+    if (saved.imageSet && typeof saved.imageSet === "object") {
+      state.imageSet = saved.imageSet;
+    }
+    if (saved.spec && typeof saved.spec === "object") {
+      state.spec = {
+        sizePreset: saved.spec.sizePreset || state.spec.sizePreset,
+        ratioPreset: saved.spec.ratioPreset || state.spec.ratioPreset,
+      };
+    }
+    if (saved.prompts && typeof saved.prompts === "object") {
+      state.prompts = { ...state.prompts, ...saved.prompts };
+    }
+    if (saved.images && typeof saved.images === "object") {
+      state.images = saved.images;
+    }
+  }
+
+  function saveState() {
+    storage.save({
+      imageSet: state.imageSet,
+      spec: state.spec,
+      prompts: state.prompts,
+      images: state.images,
+    });
+  }
+
   async function ensureImageSet() {
     if (state.imageSet?.id) {
       return state.imageSet;
@@ -57,6 +93,7 @@ export function createStudio(config) {
     const data = await apiPost("/api/image-sets", {});
     state.imageSet = data.imageSet;
     renderImageSet();
+    saveState();
     return state.imageSet;
   }
 
@@ -148,6 +185,7 @@ export function createStudio(config) {
   function collectPrompt(type) {
     const ta = board.querySelector(`#prompt-${type}`);
     state.prompts[type] = ta ? ta.value.trim() : "";
+    saveState();
     return state.prompts[type];
   }
 
@@ -167,6 +205,7 @@ export function createStudio(config) {
         imageSpec: normalizeSpec(state.spec),
       });
       state.images.main = data.image;
+      saveState();
       if (typeof data.credits === "number") setCredits(data.credits);
       setMsg("main", "主图已生成", "success");
     } catch (err) {
@@ -204,6 +243,7 @@ export function createStudio(config) {
       });
       const data = await apiUpload(`/api/images/main/upload?${params}`, fd);
       state.images.main = data.image;
+      saveState();
       setMsg("main", "已上传为主图", "success");
     } catch (err) {
       setMsg("main", err.message, "error");
@@ -234,6 +274,7 @@ export function createStudio(config) {
         imageSpec: normalizeSpec(state.spec),
       });
       state.images[type] = data.image;
+      saveState();
       if (typeof data.credits === "number") setCredits(data.credits);
       setMsg(type, `${typeLabels[type]}已生成`, "success");
     } catch (err) {
@@ -280,6 +321,7 @@ export function createStudio(config) {
           setMsg(type, data.errors[type], "error");
         }
       });
+      saveState();
       if (typeof data.credits === "number") setCredits(data.credits);
     } catch (err) {
       derivedTypes.forEach((type) => setMsg(type, err.message, "error"));
@@ -357,6 +399,13 @@ export function createStudio(config) {
         if (image) location.href = image.downloadUrl;
       });
     });
+    board.querySelectorAll("textarea").forEach((ta) => {
+      ta.addEventListener("input", () => {
+        const type = ta.id.replace(/^prompt-/, "");
+        state.prompts[type] = ta.value;
+        saveState();
+      });
+    });
     const uploadBtn = board.querySelector('[data-action="upload"]');
     if (uploadBtn) {
       const input = document.getElementById("mainUploadInput");
@@ -373,12 +422,14 @@ export function createStudio(config) {
       btn.addEventListener("click", () => {
         state.spec.sizePreset = btn.dataset.sizePreset;
         syncSpecButtons();
+        saveState();
       });
     });
     document.querySelectorAll("[data-ratio-preset]").forEach((btn) => {
       btn.addEventListener("click", () => {
         state.spec.ratioPreset = btn.dataset.ratioPreset;
         syncSpecButtons();
+        saveState();
       });
     });
     document.getElementById("generateAll")?.addEventListener("click", generateAll);
@@ -397,12 +448,14 @@ export function createStudio(config) {
     const ctx = await mountLayout({ active: mode === "hat" ? "studio-hat" : mode === "bag" ? "studio-bag" : "studio-3d", title, crumb });
     if (!ctx) return;
 
+    applySavedState();
     board = document.getElementById("board");
     board.dataset.count = String(allTypes.length);
     if (heroLayout) board.dataset.layout = "hero";
     board.innerHTML = buildBoardHtml();
     bindBoard();
     bindToolbar();
+    renderImageSet();
     syncSpecButtons();
 
     try {

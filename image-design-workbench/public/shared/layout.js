@@ -26,6 +26,19 @@ function currentTheme() {
   return document.documentElement.dataset.theme === "xianxia" ? "xianxia" : "tech";
 }
 
+function broadcastTheme() {
+  document.querySelectorAll("iframe").forEach((frame) => {
+    try {
+      frame.contentWindow?.postMessage(
+        { type: "image-workbench:theme-changed", theme: currentTheme() },
+        window.location.origin,
+      );
+    } catch {
+      /* 跨域或 iframe 未就绪时忽略 */
+    }
+  });
+}
+
 function applyTheme(name) {
   document.documentElement.dataset.theme = name;
   try {
@@ -33,6 +46,7 @@ function applyTheme(name) {
   } catch (e) {
     /* localStorage 不可用时仅当次生效 */
   }
+  broadcastTheme();
 }
 
 function toggleTheme(btn) {
@@ -112,6 +126,19 @@ export async function mountLayout({ active, title, crumb }) {
   shell.querySelector("#layoutLogout").addEventListener("click", () => logout());
   const themeBtn = shell.querySelector("#layoutTheme");
   themeBtn.addEventListener("click", () => toggleTheme(themeBtn));
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (event.data?.type === "image-workbench:request-theme") {
+      event.source?.postMessage(
+        { type: "image-workbench:theme-changed", theme: currentTheme() },
+        event.origin,
+      );
+    }
+    if (event.data?.type === "image-workbench:credits-changed") {
+      setCredits(event.data.credits);
+    }
+  });
+  requestAnimationFrame(broadcastTheme);
 
   return { me, setCredits };
 }

@@ -32,6 +32,8 @@ export interface CallApiResult {
   revisedPrompts?: Array<string | undefined>
   /** API 返回的原始图片 HTTP URL（非 base64 时记录） */
   rawImageUrls?: string[]
+  /** Workbench 代理返回的扣费后余额 */
+  workbenchCredits?: number
 }
 
 export function isHttpUrl(value: unknown): value is string {

@@ -2,8 +2,10 @@
 
 import { mountLayout } from "/shared/layout.js";
 import { apiGet, apiPost } from "/shared/api.js";
+import { createLocalState } from "/shared/persistence.js";
 
 const els = {};
+const storage = createLocalState("imageStudio:config:v1");
 
 function badge(el, uploaded) {
   el.className = uploaded ? "badge ok" : "badge";
@@ -16,6 +18,15 @@ function setMsg(el, text, kind = "") {
 }
 
 async function loadStatus() {
+  const draft = storage.load({});
+  if (draft && typeof draft === "object") {
+    if (typeof draft.promptUrl === "string") {
+      els.promptUrl.value = draft.promptUrl;
+    }
+    if (typeof draft.promptModel === "string") {
+      els.promptModel.value = draft.promptModel;
+    }
+  }
   try {
     const [img, prompt] = await Promise.all([apiGet("/api/image-config"), apiGet("/api/prompt-config")]);
     badge(els.imageStatus, img.config?.uploaded);
@@ -27,6 +38,13 @@ async function loadStatus() {
   } catch (err) {
     setMsg(els.imageMsg, err.message, "error");
   }
+}
+
+function saveDraft() {
+  storage.save({
+    promptUrl: els.promptUrl.value.trim(),
+    promptModel: els.promptModel.value.trim(),
+  });
 }
 
 async function saveImage(e) {
@@ -70,6 +88,7 @@ async function savePrompt(e) {
     badge(els.promptStatus, data.config?.uploaded);
     els.promptModel.value = data.config?.model || model;
     els.promptKey.value = "";
+    saveDraft();
     setMsg(els.promptMsg, "提示词配置已生效", "success");
   } catch (err) {
     setMsg(els.promptMsg, err.message, "error");
@@ -118,6 +137,8 @@ async function main() {
   els.imageForm.addEventListener("submit", saveImage);
   els.promptForm.addEventListener("submit", savePrompt);
   els.resetCache.addEventListener("click", resetCache);
+  els.promptUrl.addEventListener("input", saveDraft);
+  els.promptModel.addEventListener("input", saveDraft);
   await loadStatus();
 }
 

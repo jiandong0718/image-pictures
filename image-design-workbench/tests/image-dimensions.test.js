@@ -16,6 +16,7 @@ const {
   clearRuntimeImageApiConfig,
   clearRuntimePromptApiConfig,
   clearOutputDirContents,
+  countImagesInApiResponse,
   getBatchDerivedTypes,
   getDerivedImageTypes,
   getImageTypeConfig,
@@ -31,6 +32,7 @@ const {
   normalizePromptApiConfig,
   parseGeneratedImagePaths,
   parsePromptExtractionResponse,
+  requestedImageCountFromJson,
   readImageDimensions,
   setRuntimeImageApiConfig,
   setRuntimePromptApiConfig,
@@ -273,6 +275,32 @@ test("normalizes playground requests with bounded count and image spec", () => {
     },
   );
   assert.throws(() => normalizePlaygroundRequest({ prompt: "" }), /自由生图提示词不能为空/);
+});
+
+test("counts full playground generated images for credit billing", () => {
+  assert.equal(countImagesInApiResponse({ data: [{ url: "https://example.com/a.png" }, { b64_json: "abc" }] }), 2);
+  assert.equal(countImagesInApiResponse({ data: [{ revised_prompt: "no image" }] }), 0);
+  assert.equal(countImagesInApiResponse({
+    output: [
+      { content: [{ type: "output_text", text: "x" }, { type: "output_image", image_url: "https://example.com/a.png" }] },
+      { content: [{ b64_json: "abc" }] },
+    ],
+  }), 2);
+  assert.equal(countImagesInApiResponse({
+    data: [
+      { content: [{ type: "image_generation_call", result: "abc" }] },
+      { images: [{ data_url: "data:image/png;base64,abc" }] },
+    ],
+  }), 2);
+  assert.equal(countImagesInApiResponse(null), 0);
+});
+
+test("normalizes full playground requested image count for credit preflight", () => {
+  assert.equal(requestedImageCountFromJson({ n: 4 }), 4);
+  assert.equal(requestedImageCountFromJson({ n: "3" }), 3);
+  assert.equal(requestedImageCountFromJson({ n: 0 }), 1);
+  assert.equal(requestedImageCountFromJson({ n: 99 }), 16);
+  assert.equal(requestedImageCountFromJson({}), 1);
 });
 
 test("builds image generator args with optional playground parameters", () => {
