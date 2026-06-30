@@ -45,6 +45,24 @@
           </tbody>
         </table>
       </div>
+
+      <div class="card" style="margin-top: 22px; max-width: 460px">
+        <div class="card-title">修改密码</div>
+        <div class="card-desc" style="margin-bottom: 16px">定期更换密码更安全。</div>
+        <form id="pwdForm">
+          <label class="field"><span>原密码</span>
+            <input class="input" id="oldPwd" type="password" autocomplete="current-password" />
+          </label>
+          <label class="field"><span>新密码</span>
+            <input class="input" id="newPwd" type="password" autocomplete="new-password" placeholder="6-64 位" />
+          </label>
+          <label class="field"><span>确认新密码</span>
+            <input class="input" id="newPwd2" type="password" autocomplete="new-password" />
+          </label>
+          <p class="msg" id="pwdMsg"></p>
+          <button class="btn primary full" id="pwdBtn" type="submit">保存新密码</button>
+        </form>
+      </div>
     </div>
     <script type="module" src="/pages/account/account.js"></script>
   </body>

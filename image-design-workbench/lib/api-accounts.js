@@ -91,6 +91,21 @@ function createAccountApi({ sendJson, sendError, readJson }) {
       return true;
     }
 
+    if (req.method === "POST" && pathname === "/api/account/password") {
+      const user = await requireUser(req, res);
+      if (!user) {
+        return true;
+      }
+      const payload = await readJson(req);
+      try {
+        await accounts.changePassword(user.id, payload.oldPassword, payload.newPassword);
+        sendJson(res, 200, { ok: true });
+      } catch (error) {
+        sendError(res, error.statusCode || 400, error.message || "修改密码失败");
+      }
+      return true;
+    }
+
     if (req.method === "GET" && pathname === "/api/admin/users") {
       const admin = await requireAdmin(req, res);
       if (!admin) {

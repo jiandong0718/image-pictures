@@ -181,6 +181,23 @@ async function listTransactions(userId, limit = 50) {
   }));
 }
 
+// 修改自己的密码：校验原密码后更新。
+async function changePassword(userId, oldPassword, newPassword) {
+  const next = String(newPassword || "");
+  if (next.length < 6 || next.length > 64) {
+    throw new AccountError("新密码长度需为 6-64 位");
+  }
+  const pool = getPool();
+  const [rows] = await pool.query("SELECT password_hash FROM users WHERE id = ? LIMIT 1", [userId]);
+  if (!rows.length) {
+    throw new AccountError("用户不存在", 404);
+  }
+  if (!verifyPassword(String(oldPassword || ""), rows[0].password_hash)) {
+    throw new AccountError("原密码错误", 401);
+  }
+  await pool.query("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(next), userId]);
+}
+
 async function searchUsers(keyword, limit = 20) {
   const term = String(keyword || "").trim();
   const like = `%${term}%`;
@@ -202,5 +219,6 @@ module.exports = {
   assertEnoughCredits,
   rechargeCredits,
   listTransactions,
+  changePassword,
   searchUsers,
 };

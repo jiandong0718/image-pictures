@@ -1,7 +1,7 @@
 // 我的积分页：余额概览 + 流水明细。
 
 import { mountLayout } from "/shared/layout.js";
-import { apiGet } from "/shared/api.js";
+import { apiGet, apiPost } from "/shared/api.js";
 
 const TYPE_LABEL = {
   signup_bonus: "注册赠送",
@@ -24,6 +24,8 @@ async function main() {
   if (!ctx) {
     return;
   }
+
+  bindPasswordForm();
 
   const data = await apiGet("/api/account");
   const tx = data.transactions || [];
@@ -55,6 +57,48 @@ async function main() {
         </tr>`;
     })
     .join("");
+}
+
+function bindPasswordForm() {
+  const form = document.getElementById("pwdForm");
+  if (!form) {
+    return;
+  }
+  const msg = document.getElementById("pwdMsg");
+  const btn = document.getElementById("pwdBtn");
+  const set = (text, kind = "") => {
+    msg.textContent = text || "";
+    msg.className = `msg ${kind}`;
+  };
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const oldPassword = document.getElementById("oldPwd").value;
+    const newPassword = document.getElementById("newPwd").value;
+    const confirm = document.getElementById("newPwd2").value;
+    if (!oldPassword || !newPassword) {
+      set("请填写原密码和新密码", "error");
+      return;
+    }
+    if (newPassword.length < 6 || newPassword.length > 64) {
+      set("新密码长度需为 6-64 位", "error");
+      return;
+    }
+    if (newPassword !== confirm) {
+      set("两次输入的新密码不一致", "error");
+      return;
+    }
+    btn.disabled = true;
+    set("保存中…");
+    try {
+      await apiPost("/api/account/password", { oldPassword, newPassword });
+      set("密码已修改", "success");
+      form.reset();
+    } catch (err) {
+      set(err.message, "error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 main();
