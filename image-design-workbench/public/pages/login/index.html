@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>登录 · 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+  </head>
+  <body>
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="brand" style="padding: 0 0 22px">
+          <div class="brand-mark"></div>
+          <div>
+            <div class="brand-name">图像设计工作台</div>
+            <div class="brand-sub">Image Studio</div>
+          </div>
+        </div>
+
+        <div class="section-label" id="formLabel">账户登录</div>
+        <h2 class="card-title" id="formTitle" style="margin-bottom: 20px">欢迎回来</h2>
+
+        <form id="authForm">
+          <label class="field">
+            <span>用户名</span>
+            <input class="input" id="username" autocomplete="username" placeholder="2-32 位字母、数字、下划线或中文" />
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input class="input" id="password" type="password" autocomplete="current-password" placeholder="至少 6 位" />
+          </label>
+          <p class="msg" id="authMsg"></p>
+          <button class="btn primary full" id="submitBtn" type="submit">登录</button>
+        </form>
+
+        <p style="margin-top: 18px; font-size: 13px; color: var(--ink-soft); text-align: center">
+          <span id="switchHint">还没有账户？</span>
+          <a href="#" id="switchMode" style="font-weight: 600">立即注册</a>
+        </p>
+        <p style="margin-top: 10px; font-size: 12px; color: var(--ink-mute); text-align: center">
+          新用户注册即赠送 <strong style="color: var(--accent)">20</strong> 积分
+        </p>
+      </div>
+    </div>
+    <script type="module" src="/pages/login/login.js"></script>
+  </body>
+</html>

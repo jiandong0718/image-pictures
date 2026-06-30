@@ -362,6 +362,8 @@ test("loads runtime image API config from env files at startup", async () => {
   const skillsDir = path.join(tmpDir, "skills", "custom-image-generator");
   await fs.mkdir(skillsDir, { recursive: true });
   await fs.copyFile(path.join(__dirname, "..", "server.js"), serverCopyPath);
+  // server.js 现在依赖 ./lib/* 模块，复制到临时目录一并隔离。
+  await fs.cp(path.join(__dirname, "..", "lib"), path.join(tmpDir, "lib"), { recursive: true });
   await fs.writeFile(
     rootEnvPath,
     [
@@ -379,9 +381,11 @@ test("loads runtime image API config from env files at startup", async () => {
   `;
   const result = spawnSync(process.execPath, ["-e", script], {
     encoding: "utf8",
+    // 让临时目录里的 require("mysql2/...") 能解析到仓库的 node_modules。
+    env: { ...process.env, NODE_PATH: path.join(__dirname, "..", "node_modules") },
   });
 
-  assert.equal(result.status, 0);
+  assert.equal(result.status, 0, result.stderr);
   const summary = JSON.parse(result.stdout.trim());
   assert.equal(summary.uploaded, true);
   assert.equal(summary.hasApiKey, true);

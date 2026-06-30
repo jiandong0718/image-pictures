@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>提示词提取 · 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+    <link rel="stylesheet" href="/pages/prompt/prompt.css" />
+  </head>
+  <body>
+    <div id="page">
+      <div class="prompt-grid">
+        <div class="card">
+          <div class="section-label">参考图</div>
+          <div class="card-title" style="margin-bottom: 14px">上传图片</div>
+          <div class="upload-zone" id="uploadZone">
+            <div class="upload-preview" id="preview">
+              <div class="empty">点击或拖拽上传图片<br /><span class="mono" style="font-size: 11px">PNG / JPG / WEBP / GIF · ≤20MB</span></div>
+            </div>
+          </div>
+          <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+          <button class="btn full" id="selectBtn" type="button" style="margin-top: 14px">选择图片</button>
+          <p class="card-desc mono" id="fileMeta" style="margin-top: 10px"></p>
+        </div>
+
+        <div class="card">
+          <div class="section-label">提取结果</div>
+          <div class="card-title" style="margin-bottom: 14px">详细提示词</div>
+          <textarea class="textarea" id="output" rows="16" readonly placeholder="提取后的中文详细提示词会显示在这里"></textarea>
+          <p class="msg" id="msg"></p>
+          <div style="display: flex; gap: 10px; margin-top: 12px">
+            <button class="btn primary" id="extractBtn" type="button" disabled>提取提示词</button>
+            <button class="btn" id="copyBtn" type="button" disabled>复制</button>
+          </div>
+          <p class="card-desc" id="configHint" style="margin-top: 12px"></p>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/pages/prompt/prompt.js"></script>
+  </body>
+</html>

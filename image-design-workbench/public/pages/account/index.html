@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我的积分 · 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+  </head>
+  <body>
+    <div id="page">
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 22px">
+        <div class="card">
+          <div class="section-label">当前余额</div>
+          <div style="font-size: 38px; font-weight: 800" class="mono" id="balance">--</div>
+          <div class="card-desc">1 积分 = 1 元 = 1 张图</div>
+        </div>
+        <div class="card">
+          <div class="section-label">累计消费</div>
+          <div style="font-size: 38px; font-weight: 800" class="mono" id="spent">--</div>
+          <div class="card-desc">已用于生成图片的积分</div>
+        </div>
+        <div class="card">
+          <div class="section-label">累计获得</div>
+          <div style="font-size: 38px; font-weight: 800" class="mono" id="earned">--</div>
+          <div class="card-desc">注册赠送 + 管理员充值</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">积分流水</div>
+        <div class="card-desc" style="margin-bottom: 14px">最近 50 条记录</div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>类型</th>
+              <th>说明</th>
+              <th style="text-align: right">变动</th>
+              <th style="text-align: right">余额</th>
+            </tr>
+          </thead>
+          <tbody id="txBody">
+            <tr><td colspan="5"><div class="empty">加载中…</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <script type="module" src="/pages/account/account.js"></script>
+  </body>
+</html>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>充值管理 · 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+  </head>
+  <body>
+    <div id="page">
+      <div class="card" style="margin-bottom: 22px">
+        <div class="section-label">用户检索</div>
+        <div class="card-title">为指定用户充值积分</div>
+        <div class="card-desc" style="margin-bottom: 16px">输入用户名关键字搜索，点击用户后填写充值数量。</div>
+        <div style="display: flex; gap: 10px">
+          <input class="input" id="keyword" placeholder="按用户名搜索（留空显示全部）" />
+          <button class="btn primary" id="searchBtn" type="button" style="white-space: nowrap">搜索</button>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 22px; align-items: start">
+        <div class="card">
+          <div class="card-title" style="margin-bottom: 14px">用户列表</div>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>用户名</th>
+                <th>角色</th>
+                <th style="text-align: right">积分</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="userBody">
+              <tr><td colspan="5"><div class="empty">点击搜索加载用户</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="section-label">充值操作</div>
+          <div class="card-title" id="rechargeTarget" style="margin-bottom: 16px">未选择用户</div>
+          <label class="field">
+            <span>充值积分数</span>
+            <input class="input" id="amount" type="number" min="1" step="1" placeholder="正整数" />
+          </label>
+          <label class="field">
+            <span>备注（可选）</span>
+            <input class="input" id="note" placeholder="例如：微信收款 100 元" />
+          </label>
+          <p class="msg" id="rechargeMsg"></p>
+          <button class="btn primary full" id="rechargeBtn" type="button" disabled>确认充值</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/pages/admin/admin.js"></script>
+  </body>
+</html>

@@ -1,0 +1,40 @@
+.prompt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  align-items: start;
+}
+
+.upload-zone {
+  cursor: pointer;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border 0.15s, background 0.15s;
+}
+
+.upload-zone:hover,
+.upload-zone.dragging {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.upload-preview {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.upload-preview img {
+  max-width: 100%;
+  max-height: 380px;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .prompt-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>自由生图 · 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+    <link rel="stylesheet" href="/pages/playground/playground.css" />
+  </head>
+  <body>
+    <div id="page">
+      <div class="pg-grid">
+        <form class="card" id="pgForm">
+          <div class="section-label">自由生图</div>
+          <div class="card-title" style="margin-bottom: 14px">文生图</div>
+
+          <label class="field">
+            <span>提示词</span>
+            <textarea class="textarea" id="prompt" rows="6" placeholder="描述你想生成的图像：主体、构图、材质、光线、风格…"></textarea>
+          </label>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
+            <label class="field">
+              <span>生成张数（每张 1 积分）</span>
+              <select class="select" id="count">
+                <option value="1">1 张</option>
+                <option value="2">2 张</option>
+                <option value="3">3 张</option>
+                <option value="4">4 张</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>背景</span>
+              <select class="select" id="background">
+                <option value="">默认</option>
+                <option value="auto">auto</option>
+                <option value="transparent">transparent</option>
+                <option value="opaque">opaque</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>附加系统要求（可选）</span>
+            <textarea class="textarea" id="system" rows="2" placeholder="例如：严格保留主体结构，不添加文字"></textarea>
+          </label>
+
+          <p class="msg" id="msg"></p>
+          <button class="btn primary full" id="generateBtn" type="submit">生成图片</button>
+          <p class="card-desc" id="configHint" style="margin-top: 12px"></p>
+        </form>
+
+        <div class="card">
+          <div class="section-label">结果</div>
+          <div class="card-title" style="margin-bottom: 14px">生成图像</div>
+          <div class="pg-results" id="results">
+            <div class="empty">等待生成</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/pages/playground/playground.js"></script>
+  </body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>商品微调图 · 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+    <link rel="stylesheet" href="/shared/studio.css" />
+  </head>
+  <body>
+    <div id="page">
+      <div class="studio-toolbar">
+        <div class="spec-group">
+          <span class="spec-label">分辨率</span>
+          <button class="chip" data-size-preset="1k" type="button">1K</button>
+          <button class="chip" data-size-preset="2k" type="button">2K</button>
+          <button class="chip" data-size-preset="4k" type="button">4K</button>
+        </div>
+        <div class="spec-group">
+          <span class="spec-label">比例</span>
+          <button class="chip" data-ratio-preset="1:1" type="button">1:1</button>
+          <button class="chip" data-ratio-preset="3:4" type="button">3:4</button>
+          <button class="chip" data-ratio-preset="4:3" type="button">4:3</button>
+          <button class="chip" data-ratio-preset="16:9" type="button">16:9</button>
+          <button class="chip" data-ratio-preset="9:16" type="button">9:16</button>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <span class="set-tag">套图 <strong id="imageSetName">--</strong></span>
+        <button class="btn sm" id="newWindow" type="button">新窗口</button>
+        <button class="btn sm" id="downloadAll" type="button" disabled>下载套图</button>
+        <button class="btn primary sm" id="generateAll" type="button" disabled>生成衍生图</button>
+      </div>
+      <p class="card-desc" id="configHint" style="margin: -8px 0 16px"></p>
+      <div class="studio-board" id="board"></div>
+      <input id="mainUploadInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+    </div>
+    <script type="module" src="/pages/studio-bag/bag.js"></script>
+  </body>
+</html>

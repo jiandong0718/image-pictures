@@ -1,0 +1,42 @@
+.config-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.config-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.config-balance {
+  font-size: 38px;
+  font-weight: 800;
+}
+
+.config-danger {
+  margin-top: 20px;
+  border-color: rgba(255, 92, 108, 0.3);
+}
+
+.config-danger-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.config-danger-inner .copy {
+  flex: 1;
+  min-width: 240px;
+}
+
+@media (max-width: 820px) {
+  .config-row {
+    grid-template-columns: 1fr;
+  }
+}

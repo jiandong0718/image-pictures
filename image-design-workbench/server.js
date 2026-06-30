@@ -5,6 +5,14 @@ const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
 
+// 在求值任何依赖 process.env 的常量之前，先加载 .env。
+require("./lib/env").loadEnv();
+
+const db = require("./lib/db");
+const accounts = require("./lib/accounts");
+const auth = require("./lib/auth");
+const { createAccountApi } = require("./lib/api-accounts");
+
 const ROOT_DIR = __dirname;
 const PROJECT_ROOT_DIR = path.resolve(ROOT_DIR, "..");
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -261,6 +269,9 @@ async function readJson(req) {
 function cleanPrompt(value) {
   return typeof value === "string" ? value.trim() : "";
 }
+
+// 账户 / 认证 / 管理员相关接口，复用本文件的响应工具。
+const accountApi = createAccountApi({ sendJson, sendError, readJson });
 
 function parseEnvLine(line) {
   const stripped = line.trim();
@@ -1514,6 +1525,59 @@ async function runPythonProcess(args, cwd, env = process.env) {
   throw lastError || new Error("No available Python interpreter found");
 }
 
+// 多页面路由：每个菜单一个独立目录（public/pages/<name>/index.html + 各自 JS）。
+// 干净 URL → 页面目录的映射。auth: 'user' 需登录，'admin' 需管理员，'guest' 无需登录。
+const PAGES_DIR = path.join(PUBLIC_DIR, "pages");
+const PAGE_ROUTES = {
+  "/login": { dir: "login", auth: "guest" },
+  "/register": { dir: "login", auth: "guest" },
+  "/config": { dir: "config", auth: "user" },
+  "/studio/hat": { dir: "studio-hat", auth: "user" },
+  "/studio/bag": { dir: "studio-bag", auth: "user" },
+  "/studio/3d": { dir: "studio-3d", auth: "user" },
+  "/prompt": { dir: "prompt", auth: "user" },
+  "/playground": { dir: "playground", auth: "user" },
+  "/full-playground": { dir: "full-playground", auth: "user" },
+  "/account": { dir: "account", auth: "user" },
+  "/admin": { dir: "admin", auth: "admin" },
+};
+
+async function servePage(req, res, pathname) {
+  if (req.method !== "GET") {
+    return false;
+  }
+  // 根路径：登录后进套图工作台，未登录去登录页。
+  if (pathname === "/" || pathname === "/index.html") {
+    const user = await auth.getSessionUser(req).catch(() => null);
+    res.writeHead(302, { Location: user ? "/studio/hat" : "/login" });
+    res.end();
+    return true;
+  }
+
+  const route = PAGE_ROUTES[pathname] || PAGE_ROUTES[pathname.replace(/\/$/, "")];
+  if (!route) {
+    return false;
+  }
+
+  if (route.auth === "user" || route.auth === "admin") {
+    const user = await auth.getSessionUser(req).catch(() => null);
+    if (!user) {
+      res.writeHead(302, { Location: `/login?redirect=${encodeURIComponent(pathname)}` });
+      res.end();
+      return true;
+    }
+    if (route.auth === "admin" && user.role !== "admin") {
+      res.writeHead(302, { Location: "/studio/hat" });
+      res.end();
+      return true;
+    }
+  }
+
+  const dir = path.join(PAGES_DIR, route.dir);
+  await serveStaticFromDir(res, dir, "index.html", "index.html");
+  return true;
+}
+
 async function serveStatic(req, res, pathname) {
   const safePath = pathname === "/" ? "/index.html" : pathname;
   const filePath = path.resolve(PUBLIC_DIR, `.${safePath}`);
@@ -1723,6 +1787,11 @@ async function createZip(ids) {
 }
 
 async function handleApi(req, res, pathname, searchParams) {
+  // 账户 / 认证 / 管理员接口优先处理；命中即返回。
+  if (await accountApi.handle(req, res, pathname)) {
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/api/health") {
     sendJson(res, 200, {
       ok: true,
@@ -1847,6 +1916,10 @@ async function handleApi(req, res, pathname, searchParams) {
   }
 
   if (req.method === "POST" && pathname === "/api/images/main") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     const payload = await readJson(req);
     try {
       getRequiredRuntimeImageApiConfig();
@@ -1858,17 +1931,28 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, 400, "主图提示词不能为空");
       return;
     }
+    try {
+      await accounts.assertEnoughCredits(user.id, 1);
+    } catch (error) {
+      sendError(res, error.statusCode || 402, error.message);
+      return;
+    }
     const image = await generateImage({
       type: "main",
       prompt: payload.prompt,
       imageSetId: payload.imageSetId,
       imageSpec: payload.imageSpec,
     });
-    sendJson(res, 200, { ok: true, image });
+    const balance = await accounts.consumeCredits(user.id, 1, "生成主图");
+    sendJson(res, 200, { ok: true, image, credits: balance });
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/images/main/upload") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     const image = await saveUploadedMain(
       req,
       searchParams.get("imageSetId"),
@@ -1879,6 +1963,10 @@ async function handleApi(req, res, pathname, searchParams) {
   }
 
   if (req.method === "POST" && pathname === "/api/images/derived") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     const payload = await readJson(req);
     try {
       getRequiredRuntimeImageApiConfig();
@@ -1894,6 +1982,12 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, 400, `${IMAGE_TYPES[payload.type].label}提示词不能为空`);
       return;
     }
+    try {
+      await accounts.assertEnoughCredits(user.id, 1);
+    } catch (error) {
+      sendError(res, error.statusCode || 402, error.message);
+      return;
+    }
     const image = await generateImage({
       type: payload.type,
       prompt: payload.prompt,
@@ -1901,11 +1995,16 @@ async function handleApi(req, res, pathname, searchParams) {
       imageSetId: payload.imageSetId,
       imageSpec: payload.imageSpec,
     });
-    sendJson(res, 200, { ok: true, image });
+    const balance = await accounts.consumeCredits(user.id, 1, `生成${IMAGE_TYPES[payload.type].label}`);
+    sendJson(res, 200, { ok: true, image, credits: balance });
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/images/derived/batch") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     const payload = await readJson(req);
     try {
       getRequiredRuntimeImageApiConfig();
@@ -1918,6 +2017,13 @@ async function handleApi(req, res, pathname, searchParams) {
       batchTypes = getBatchDerivedTypes(payload.types);
     } catch (error) {
       sendError(res, 400, error.message);
+      return;
+    }
+    // 批量按「成功生成张数」扣费，失败不扣。发起前要求余额至少能覆盖全部张数。
+    try {
+      await accounts.assertEnoughCredits(user.id, batchTypes.length);
+    } catch (error) {
+      sendError(res, error.statusCode || 402, error.message);
       return;
     }
     const tasks = batchTypes.map(async (type) => {
@@ -1944,15 +2050,27 @@ async function handleApi(req, res, pathname, searchParams) {
         errors[type] = value.error || "生成失败";
       }
     }
+    const successCount = Object.keys(results).length;
+    let balance;
+    if (successCount > 0) {
+      balance = await accounts.consumeCredits(user.id, successCount, `批量生成 ${successCount} 张衍生图`);
+    } else {
+      balance = (await accounts.getUserById(user.id))?.credits ?? 0;
+    }
     sendJson(res, 200, {
       ok: Object.keys(errors).length === 0,
       results,
       errors,
+      credits: balance,
     });
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/playground/images") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     const payload = await readJson(req);
     try {
       getRequiredRuntimeImageApiConfig();
@@ -1961,13 +2079,27 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
     try {
+      const requestedCount = clampInteger(payload.count, 1, 1, PLAYGROUND_IMAGE_COUNT_MAX);
+      await accounts.assertEnoughCredits(user.id, requestedCount);
       const result = await generatePlaygroundImages(payload);
+      const generated = result.images.length;
+      let balance;
+      if (generated > 0) {
+        balance = await accounts.consumeCredits(user.id, generated, `自由生图 ${generated} 张`);
+      } else {
+        balance = (await accounts.getUserById(user.id))?.credits ?? 0;
+      }
       sendJson(res, 200, {
         ok: true,
         imageSet: result.imageSet,
         images: result.images,
+        credits: balance,
       });
     } catch (error) {
+      if (error.statusCode === 402 || error.statusCode === 404) {
+        sendError(res, error.statusCode, error.message);
+        return;
+      }
       const message = error.message || "自由生图失败";
       const statusCode =
         message.includes("提示词") || message.includes("参考图") || message.includes("不存在")
@@ -2020,6 +2152,9 @@ const server = http.createServer(async (req, res) => {
       await serveGptImagePlayground(req, res, url.pathname);
       return;
     }
+    if (await servePage(req, res, url.pathname)) {
+      return;
+    }
     await serveStatic(req, res, url.pathname);
   } catch (error) {
     sendError(res, 500, error.message || "服务处理失败");
@@ -2027,9 +2162,17 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (require.main === module) {
-  server.listen(PORT, HOST, () => {
-    console.log(`商品图片设计工作台已启动：http://${HOST}:${PORT}`);
-  });
+  db.init()
+    .then(() => {
+      server.listen(PORT, HOST, () => {
+        console.log(`商品图片设计工作台已启动：http://${HOST}:${PORT}`);
+      });
+    })
+    .catch((error) => {
+      console.error("数据库初始化失败，请检查 .env 中的 DB_* 配置与 MySQL 服务：");
+      console.error(error.message);
+      process.exit(1);
+    });
 }
 
 module.exports = {
