@@ -5,20 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>登录 · 图像设计工作台</title>
     <link rel="stylesheet" href="/shared/theme.css" />
+    <link rel="stylesheet" href="/pages/login/login.css" />
+    <script src="/shared/theme-init.js"></script>
   </head>
   <body>
-    <div class="auth-wrap">
-      <div class="auth-card">
-        <div class="brand" style="padding: 0 0 22px">
-          <div class="brand-mark"></div>
-          <div>
-            <div class="brand-name">图像设计工作台</div>
-            <div class="brand-sub">Image Studio</div>
-          </div>
-        </div>
+    <div class="auth-bg" aria-hidden="true">
+      <span class="mist mist-1"></span>
+      <span class="mist mist-2"></span>
+      <span class="crane crane-1">
+        <svg viewBox="0 0 64 22"><path d="M2,16 Q16,3 32,15 Q48,3 62,16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg>
+      </span>
+      <span class="crane crane-2">
+        <svg viewBox="0 0 64 22"><path d="M2,16 Q16,3 32,15 Q48,3 62,16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg>
+      </span>
+    </div>
 
+    <header class="auth-brand">
+      <div class="brand-mark"></div>
+      <div>
+        <div class="brand-name">图像设计工作台</div>
+        <div class="brand-sub">Image Studio</div>
+      </div>
+    </header>
+
+    <div class="auth-shell">
+      <main class="auth-card">
         <div class="section-label" id="formLabel">账户登录</div>
-        <h2 class="card-title" id="formTitle" style="margin-bottom: 20px">欢迎回来</h2>
+        <h2 class="card-title" id="formTitle" style="margin-bottom: 22px">欢迎回来</h2>
 
         <form id="authForm">
           <label class="field">
@@ -40,7 +53,7 @@
         <p style="margin-top: 10px; font-size: 12px; color: var(--ink-mute); text-align: center">
           新用户注册即赠送 <strong style="color: var(--accent)">20</strong> 积分
         </p>
-      </div>
+      </main>
     </div>
     <script type="module" src="/pages/login/login.js"></script>
   </body>

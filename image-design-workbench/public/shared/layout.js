@@ -19,6 +19,28 @@ const NAV = [
 
 const ADMIN_NAV = { href: "/admin", label: "充值管理", key: "admin" };
 
+// 主题切换：tech(深色科技) / xianxia(仙侠)。data-theme 由 theme-init.js 在渲染前同步应用。
+const THEME_LABELS = { tech: "科技", xianxia: "仙侠" };
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === "xianxia" ? "xianxia" : "tech";
+}
+
+function applyTheme(name) {
+  document.documentElement.dataset.theme = name;
+  try {
+    localStorage.setItem("imageStudioTheme", name);
+  } catch (e) {
+    /* localStorage 不可用时仅当次生效 */
+  }
+}
+
+function toggleTheme(btn) {
+  const next = currentTheme() === "xianxia" ? "tech" : "xianxia";
+  applyTheme(next);
+  if (btn) btn.textContent = `${THEME_LABELS[next]}风`;
+}
+
 export async function mountLayout({ active, title, crumb }) {
   const me = await fetchMe();
   if (!me) {
@@ -71,6 +93,7 @@ export async function mountLayout({ active, title, crumb }) {
             <span class="user-avatar">${(me.username || "?").slice(0, 1).toUpperCase()}</span>
             <span>${me.username}</span>
           </span>
+          <button class="btn sm ghost" id="layoutTheme" type="button" title="切换主题">${THEME_LABELS[currentTheme()]}风</button>
           <button class="btn sm ghost" id="layoutLogout" type="button">登出</button>
         </div>
       </header>
@@ -87,6 +110,8 @@ export async function mountLayout({ active, title, crumb }) {
   }
 
   shell.querySelector("#layoutLogout").addEventListener("click", () => logout());
+  const themeBtn = shell.querySelector("#layoutTheme");
+  themeBtn.addEventListener("click", () => toggleTheme(themeBtn));
 
   return { me, setCredits };
 }

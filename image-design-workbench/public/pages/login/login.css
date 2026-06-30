@@ -1,0 +1,173 @@
+/* 登录 / 注册页专属样式：真实山水图背景 + 调淡白纱 + 漂动云海 + 飞鹤 + 居中表单卡片。 */
+
+/* 登录页让山水背景独占，去掉主题默认的网格/柔光 */
+body {
+  background-image: none;
+}
+
+/* ---------- 山水意境背景 ---------- */
+.auth-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: url("/pages/login/landscape.jpg") center / cover no-repeat;
+  /* 调淡用的面纱 + 云海 / 飞鹤颜色 */
+  --veil: rgba(8, 12, 20, 0.5);
+  --mist-color: rgba(210, 230, 245, 0.5);
+  --crane: rgba(255, 255, 255, 0.82);
+}
+
+/* 仙侠白净主题：覆白纱把画面调淡、更素 */
+:root[data-theme="xianxia"] .auth-bg {
+  --veil: rgba(245, 249, 242, 0.52);
+  --mist-color: rgba(255, 255, 255, 0.62);
+  --crane: rgba(86, 104, 96, 0.5);
+}
+
+/* 调淡颜色的面纱 */
+.auth-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--veil);
+}
+
+/* 云海：横向缓缓漂动的雾气，叠在山水图上 */
+.auth-bg .mist {
+  position: absolute;
+  left: -30%;
+  right: -30%;
+  height: 52vh;
+  background:
+    radial-gradient(28% 60% at 18% 50%, var(--mist-color), transparent 70%),
+    radial-gradient(32% 72% at 50% 46%, var(--mist-color), transparent 72%),
+    radial-gradient(26% 60% at 82% 54%, var(--mist-color), transparent 70%);
+  filter: blur(30px);
+  will-change: transform;
+}
+
+.auth-bg .mist-1 {
+  top: 14vh;
+  opacity: 0.9;
+  animation: mist-flow-1 46s ease-in-out infinite alternate;
+}
+
+.auth-bg .mist-2 {
+  bottom: 4vh;
+  height: 44vh;
+  opacity: 0.8;
+  animation: mist-flow-2 64s ease-in-out infinite alternate;
+}
+
+@keyframes mist-flow-1 {
+  from { transform: translate3d(-10%, 2%, 0) scale(1); }
+  to { transform: translate3d(10%, -2%, 0) scale(1.08); }
+}
+@keyframes mist-flow-2 {
+  from { transform: translate3d(8%, 0, 0) scale(1.05); }
+  to { transform: translate3d(-8%, 2%, 0) scale(1); }
+}
+
+/* 飞鹤：缓缓掠过山间，添一点灵气 */
+.auth-bg .crane {
+  position: absolute;
+  width: 46px;
+  color: var(--crane);
+  opacity: 0.7;
+  will-change: transform;
+}
+
+.auth-bg .crane svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.auth-bg .crane-1 {
+  top: 22vh;
+  animation: crane-fly-1 60s linear infinite;
+}
+
+.auth-bg .crane-2 {
+  top: 38vh;
+  width: 30px;
+  opacity: 0.5;
+  animation: crane-fly-2 82s linear infinite;
+}
+
+@keyframes crane-fly-1 {
+  from { transform: translate(-16vw, 0) scaleX(1); }
+  50% { transform: translate(52vw, -6vh) scaleX(1); }
+  to { transform: translate(118vw, -1vh) scaleX(1); }
+}
+@keyframes crane-fly-2 {
+  from { transform: translate(118vw, 0) scaleX(-1); }
+  to { transform: translate(-16vw, 5vh) scaleX(-1); }
+}
+
+/* ---------- 左上角品牌头标 ---------- */
+.auth-brand {
+  position: fixed;
+  top: clamp(20px, 3vw, 34px);
+  left: clamp(22px, 4vw, 44px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: auth-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* ---------- 居中表单卡片 ---------- */
+.auth-shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 88px 24px 40px;
+}
+
+.auth-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  padding: 38px 36px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+  animation: auth-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.1s both;
+}
+
+/* 卡片顶部一道流光，强化高级感 */
+.auth-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent);
+  opacity: 0.7;
+}
+
+@keyframes auth-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- 无障碍：尊重减少动态偏好 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .auth-bg .mist,
+  .auth-bg .crane,
+  .auth-brand,
+  .auth-card {
+    animation: none;
+  }
+  .auth-bg .crane {
+    display: none;
+  }
+}
