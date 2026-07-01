@@ -305,9 +305,8 @@ h3 {
 }
 
 .content {
-  padding: 28px;
+  padding: 28px clamp(28px, 4vw, 72px);
   width: 100%;
-  max-width: 1600px;
   margin: 0 auto;
 }
 
