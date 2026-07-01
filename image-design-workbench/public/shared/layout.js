@@ -13,11 +13,15 @@ const NAV = [
   { href: "/studio/bag", label: "商品微调图", key: "studio-bag" },
   { href: "/studio/3d", label: "3D 转平面", key: "studio-3d" },
   { group: "账户" },
-  { href: "/config", label: "配置中心", key: "config" },
   { href: "/account", label: "我的积分", key: "account" },
 ];
 
-const ADMIN_NAV = { href: "/admin", label: "充值管理", key: "admin" };
+// 仅管理员可见：配置中心（生图端点/提示词）+ 充值管理。
+const ADMIN_NAV = [
+  { group: "管理" },
+  { href: "/config", label: "配置中心", key: "config" },
+  { href: "/admin", label: "充值管理", key: "admin" },
+];
 
 // 主题切换：tech(深色科技) / xianxia(仙侠)。data-theme 由 theme-init.js 在渲染前同步应用。
 const THEME_LABELS = { tech: "科技", xianxia: "仙侠" };
@@ -65,7 +69,7 @@ export async function mountLayout({ active, title, crumb }) {
 
   const navItems = [...NAV];
   if (me.role === "admin") {
-    navItems.push({ group: "管理" }, ADMIN_NAV);
+    navItems.push(...ADMIN_NAV);
   }
 
   const navHtml = navItems

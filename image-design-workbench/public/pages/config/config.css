@@ -35,6 +35,59 @@
   min-width: 240px;
 }
 
+/* 多组生图端点列表 */
+.endpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 16px;
+}
+
+.endpoint-empty {
+  color: var(--ink-mute);
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.endpoint-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(var(--tint), 0.04);
+}
+
+.endpoint-meta {
+  min-width: 0;
+}
+
+.endpoint-url {
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.endpoint-sub {
+  font-size: 12px;
+  color: var(--ink-mute);
+  margin-top: 2px;
+}
+
+.btn.sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  flex: none;
+}
+
+.endpoint-add {
+  border-top: 1px dashed var(--line);
+  padding-top: 14px;
+  margin-bottom: 4px;
+}
+
 @media (max-width: 820px) {
   .config-row {
     grid-template-columns: 1fr;

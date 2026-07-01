@@ -14,18 +14,41 @@
         <div class="config-row">
           <form class="card" id="imageForm">
             <div class="config-head-row">
-              <div class="section-label">生图配置</div>
+              <div class="section-label">生图配置（多组）</div>
               <span class="badge" id="imageStatus">未配置</span>
             </div>
-            <div class="card-title">画图 API Key</div>
-            <div class="card-desc" style="margin-bottom: 16px">生图 API 地址由服务端固定，页面只填 Key。保存仅存于服务进程内存。</div>
+            <div class="card-title">画图 API 端点</div>
+            <div class="card-desc" style="margin-bottom: 16px">
+              可接入多组 API（URL + Key）。各工作台画图时按调度策略从中取一组，均摊调用。配置持久化在数据库。
+            </div>
+
             <label class="field">
-              <span>生图 API Key</span>
-              <input class="input" id="apiKey" type="password" autocomplete="off" placeholder="sk-..." />
+              <span>调度策略</span>
+              <select class="input" id="schedule">
+                <option value="round_robin">轮询（依次轮流）</option>
+                <option value="random">随机</option>
+              </select>
             </label>
-            <p class="card-desc" style="margin-bottom: 16px">画图消耗积分：1 积分 = 1 元 = 1 张图。保存 Key 后即可在各工作台生成图片。</p>
+
+            <div class="endpoint-list" id="endpointList"></div>
+
+            <div class="endpoint-add">
+              <label class="field">
+                <span>API URL</span>
+                <input class="input" id="apiUrl" type="url" autocomplete="off" placeholder="https://api.example.com/v1" />
+              </label>
+              <label class="field">
+                <span>API Key</span>
+                <input class="input" id="apiKey" type="password" autocomplete="off" placeholder="sk-..." />
+              </label>
+              <label class="field">
+                <span>备注（可选）</span>
+                <input class="input" id="apiLabel" type="text" autocomplete="off" placeholder="如：主号 / 备用" />
+              </label>
+            </div>
+            <p class="card-desc" style="margin-bottom: 16px">画图消耗积分：1 积分 = 1 元 = 1 张图。</p>
             <p class="msg" id="imageMsg"></p>
-            <button class="btn primary full" id="saveImage" type="submit">保存生图配置</button>
+            <button class="btn primary full" id="saveImage" type="submit">添加端点</button>
           </form>
 
           <form class="card" id="promptForm">

@@ -13,8 +13,6 @@ const {
   buildImageGeneratorEnv,
   buildPromptExtractionRequest,
   callPromptExtractionApi,
-  clearRuntimeImageApiConfig,
-  clearRuntimePromptApiConfig,
   clearOutputDirContents,
   countImagesInApiResponse,
   getBatchDerivedTypes,
@@ -22,21 +20,22 @@ const {
   getImageTypeConfig,
   getImageNormalizerCommands,
   getImageNormalizationPlan,
-  getRequiredRuntimeImageApiConfig,
-  getRequiredRuntimePromptApiConfig,
-  getRuntimeImageApiConfigSummary,
-  getRuntimePromptApiConfigSummary,
-  normalizeImageApiConfig,
   normalizeImageSpec,
   normalizePlaygroundRequest,
-  normalizePromptApiConfig,
   parseGeneratedImagePaths,
   parsePromptExtractionResponse,
   requestedImageCountFromJson,
   readImageDimensions,
-  setRuntimeImageApiConfig,
-  setRuntimePromptApiConfig,
 } = require("../server");
+
+// 生图端点 / 提示词配置的纯逻辑（不依赖 DB）。
+const {
+  normalizeApiBase,
+  normalizeEndpointInput,
+  maskKey,
+  normalizeSchedule,
+  selectEndpoint,
+} = require("../lib/image-config");
 
 function makePng(width, height) {
   const data = Buffer.alloc(24);
@@ -353,122 +352,56 @@ test("parses multiple generated image paths from generator output", () => {
   );
 });
 
-test("requires uploaded runtime image API config", () => {
-  clearRuntimeImageApiConfig();
+test("normalizes a generation endpoint (url + key) and rejects bad input", () => {
+  const ep = normalizeEndpointInput({ apiBase: " https://api.one/v1/ ", apiKey: " key-1 ", label: " 主号 " });
+  assert.deepEqual(ep, { apiBase: "https://api.one/v1", apiKey: "key-1", label: "主号" });
 
-  assert.deepEqual(getRuntimeImageApiConfigSummary(), {
-    uploaded: false,
-    hasApiKey: false,
-    uploadedAt: "",
-  });
-  assert.throws(() => getRequiredRuntimeImageApiConfig(), /请先在页面保存 API 配置/);
+  assert.throws(() => normalizeEndpointInput({ apiBase: "", apiKey: "k" }), /生图 API URL不能为空/);
+  assert.throws(() => normalizeEndpointInput({ apiBase: "not-a-url", apiKey: "k" }), /生图 API URL格式不正确/);
+  assert.throws(() => normalizeEndpointInput({ apiBase: "ftp://api/v1", apiKey: "k" }), /http:\/\/ 或 https:\/\//);
+  assert.throws(() => normalizeEndpointInput({ apiBase: "https://api/v1", apiKey: "" }), /生图 API Key 不能为空/);
 });
 
-test("normalizes runtime image API config without exposing the key in summaries", () => {
-  clearRuntimeImageApiConfig();
-
-  const summary = setRuntimeImageApiConfig({
-    apiKey: " secret-key ",
-  });
-
-  assert.equal(summary.uploaded, true);
-  assert.equal(summary.hasApiKey, true);
-  assert.equal(typeof summary.uploadedAt, "string");
-  assert.equal(Object.hasOwn(summary, "apiBase"), false);
-  assert.equal(Object.hasOwn(summary, "apiKey"), false);
-  const runtimeConfig = getRequiredRuntimeImageApiConfig();
-  assert.equal(typeof runtimeConfig.apiBase, "string");
-  assert.ok(runtimeConfig.apiBase.startsWith("https://"));
-  assert.equal(runtimeConfig.apiKey, "secret-key");
-  assert.equal(runtimeConfig.uploadedAt, summary.uploadedAt);
+test("masks api keys for display without leaking the middle", () => {
+  assert.equal(maskKey("sk-1234567890abcd"), "sk-1****abcd");
+  assert.equal(maskKey("short"), "sh****");
+  assert.equal(maskKey(""), "");
 });
 
-test("loads runtime image API config from env files at startup", async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "image-workbench-env-"));
-  const serverCopyPath = path.join(tmpDir, "server.js");
-  const rootEnvPath = path.join(tmpDir, ".env");
-  const skillsDir = path.join(tmpDir, "skills", "custom-image-generator");
-  await fs.mkdir(skillsDir, { recursive: true });
-  await fs.copyFile(path.join(__dirname, "..", "server.js"), serverCopyPath);
-  // server.js 现在依赖 ./lib/* 模块，复制到临时目录一并隔离。
-  await fs.cp(path.join(__dirname, "..", "lib"), path.join(tmpDir, "lib"), { recursive: true });
-  await fs.writeFile(
-    rootEnvPath,
-    [
-      "CUSTOM_IMAGE_API_BASE=https://env.example/v1",
-      "CUSTOM_IMAGE_API_KEY=env-secret-key",
-    ].join("\n"),
-  );
-
-  const { spawnSync } = require("node:child_process");
-  const script = `
-    process.env.CUSTOM_IMAGE_API_BASE = "";
-    process.env.CUSTOM_IMAGE_API_KEY = "";
-    const server = require(${JSON.stringify(serverCopyPath)});
-    console.log(JSON.stringify(server.getRuntimeImageApiConfigSummary()));
-  `;
-  const result = spawnSync(process.execPath, ["-e", script], {
-    encoding: "utf8",
-    // 让临时目录里的 require("mysql2/...") 能解析到仓库的 node_modules。
-    env: { ...process.env, NODE_PATH: path.join(__dirname, "..", "node_modules") },
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const summary = JSON.parse(result.stdout.trim());
-  assert.equal(summary.uploaded, true);
-  assert.equal(summary.hasApiKey, true);
+test("selectEndpoint round-robins across endpoints and wraps", () => {
+  const rows = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  let counter = 0;
+  const seen = [];
+  for (let i = 0; i < 4; i += 1) {
+    const { row, nextCounter } = selectEndpoint(rows, { schedule: "round_robin", counter });
+    seen.push(row.id);
+    counter = nextCounter;
+  }
+  assert.deepEqual(seen, [1, 2, 3, 1]);
+  assert.throws(() => selectEndpoint([], { schedule: "round_robin" }), /请先在配置中心添加生图 API 端点/);
 });
 
-test("rejects invalid runtime image API config", () => {
-  assert.throws(() => normalizeImageApiConfig({ apiKey: "" }), /API Key 不能为空/);
-  assert.throws(() => normalizeImageApiConfig({}), /API Key 不能为空/);
+test("selectEndpoint random picks within range and keeps counter", () => {
+  const rows = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  const { row, nextCounter } = selectEndpoint(rows, { schedule: "random", counter: 5, random: () => 0.5 });
+  assert.equal(row.id, 2);
+  assert.equal(nextCounter, 5);
 });
 
-test("normalizes prompt extraction API config separately from image config", () => {
-  clearRuntimePromptApiConfig();
-
-  assert.deepEqual(getRuntimePromptApiConfigSummary(), {
-    uploaded: false,
-    apiBase: "",
-    model: "gpt-4o-mini",
-    hasApiKey: false,
-    uploadedAt: "",
-  });
-  assert.throws(() => getRequiredRuntimePromptApiConfig(), /请先在配置中心保存提示词 API 配置/);
-
-  const summary = setRuntimePromptApiConfig({
-    apiBase: " https://prompt.unit.test/v1/ ",
-    apiKey: " prompt-key ",
-    model: " vision-unit-model ",
-  });
-
-  assert.equal(summary.uploaded, true);
-  assert.equal(summary.apiBase, "https://prompt.unit.test/v1");
-  assert.equal(summary.model, "vision-unit-model");
-  assert.equal(summary.hasApiKey, true);
-  assert.equal(Object.hasOwn(summary, "apiKey"), false);
-  const runtimeConfig = getRequiredRuntimePromptApiConfig();
-  assert.equal(runtimeConfig.apiBase, "https://prompt.unit.test/v1");
-  assert.equal(runtimeConfig.apiKey, "prompt-key");
-  assert.equal(runtimeConfig.model, "vision-unit-model");
+test("normalizeSchedule defaults to round_robin unless random", () => {
+  assert.equal(normalizeSchedule("random"), "random");
+  assert.equal(normalizeSchedule("round_robin"), "round_robin");
+  assert.equal(normalizeSchedule("nonsense"), "round_robin");
+  assert.equal(normalizeSchedule(""), "round_robin");
 });
 
-test("rejects invalid prompt extraction API config", () => {
+test("normalizeApiBase validates protocol and trims trailing slash", () => {
+  assert.equal(normalizeApiBase(" https://prompt.unit.test/v1/ ", "提示词 API URL"), "https://prompt.unit.test/v1");
+  assert.throws(() => normalizeApiBase("", "提示词 API URL"), /提示词 API URL不能为空/);
+  assert.throws(() => normalizeApiBase("not-a-url", "提示词 API URL"), /提示词 API URL格式不正确/);
   assert.throws(
-    () => normalizePromptApiConfig({ apiBase: "", apiKey: "prompt-key" }),
-    /提示词 API URL 不能为空/,
-  );
-  assert.throws(
-    () => normalizePromptApiConfig({ apiBase: "not-a-url", apiKey: "prompt-key" }),
-    /提示词 API URL 格式不正确/,
-  );
-  assert.throws(
-    () => normalizePromptApiConfig({ apiBase: "ftp://prompt.unit.test/v1", apiKey: "prompt-key" }),
-    /提示词 API URL 必须以 http:\/\/ 或 https:\/\//,
-  );
-  assert.throws(
-    () => normalizePromptApiConfig({ apiBase: "https://prompt.unit.test/v1", apiKey: "" }),
-    /提示词 API Key 不能为空/,
+    () => normalizeApiBase("ftp://prompt.unit.test/v1", "提示词 API URL"),
+    /提示词 API URL必须以 http:\/\/ 或 https:\/\//,
   );
 });
 

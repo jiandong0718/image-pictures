@@ -11,6 +11,7 @@ require("./lib/env").loadEnv();
 const db = require("./lib/db");
 const accounts = require("./lib/accounts");
 const auth = require("./lib/auth");
+const imageConfig = require("./lib/image-config");
 const { createAccountApi } = require("./lib/api-accounts");
 
 const ROOT_DIR = __dirname;
@@ -181,17 +182,7 @@ const DERIVED_TYPES = Object.keys(IMAGE_TYPES).filter((type) => !["main", "playg
 const IMAGE_SET_ID_PATTERN = /^\d{3,}$/;
 const IMAGE_FILE_PATTERN = /^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp|gif)$/i;
 let imageSetAllocationQueue = Promise.resolve();
-let runtimeImageApiConfig = {
-  apiBase: FIXED_IMAGE_API_BASE,
-  apiKey: resolveImageApiKey(),
-  uploadedAt: "",
-};
-let runtimePromptApiConfig = {
-  apiBase: resolvePromptApiBase(),
-  apiKey: resolvePromptApiKey(),
-  model: getPromptExtractModel(),
-  uploadedAt: "",
-};
+// 生图端点（多组 key+url）与提示词配置已迁移到 MySQL，见 lib/image-config.js。
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -344,123 +335,18 @@ function resolvePromptApiKey() {
   );
 }
 
-function normalizeImageApiConfig(rawConfig = {}) {
-  const apiKey = cleanPrompt(rawConfig.apiKey || rawConfig.api_key);
-
-  if (!apiKey) {
-    throw new Error("API Key 不能为空");
-  }
-
-  return { apiBase: FIXED_IMAGE_API_BASE, apiKey };
-}
-
-function normalizePromptApiBase(value) {
-  const apiBase = cleanPrompt(value);
-  if (!apiBase) {
-    throw new Error("提示词 API URL 不能为空");
-  }
-  let parsed;
-  try {
-    parsed = new URL(apiBase);
-  } catch {
-    throw new Error("提示词 API URL 格式不正确");
-  }
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("提示词 API URL 必须以 http:// 或 https:// 开头");
-  }
-  return parsed.toString().replace(/\/$/, "");
-}
-
-function normalizePromptApiConfig(rawConfig = {}) {
-  const apiBase = normalizePromptApiBase(rawConfig.apiBase || rawConfig.apiUrl || rawConfig.api_url);
-  const apiKey = cleanPrompt(rawConfig.apiKey || rawConfig.api_key);
-  const model = cleanPrompt(rawConfig.model || rawConfig.promptModel || rawConfig.prompt_model) || getPromptExtractModel();
-
-  if (!apiKey) {
-    throw new Error("提示词 API Key 不能为空");
-  }
-
-  return { apiBase, apiKey, model };
-}
-
-function getRuntimeImageApiConfigSummary() {
+// 嵌入版绘图聚集地（React）拉的配置：通过服务端代理出去，key 不下发到前端。
+// uploaded 取决于 DB 里是否已配置生图端点。
+async function getRuntimePlaygroundConfig() {
   return {
-    uploaded: Boolean(runtimeImageApiConfig.apiBase && runtimeImageApiConfig.apiKey),
-    hasApiKey: Boolean(runtimeImageApiConfig.apiKey),
-    uploadedAt: runtimeImageApiConfig.uploadedAt,
-  };
-}
-
-function getRuntimePlaygroundConfig() {
-  return {
-    uploaded: Boolean(runtimeImageApiConfig.apiBase && runtimeImageApiConfig.apiKey),
+    uploaded: (await imageConfig.countEndpoints()) > 0,
     apiBase: "/api/full-playground-proxy",
     apiKey: "workbench-proxy",
     model: "gpt-image-2",
-    uploadedAt: runtimeImageApiConfig.uploadedAt,
   };
 }
 
-function getRuntimePromptApiConfigSummary() {
-  return {
-    uploaded: Boolean(runtimePromptApiConfig.apiBase && runtimePromptApiConfig.apiKey),
-    apiBase: runtimePromptApiConfig.apiBase,
-    model: runtimePromptApiConfig.model || getPromptExtractModel(),
-    hasApiKey: Boolean(runtimePromptApiConfig.apiKey),
-    uploadedAt: runtimePromptApiConfig.uploadedAt,
-  };
-}
-
-function setRuntimeImageApiConfig(rawConfig = {}) {
-  const normalized = normalizeImageApiConfig(rawConfig);
-  runtimeImageApiConfig = {
-    ...normalized,
-    uploadedAt: new Date().toISOString(),
-  };
-  return getRuntimeImageApiConfigSummary();
-}
-
-function setRuntimePromptApiConfig(rawConfig = {}) {
-  const normalized = normalizePromptApiConfig(rawConfig);
-  runtimePromptApiConfig = {
-    ...normalized,
-    uploadedAt: new Date().toISOString(),
-  };
-  return getRuntimePromptApiConfigSummary();
-}
-
-function clearRuntimeImageApiConfig() {
-  runtimeImageApiConfig = {
-    apiBase: FIXED_IMAGE_API_BASE,
-    apiKey: "",
-    uploadedAt: "",
-  };
-}
-
-function clearRuntimePromptApiConfig() {
-  runtimePromptApiConfig = {
-    apiBase: "",
-    apiKey: "",
-    model: getPromptExtractModel(),
-    uploadedAt: "",
-  };
-}
-
-function getRequiredRuntimeImageApiConfig() {
-  if (!runtimeImageApiConfig.apiBase || !runtimeImageApiConfig.apiKey) {
-    throw new Error("请先在页面保存 API 配置");
-  }
-  return runtimeImageApiConfig;
-}
-
-function getRequiredRuntimePromptApiConfig() {
-  if (!runtimePromptApiConfig.apiBase || !runtimePromptApiConfig.apiKey) {
-    throw new Error("请先在配置中心保存提示词 API 配置");
-  }
-  return runtimePromptApiConfig;
-}
-
-function buildImageGeneratorEnv(baseEnv = process.env, apiConfig = getRequiredRuntimeImageApiConfig()) {
+function buildImageGeneratorEnv(baseEnv, apiConfig) {
   return {
     ...baseEnv,
     [IMAGE_API_BASE_ENV_KEY]: apiConfig.apiBase,
@@ -749,7 +635,7 @@ function getApiErrorMessage(data, fallback = "") {
   );
 }
 
-async function callPromptExtractionApi({ upload, apiConfig = getRequiredRuntimePromptApiConfig(), fetchImpl = globalThis.fetch }) {
+async function callPromptExtractionApi({ upload, apiConfig, fetchImpl = globalThis.fetch }) {
   if (typeof fetchImpl !== "function") {
     throw new Error("当前 Node.js 版本不支持 fetch，请升级到 Node.js 18 或更高版本");
   }
@@ -1464,7 +1350,7 @@ async function generatePlaygroundImages(rawRequest = {}) {
 
   const imageSet = await allocateImageSet();
   const outputDir = imageSet.outputDir;
-  const apiConfig = getRequiredRuntimeImageApiConfig();
+  const apiConfig = await imageConfig.pickEndpoint();
   const args = buildImageGeneratorArgs({
     skillScript: SKILL_SCRIPT,
     prompt: request.prompt,
@@ -1540,7 +1426,7 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
     );
   }
 
-  const apiConfig = getRequiredRuntimeImageApiConfig();
+  const apiConfig = await imageConfig.pickEndpoint();
   const args = buildImageGeneratorArgs({
     skillScript: SKILL_SCRIPT,
     prompt: normalizedPrompt,
@@ -1635,7 +1521,7 @@ const PAGES_DIR = path.join(PUBLIC_DIR, "pages");
 const PAGE_ROUTES = {
   "/login": { dir: "login", auth: "guest" },
   "/register": { dir: "login", auth: "guest" },
-  "/config": { dir: "config", auth: "user" },
+  "/config": { dir: "config", auth: "admin" },
   "/studio/hat": { dir: "studio-hat", auth: "user" },
   "/studio/bag": { dir: "studio-bag", auth: "user" },
   "/studio/3d": { dir: "studio-3d", auth: "user" },
@@ -1903,7 +1789,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     let apiConfig;
     try {
-      apiConfig = getRequiredRuntimeImageApiConfig();
+      apiConfig = await imageConfig.pickEndpoint();
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -2000,57 +1886,87 @@ async function handleApi(req, res, pathname, searchParams) {
       skillScriptCandidates: SKILL_SCRIPT_CANDIDATES,
       defaultImageSpec: normalizeImageSpec(),
       defaultImageRatio: normalizeImageSpec().ratio,
-      imageApiConfig: getRuntimeImageApiConfigSummary(),
-      promptApiConfig: getRuntimePromptApiConfigSummary(),
+      imageEndpoints: await imageConfig.countEndpoints(),
+      promptApiConfig: await imageConfig.getPromptConfigSummary(),
     });
     return;
   }
 
+  // 读接口：任何登录用户可见（仅返回 uploaded 状态用于启用生成按钮）。
+  // 管理员额外拿到脱敏端点列表与调度策略（配置中心用）。
   if (req.method === "GET" && pathname === "/api/image-config") {
-    sendJson(res, 200, {
-      ok: true,
-      config: getRuntimeImageApiConfigSummary(),
-    });
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const uploaded = (await imageConfig.countEndpoints()) > 0;
+    const payload = { ok: true, config: { uploaded } };
+    if (user.role === "admin") {
+      payload.endpoints = await imageConfig.listEndpointsForDisplay();
+      payload.schedule = await imageConfig.getSchedule();
+    }
+    sendJson(res, 200, payload);
     return;
   }
 
   if (req.method === "GET" && pathname === "/api/playground-config") {
     sendJson(res, 200, {
       ok: true,
-      config: getRuntimePlaygroundConfig(),
+      config: await getRuntimePlaygroundConfig(),
     });
     return;
   }
 
+  // 写接口：仅管理员。action = add | delete | schedule。
   if (req.method === "POST" && pathname === "/api/image-config") {
+    const admin = await accountApi.requireAdmin(req, res);
+    if (!admin) {
+      return;
+    }
     const payload = await readJson(req);
-    let config;
+    const action = cleanPrompt(payload.action) || "add";
     try {
-      config = setRuntimeImageApiConfig(payload);
+      if (action === "delete") {
+        await imageConfig.deleteEndpoint(payload.id);
+      } else if (action === "schedule") {
+        await imageConfig.setSchedule(payload.schedule);
+      } else {
+        await imageConfig.addEndpoint(payload);
+      }
     } catch (error) {
       sendError(res, 400, error.message);
       return;
     }
     sendJson(res, 200, {
       ok: true,
-      config,
+      endpoints: await imageConfig.listEndpointsForDisplay(),
+      schedule: await imageConfig.getSchedule(),
+      config: { uploaded: (await imageConfig.countEndpoints()) > 0 },
     });
     return;
   }
 
   if (req.method === "GET" && pathname === "/api/prompt-config") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     sendJson(res, 200, {
       ok: true,
-      config: getRuntimePromptApiConfigSummary(),
+      config: await imageConfig.getPromptConfigSummary(),
     });
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/prompt-config") {
+    const admin = await accountApi.requireAdmin(req, res);
+    if (!admin) {
+      return;
+    }
     const payload = await readJson(req);
     let config;
     try {
-      config = setRuntimePromptApiConfig(payload);
+      config = await imageConfig.setPromptConfig(payload);
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -2065,7 +1981,7 @@ async function handleApi(req, res, pathname, searchParams) {
   if (req.method === "POST" && pathname === "/api/prompts/extract") {
     let apiConfig;
     try {
-      apiConfig = getRequiredRuntimePromptApiConfig();
+      apiConfig = await imageConfig.getRequiredPromptConfig();
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -2121,7 +2037,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     const payload = await readJson(req);
     try {
-      getRequiredRuntimeImageApiConfig();
+      await imageConfig.assertConfigured();
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -2168,7 +2084,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     const payload = await readJson(req);
     try {
-      getRequiredRuntimeImageApiConfig();
+      await imageConfig.assertConfigured();
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -2206,7 +2122,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     const payload = await readJson(req);
     try {
-      getRequiredRuntimeImageApiConfig();
+      await imageConfig.assertConfigured();
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -2272,7 +2188,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     const payload = await readJson(req);
     try {
-      getRequiredRuntimeImageApiConfig();
+      await imageConfig.assertConfigured();
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -2362,6 +2278,16 @@ const server = http.createServer(async (req, res) => {
 
 if (require.main === module) {
   db.init()
+    .then(() =>
+      // 生图端点/提示词表建好；DB 为空时把 .env 里的旧值一次性迁进来，之后完全走 DB。
+      imageConfig.init({
+        imageBase: FIXED_IMAGE_API_BASE,
+        imageKey: resolveImageApiKey(),
+        promptBase: resolvePromptApiBase(),
+        promptKey: resolvePromptApiKey(),
+        promptModel: getPromptExtractModel(),
+      }),
+    )
     .then(() => {
       server.listen(PORT, HOST, () => {
         console.log(`商品图片设计工作台已启动：http://${HOST}:${PORT}`);
@@ -2386,8 +2312,6 @@ module.exports = {
   buildImageGeneratorEnv,
   buildPromptExtractionRequest,
   callPromptExtractionApi,
-  clearRuntimeImageApiConfig,
-  clearRuntimePromptApiConfig,
   clearOutputDirContents,
   countImagesInApiResponse,
   describeImageSpec,
@@ -2396,19 +2320,11 @@ module.exports = {
   getImageTypeConfig,
   getImageNormalizerCommands,
   getImageNormalizationPlan,
-  getRequiredRuntimeImageApiConfig,
-  getRequiredRuntimePromptApiConfig,
-  getRuntimeImageApiConfigSummary,
-  getRuntimePromptApiConfigSummary,
-  normalizeImageApiConfig,
   normalizeImageSpec,
   normalizePlaygroundRequest,
-  normalizePromptApiConfig,
   parseGeneratedImagePaths,
   requestedImageCountFromJson,
   normalizeGeneratedImageFile,
   parsePromptExtractionResponse,
   readImageDimensions,
-  setRuntimeImageApiConfig,
-  setRuntimePromptApiConfig,
 };
