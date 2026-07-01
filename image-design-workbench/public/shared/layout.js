@@ -4,14 +4,14 @@
 import { fetchMe, logout } from "./api.js";
 
 const NAV = [
+  { group: "工具" },
+  { href: "/playground", label: "自由生图", key: "playground" },
+  { href: "/full-playground", label: "绘图聚集地", key: "full-playground" },
+  { href: "/prompt", label: "提示词提取", key: "prompt" },
   { group: "工作台" },
   { href: "/studio/hat", label: "商品衍生图", key: "studio-hat" },
   { href: "/studio/bag", label: "商品微调图", key: "studio-bag" },
   { href: "/studio/3d", label: "3D 转平面", key: "studio-3d" },
-  { group: "工具" },
-  { href: "/prompt", label: "提示词提取", key: "prompt" },
-  { href: "/playground", label: "自由生图", key: "playground" },
-  { href: "/full-playground", label: "绘图聚集地", key: "full-playground" },
   { group: "账户" },
   { href: "/config", label: "配置中心", key: "config" },
   { href: "/account", label: "我的积分", key: "account" },

@@ -598,20 +598,28 @@ h3 {
 /* 白净宣纸底 + 淡雾流光，取代科技网格 */
 :root[data-theme="xianxia"] body {
   background-color: var(--bg-0);
+  /* 与登录页同一张山水图，盖一层宣纸白纱调淡，内容卡片浮于其上，保证进出主题一致。 */
   background-image:
-    radial-gradient(1100px 640px at 82% -12%, rgba(184, 134, 47, 0.1), transparent 60%),
-    radial-gradient(950px 560px at -6% 6%, rgba(31, 158, 116, 0.1), transparent 55%),
-    radial-gradient(820px 520px at 50% 120%, rgba(31, 158, 116, 0.06), transparent 60%);
-  background-size: 100% 100%, 100% 100%, 100% 100%;
+    linear-gradient(rgba(238, 243, 232, 0.72), rgba(238, 243, 232, 0.8)),
+    url("/shared/landscape.jpg");
+  background-size: cover, cover;
+  background-position: center top, center top;
+  background-repeat: no-repeat, no-repeat;
+  background-attachment: fixed, fixed;
 }
 
 /* 侧边栏 / 顶栏由暗色块改为白净宣纸 */
+/* 侧栏透明、去掉自身模糊：直接露出 body 的固定山水，与内容区背景连续一致 */
 :root[data-theme="xianxia"] .sidebar {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 248, 239, 0.96));
+  background: transparent;
+  backdrop-filter: none;
+  border-right-color: rgba(90, 140, 110, 0.16);
 }
 
+/* 顶栏保持轻磨砂（sticky，内容会从其下滚过需要遮挡），但足够通透透出山水 */
 :root[data-theme="xianxia"] .topbar {
-  background: rgba(255, 255, 255, 0.74);
+  background: rgba(240, 245, 236, 0.55);
+  border-bottom-color: rgba(90, 140, 110, 0.16);
 }
 
 /* logo 内框与头像文字适配亮底 */
@@ -635,4 +643,28 @@ h3 {
 :root[data-theme="xianxia"] .btn.primary {
   color: #fffdf5;
   box-shadow: 0 8px 22px rgba(31, 158, 116, 0.22);
+}
+
+/* 仙侠：卡片升级为通透玻璃 + 顶部青碧→鎏金流光 + 层次投影，浮于山水之上，贴近登录页质感 */
+:root[data-theme="xianxia"] .card,
+:root[data-theme="xianxia"] .studio-card {
+  position: relative;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.56));
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 18px 44px rgba(40, 80, 56, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+}
+
+:root[data-theme="xianxia"] .card::before,
+:root[data-theme="xianxia"] .studio-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent);
+  opacity: 0.55;
+  pointer-events: none;
 }

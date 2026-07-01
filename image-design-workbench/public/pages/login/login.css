@@ -12,7 +12,7 @@ body {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background: url("/pages/login/landscape.jpg") center / cover no-repeat;
+  background: url("/shared/landscape.jpg") center / cover no-repeat;
   /* 调淡用的面纱 + 云海 / 飞鹤颜色 */
   --veil: rgba(8, 12, 20, 0.5);
   --mist-color: rgba(210, 230, 245, 0.5);
