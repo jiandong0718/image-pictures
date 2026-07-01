@@ -1,8 +1,24 @@
 .pg-grid {
   display: grid;
-  grid-template-columns: 420px 1fr;
+  grid-template-columns: 400px 1fr;
   gap: 22px;
-  align-items: start;
+  align-items: stretch;
+}
+
+/* 结果卡撑满等高，内容区填满，右侧不再留白 */
+.pg-result-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.pg-result-card .pg-results {
+  flex: 1;
+}
+
+/* 表单里空的提示行不占位，去掉按钮上方的空白 */
+#pgForm .msg:empty {
+  min-height: 0;
+  margin: 0;
 }
 
 .pg-results {
@@ -10,10 +26,16 @@
   grid-template-columns: repeat(2, 1fr);
   gap: 14px;
   min-height: 320px;
+  align-content: start;
 }
 
 .pg-results .empty {
   grid-column: 1 / -1;
+  margin: auto;
+}
+
+.pg-loading {
+  margin: auto;
 }
 
 .pg-item {
