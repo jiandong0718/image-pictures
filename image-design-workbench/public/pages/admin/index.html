@@ -19,23 +19,25 @@
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 22px; align-items: start">
+      <div class="responsive-2col">
         <div class="card">
           <div class="card-title" style="margin-bottom: 14px">用户列表</div>
-          <table class="table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>用户名</th>
-                <th>角色</th>
-                <th style="text-align: right">积分</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="userBody">
-              <tr><td colspan="5"><div class="empty">点击搜索加载用户</div></td></tr>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>用户名</th>
+                  <th>角色</th>
+                  <th style="text-align: right">积分</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="userBody">
+                <tr><td colspan="5"><div class="empty">点击搜索加载用户</div></td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div class="card">

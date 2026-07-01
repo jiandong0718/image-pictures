@@ -548,6 +548,38 @@ h3 {
 /* 登录/注册页的卡片与背景样式见 pages/login/login.css。 */
 
 /* ============================ 响应式 ============================ */
+
+/* ---- 各页面复用的自适应布局工具类 ---- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.field-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.responsive-2col {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 22px;
+  align-items: start;
+}
+
+/* 表格横向滚动容器：窄屏不撑破布局 */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll .table {
+  min-width: 460px;
+}
+
+/* ≤960：侧栏变顶部横向导航 */
 @media (max-width: 960px) {
   .shell {
     grid-template-columns: 1fr;
@@ -558,9 +590,46 @@ h3 {
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
+    gap: 6px 14px;
+    padding: 14px 16px;
   }
-  .nav-spacer {
+  .nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+  }
+  .nav-group,
+  .nav-spacer,
+  .nav-foot {
     display: none;
+  }
+  .brand {
+    padding: 4px 8px;
+  }
+  .responsive-2col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ≤600：手机端收紧内边距、顶栏换行 */
+@media (max-width: 600px) {
+  .content {
+    padding: 18px 14px;
+  }
+  .topbar {
+    padding: 12px 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .topbar-right {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .card {
+    padding: 16px;
+  }
+  .field-grid-2 {
+    grid-template-columns: 1fr;
   }
 }
 
