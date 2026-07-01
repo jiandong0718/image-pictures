@@ -2,11 +2,17 @@
   display: grid;
   grid-template-columns: 400px 1fr;
   gap: 22px;
-  align-items: stretch;
+  align-items: start;
 }
 
-/* 结果卡撑满等高，内容区填满，右侧不再留白 */
+/* 表单按内容自然高度：不拉伸，避免按钮上方出现空隙 */
+#pgForm {
+  align-self: start;
+}
+
+/* 只让结果卡拉伸到与表单等高、内容区填满，右侧不再留白 */
 .pg-result-card {
+  align-self: stretch;
   display: flex;
   flex-direction: column;
 }
@@ -15,7 +21,7 @@
   flex: 1;
 }
 
-/* 表单里空的提示行不占位，去掉按钮上方的空白 */
+/* 空的提示行不占位，去掉按钮上方的空白 */
 #pgForm .msg:empty {
   min-height: 0;
   margin: 0;
