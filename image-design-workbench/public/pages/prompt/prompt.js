@@ -1,6 +1,6 @@
 // 提示词提取页：上传图片 → 调用 /api/prompts/extract → 展示并可复制。
 
-import { mountLayout } from "/shared/layout.js";
+import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiUpload } from "/shared/api.js";
 import { getDbRecord, putDbRecord } from "/shared/persistence.js";
 
@@ -106,7 +106,10 @@ async function extract() {
     const data = await apiUpload("/api/prompts/extract", fd);
     els.output.value = data.prompt || "";
     saveDraft();
-    setMsg("提示词已提取", "success");
+    if (typeof data.credits === "number") {
+      setCredits(data.credits);
+    }
+    setMsg("提示词已提取（消耗 1 积分）", "success");
   } catch (err) {
     setMsg(err.message, "error");
   } finally {

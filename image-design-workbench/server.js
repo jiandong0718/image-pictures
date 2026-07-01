@@ -103,6 +103,7 @@ const MIN_IMAGE_SPEC_SIZE = 256;
 const MAX_IMAGE_SPEC_SIZE = 4096;
 const PLAYGROUND_IMAGE_COUNT_MIN = 1;
 const PLAYGROUND_IMAGE_COUNT_MAX = 4;
+const PROMPT_EXTRACT_CREDIT_COST = 1;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_PROXY_UPLOAD_BYTES = 80 * 1024 * 1024;
 const UPLOAD_MIME_EXT = {
@@ -1979,6 +1980,10 @@ async function handleApi(req, res, pathname, searchParams) {
   }
 
   if (req.method === "POST" && pathname === "/api/prompts/extract") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     let apiConfig;
     try {
       apiConfig = await imageConfig.getRequiredPromptConfig();
@@ -1986,14 +1991,24 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, 400, error.message);
       return;
     }
+    // 提示词提取按 1 次 1 积分计费，与生图一致；发起前先拦截余额不足。
+    try {
+      await accounts.assertEnoughCredits(user.id, PROMPT_EXTRACT_CREDIT_COST);
+    } catch (error) {
+      sendError(res, error.statusCode || 402, error.message);
+      return;
+    }
 
     try {
       const upload = await readMultipartFile(req, "image");
       const result = await callPromptExtractionApi({ upload, apiConfig });
+      // 成功才扣费（失败不扣），返回新余额供顶栏更新。
+      const credits = await accounts.consumeCredits(user.id, PROMPT_EXTRACT_CREDIT_COST, "提示词提取");
       sendJson(res, 200, {
         ok: true,
         prompt: result.prompt,
         model: result.model,
+        credits,
       });
     } catch (error) {
       const message = error.message || "提示词提取失败";
