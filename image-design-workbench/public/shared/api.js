@@ -42,5 +42,10 @@ export async function fetchMe() {
 
 export async function logout() {
   await apiPost("/api/auth/logout", {});
+  try {
+    localStorage.removeItem("imageStudio:me");
+  } catch {
+    /* 忽略 */
+  }
   location.href = "/login";
 }

@@ -59,14 +59,75 @@ function toggleTheme(btn) {
   if (btn) btn.textContent = `${THEME_LABELS[next]}风`;
 }
 
-export async function mountLayout({ active, title, crumb }) {
-  const me = await fetchMe();
-  if (!me) {
-    const redirect = encodeURIComponent(location.pathname + location.search);
-    location.href = `/login?redirect=${redirect}`;
+// 缓存当前用户（非敏感：仅用于即时渲染菜单/顶栏；真正的权限由服务端 cookie + 路由/接口守卫强制）。
+const ME_KEY = "imageStudio:me";
+
+function readCachedMe() {
+  try {
+    const raw = localStorage.getItem(ME_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
     return null;
   }
+}
 
+function cacheMe(me) {
+  try {
+    localStorage.setItem(
+      ME_KEY,
+      JSON.stringify({ id: me.id, username: me.username, role: me.role, credits: me.credits }),
+    );
+  } catch {
+    /* localStorage 不可用时忽略，退回每次 fetchMe */
+  }
+}
+
+function loginRedirect() {
+  const redirect = encodeURIComponent(location.pathname + location.search);
+  location.href = `/login?redirect=${redirect}`;
+}
+
+// 切换菜单是整页刷新：先用本地缓存的用户信息同步渲染骨架（侧栏/顶栏立即出现，不等网络），
+// 再后台校验会话 + 刷新余额/角色。这样导航不再卡在 fetchMe 的网络往返上。
+export async function mountLayout(opts) {
+  let me = readCachedMe();
+  if (!me) {
+    me = await fetchMe();
+    if (!me) {
+      loginRedirect();
+      return null;
+    }
+    cacheMe(me);
+  }
+
+  const ctx = renderShell(me, opts);
+
+  // 后台校验：会话失效则跳登录；余额/角色变化则更新（角色变了重载以刷新菜单）。
+  fetchMe()
+    .then((fresh) => {
+      if (!fresh) {
+        try {
+          localStorage.removeItem(ME_KEY);
+        } catch {
+          /* 忽略 */
+        }
+        loginRedirect();
+        return;
+      }
+      cacheMe(fresh);
+      setCredits(fresh.credits);
+      if (fresh.role !== me.role) {
+        location.reload();
+      }
+    })
+    .catch(() => {
+      /* 网络抖动不打断已渲染页面 */
+    });
+
+  return ctx;
+}
+
+function renderShell(me, { active, title, crumb }) {
   const navItems = [...NAV];
   if (me.role === "admin") {
     navItems.push(...ADMIN_NAV);
@@ -119,12 +180,14 @@ export async function mountLayout({ active, title, crumb }) {
     </div>
   `;
 
-  // 把页面原有内容搬进 content 容器。
+  // 把页面原有内容搬进 content 容器。#page 默认被 CSS 隐藏（避免挂载前
+  // 内容以裸样式闪现在左上角），搬进骨架后再显示，消除“先中间后边缘”的跳动。
   const existing = document.getElementById("page");
   document.body.innerHTML = "";
   document.body.appendChild(shell);
   if (existing) {
     shell.querySelector("#pageContent").appendChild(existing);
+    existing.style.visibility = "visible";
   }
 
   shell.querySelector("#layoutLogout").addEventListener("click", () => logout());

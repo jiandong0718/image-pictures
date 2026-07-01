@@ -310,6 +310,11 @@ h3 {
   margin: 0 auto;
 }
 
+/* 布局挂载前隐藏页面内容，挂进骨架后由 layout.js 置为可见，避免裸内容闪现/跳动。 */
+#page {
+  visibility: hidden;
+}
+
 /* ============================ 卡片 / 面板 ============================ */
 .card {
   background: var(--surface);
