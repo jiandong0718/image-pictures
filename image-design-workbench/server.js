@@ -3,6 +3,7 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const zlib = require("zlib");
 const { spawn } = require("child_process");
 
 // 在求值任何依赖 process.env 的常量之前，先加载 .env。
@@ -1565,8 +1566,42 @@ async function servePage(req, res, pathname) {
   }
 
   const dir = path.join(PAGES_DIR, route.dir);
-  await serveStaticFromDir(res, dir, "index.html", "index.html");
+  await serveStaticFromDir(req, res, dir, "index.html", "index.html");
   return true;
+}
+
+// 静态资源缓存策略：页面(html)始终校验保新鲜；css/js 缓存 1 小时；图片/字体缓存 1 天。
+// 高延迟链路下，让浏览器缓存静态资源可显著减少切页面时的重复往返。
+const COMPRESSIBLE_EXT = new Set([".html", ".css", ".js", ".json", ".svg"]);
+const LONG_CACHE_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
+
+function staticCacheControl(ext) {
+  if (ext === ".html") {
+    return "no-cache";
+  }
+  if (LONG_CACHE_EXT.has(ext)) {
+    return "public, max-age=86400";
+  }
+  return "public, max-age=3600";
+}
+
+// 统一发送静态文件：按类型设缓存头，文本类在客户端支持时 gzip。
+function sendStaticData(req, res, data, ext) {
+  const headers = {
+    "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
+    "Cache-Control": staticCacheControl(ext),
+    Vary: "Accept-Encoding",
+  };
+  const acceptsGzip = /\bgzip\b/.test(req.headers["accept-encoding"] || "");
+  if (acceptsGzip && COMPRESSIBLE_EXT.has(ext) && data.length > 512) {
+    const gz = zlib.gzipSync(data);
+    headers["Content-Encoding"] = "gzip";
+    res.writeHead(200, headers);
+    res.end(gz);
+    return;
+  }
+  res.writeHead(200, headers);
+  res.end(data);
 }
 
 async function serveStatic(req, res, pathname) {
@@ -1579,12 +1614,7 @@ async function serveStatic(req, res, pathname) {
 
   try {
     const data = await fsp.readFile(filePath);
-    const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, {
-      "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
-      "Cache-Control": "no-cache",
-    });
-    res.end(data);
+    sendStaticData(req, res, data, path.extname(filePath).toLowerCase());
   } catch (error) {
     sendError(res, 404, "页面资源不存在");
   }
@@ -1597,7 +1627,7 @@ function isPathInside(rootDir, candidatePath) {
   return Boolean(relative && !relative.startsWith("..") && !path.isAbsolute(relative)) || relative === "";
 }
 
-async function serveStaticFromDir(res, rootDir, relativePath, fallbackFile = "") {
+async function serveStaticFromDir(req, res, rootDir, relativePath, fallbackFile = "") {
   const safeRelativePath = relativePath.replace(/^\/+/, "") || "index.html";
   let filePath = path.resolve(rootDir, safeRelativePath);
   if (!isPathInside(rootDir, filePath)) {
@@ -1611,12 +1641,7 @@ async function serveStaticFromDir(res, rootDir, relativePath, fallbackFile = "")
       filePath = path.join(filePath, "index.html");
     }
     const data = await fsp.readFile(filePath);
-    const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, {
-      "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
-      "Cache-Control": "no-cache",
-    });
-    res.end(data);
+    sendStaticData(req, res, data, path.extname(filePath).toLowerCase());
   } catch (error) {
     if (fallbackFile) {
       const fallbackPath = path.resolve(rootDir, fallbackFile);
@@ -1626,11 +1651,7 @@ async function serveStaticFromDir(res, rootDir, relativePath, fallbackFile = "")
       }
       try {
         const data = await fsp.readFile(fallbackPath);
-        res.writeHead(200, {
-          "Content-Type": MIME_TYPES[path.extname(fallbackPath).toLowerCase()] || "text/html; charset=utf-8",
-          "Cache-Control": "no-cache",
-        });
-        res.end(data);
+        sendStaticData(req, res, data, path.extname(fallbackPath).toLowerCase());
         return;
       } catch (fallbackError) {
         sendError(res, 404, "页面资源不存在", fallbackError.message);
@@ -1648,7 +1669,7 @@ async function serveGptImagePlayground(req, res, pathname) {
   }
 
   const relativePath = pathname.slice(GPT_IMAGE_PLAYGROUND_BASE_PATH.length);
-  await serveStaticFromDir(res, GPT_IMAGE_PLAYGROUND_DIST_DIR, relativePath, "index.html");
+  await serveStaticFromDir(req, res, GPT_IMAGE_PLAYGROUND_DIST_DIR, relativePath, "index.html");
 }
 
 async function serveImage(req, res, id, attachment) {
