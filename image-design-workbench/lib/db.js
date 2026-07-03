@@ -58,6 +58,18 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// 给已存在的表补列（用于给老库加字段），列已存在则跳过。
+async function ensureColumn(table, column, definition) {
+  const db = getPool();
+  const [rows] = await db.query(
+    "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+    [table, column],
+  );
+  if (!rows[0].cnt) {
+    await db.query(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+  }
+}
+
 // 先用无库连接确保数据库存在，再建表。
 async function ensureDatabase() {
   const admin = await mysql.createConnection({
@@ -91,6 +103,9 @@ async function createTables() {
       UNIQUE KEY uniq_username (username)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
   `);
+  // 用户中心：绑定邮箱 + 头像，老库上没有这两列，启动时按需补上。
+  await ensureColumn("users", "email", "email VARCHAR(255) NULL DEFAULT NULL");
+  await ensureColumn("users", "avatar_path", "avatar_path VARCHAR(255) NULL DEFAULT NULL");
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS credit_transactions (

@@ -3,14 +3,17 @@
 import { mountLayout } from "/shared/layout.js";
 import { apiGet, apiPost } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
+import { renderPagination } from "/shared/pagination.js";
 
 let selected = null;
+let pageState = { page: 1, pageSize: 10 };
 const storage = createLocalState("imageStudio:admin:v1");
 
 const els = {
   keyword: document.getElementById("keyword"),
   searchBtn: document.getElementById("searchBtn"),
   userBody: document.getElementById("userBody"),
+  userPagination: document.getElementById("userPagination"),
   target: document.getElementById("rechargeTarget"),
   amount: document.getElementById("amount"),
   note: document.getElementById("note"),
@@ -45,12 +48,28 @@ function applyDraft() {
   }
 }
 
-async function search() {
+async function search({ resetPage = true } = {}) {
   const keyword = els.keyword.value.trim();
+  if (resetPage) {
+    pageState = { ...pageState, page: 1 };
+  }
   els.userBody.innerHTML = `<tr><td colspan="5"><div class="empty">加载中…</div></td></tr>`;
   try {
-    const data = await apiGet(`/api/admin/users?keyword=${encodeURIComponent(keyword)}`);
+    const data = await apiGet(
+      `/api/admin/users?keyword=${encodeURIComponent(keyword)}&page=${pageState.page}&pageSize=${pageState.pageSize}`,
+    );
     renderUsers(data.users || []);
+    const { page, pageSize, total } = data.pagination;
+    pageState = { page, pageSize };
+    renderPagination(els.userPagination, {
+      page,
+      pageSize,
+      total,
+      onChange: (next) => {
+        pageState = next;
+        search({ resetPage: false });
+      },
+    });
   } catch (err) {
     els.userBody.innerHTML = `<tr><td colspan="5"><div class="empty">${err.message}</div></td></tr>`;
   }

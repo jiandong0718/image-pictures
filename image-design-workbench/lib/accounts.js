@@ -4,8 +4,11 @@
 // 所有涉及余额变动的操作都用事务 + 行锁（SELECT ... FOR UPDATE）保证并发安全。
 
 const { getPool, hashPassword, verifyPassword, SIGNUP_BONUS_CREDITS } = require("./db");
+const { normalizePagination } = require("./pagination");
+const { resolveVipStatus } = require("./vip-tiers");
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_一-龥]{2,32}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 class AccountError extends Error {
   constructor(message, statusCode = 400) {
@@ -23,13 +26,15 @@ function publicUser(row) {
     username: row.username,
     role: row.role,
     credits: row.credits,
+    email: row.email || "",
+    avatarUrl: row.avatar_path ? `/api/account/avatar/${row.id}` : "",
     createdAt: row.created_at,
   };
 }
 
 async function getUserById(id) {
   const [rows] = await getPool().query(
-    "SELECT id, username, role, credits, created_at FROM users WHERE id = ? LIMIT 1",
+    "SELECT id, username, role, credits, email, avatar_path, created_at FROM users WHERE id = ? LIMIT 1",
     [id],
   );
   return rows[0] || null;
@@ -37,7 +42,7 @@ async function getUserById(id) {
 
 async function getUserByUsername(username) {
   const [rows] = await getPool().query(
-    "SELECT id, username, password_hash, role, credits, created_at FROM users WHERE username = ? LIMIT 1",
+    "SELECT id, username, password_hash, role, credits, email, avatar_path, created_at FROM users WHERE username = ? LIMIT 1",
     [username],
   );
   return rows[0] || null;
@@ -167,18 +172,35 @@ async function rechargeCredits(targetUserId, amount, operatorId, note = "管理�
   }
 }
 
-async function listTransactions(userId, limit = 50) {
-  const [rows] = await getPool().query(
-    "SELECT amount, balance_after, type, note, created_at FROM credit_transactions WHERE user_id = ? ORDER BY id DESC LIMIT ?",
-    [userId, Number(limit) || 50],
+async function listTransactions(userId, { page, pageSize } = {}) {
+  const { page: p, pageSize: ps, offset } = normalizePagination(page, pageSize);
+  const pool = getPool();
+  // 累计消费/获得要基于全部记录聚合，不能只算当前页，所以和 COUNT 一起查。
+  const [[{ total, spent, earned }]] = await pool.query(
+    `SELECT COUNT(*) AS total,
+            COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS spent,
+            COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS earned
+     FROM credit_transactions WHERE user_id = ?`,
+    [userId],
   );
-  return rows.map((row) => ({
-    amount: row.amount,
-    balanceAfter: row.balance_after,
-    type: row.type,
-    note: row.note,
-    createdAt: row.created_at,
-  }));
+  const [rows] = await pool.query(
+    "SELECT amount, balance_after, type, note, created_at FROM credit_transactions WHERE user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+    [userId, ps, offset],
+  );
+  return {
+    items: rows.map((row) => ({
+      amount: row.amount,
+      balanceAfter: row.balance_after,
+      type: row.type,
+      note: row.note,
+      createdAt: row.created_at,
+    })),
+    total,
+    spent,
+    earned,
+    page: p,
+    pageSize: ps,
+  };
 }
 
 // 修改自己的密码：校验原密码后更新。
@@ -198,14 +220,45 @@ async function changePassword(userId, oldPassword, newPassword) {
   await pool.query("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(next), userId]);
 }
 
-async function searchUsers(keyword, limit = 20) {
+async function searchUsers(keyword, { page, pageSize } = {}) {
   const term = String(keyword || "").trim();
   const like = `%${term}%`;
-  const [rows] = await getPool().query(
-    "SELECT id, username, role, credits, created_at FROM users WHERE username LIKE ? ORDER BY id ASC LIMIT ?",
-    [like, Number(limit) || 20],
+  const { page: p, pageSize: ps, offset } = normalizePagination(page, pageSize);
+  const pool = getPool();
+  const [[{ total }]] = await pool.query("SELECT COUNT(*) AS total FROM users WHERE username LIKE ?", [like]);
+  const [rows] = await pool.query(
+    "SELECT id, username, role, credits, email, avatar_path, created_at FROM users WHERE username LIKE ? ORDER BY id ASC LIMIT ? OFFSET ?",
+    [like, ps, offset],
   );
-  return rows.map(publicUser);
+  return { items: rows.map(publicUser), total, page: p, pageSize: ps };
+}
+
+// 绑定/清空邮箱；传空串清空。
+async function setEmail(userId, email) {
+  const value = String(email || "").trim();
+  if (value && !EMAIL_PATTERN.test(value)) {
+    throw new AccountError("邮箱格式不正确");
+  }
+  await getPool().query("UPDATE users SET email = ? WHERE id = ?", [value || null, userId]);
+  return value;
+}
+
+async function setAvatarPath(userId, avatarPath) {
+  await getPool().query("UPDATE users SET avatar_path = ? WHERE id = ?", [avatarPath, userId]);
+}
+
+async function getAvatarPath(userId) {
+  const [rows] = await getPool().query("SELECT avatar_path FROM users WHERE id = ? LIMIT 1", [userId]);
+  return rows[0]?.avatar_path || "";
+}
+
+// 累计生成张数 = 历史全部「consume」流水的张数之和（与生图扣费逻辑天然一致，不用额外计数器）。
+async function getVipStatus(userId) {
+  const [[{ total }]] = await getPool().query(
+    "SELECT COALESCE(SUM(-amount), 0) AS total FROM credit_transactions WHERE user_id = ? AND type = 'consume'",
+    [userId],
+  );
+  return resolveVipStatus(total);
 }
 
 module.exports = {
@@ -221,4 +274,8 @@ module.exports = {
   listTransactions,
   changePassword,
   searchUsers,
+  setEmail,
+  setAvatarPath,
+  getAvatarPath,
+  getVipStatus,
 };

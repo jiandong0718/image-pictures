@@ -14,6 +14,7 @@ const NAV = [
   { href: "/studio/3d", label: "3D 转平面", key: "studio-3d" },
   { group: "账户" },
   { href: "/account", label: "我的积分", key: "account" },
+  { href: "/user-center", label: "用户中心", key: "user-center" },
 ];
 
 // 仅管理员可见：配置中心（生图端点/提示词）+ 充值管理。
@@ -75,7 +76,13 @@ function cacheMe(me) {
   try {
     localStorage.setItem(
       ME_KEY,
-      JSON.stringify({ id: me.id, username: me.username, role: me.role, credits: me.credits }),
+      JSON.stringify({
+        id: me.id,
+        username: me.username,
+        role: me.role,
+        credits: me.credits,
+        avatarUrl: me.avatarUrl || "",
+      }),
     );
   } catch {
     /* localStorage 不可用时忽略，退回每次 fetchMe */
@@ -168,12 +175,22 @@ function renderShell(me, { active, title, crumb }) {
           <span class="credit-pill" id="layoutCredits">
             <span>积分</span><span class="num" data-credits>${me.credits}</span>
           </span>
-          <span class="user-chip">
-            <span class="user-avatar">${(me.username || "?").slice(0, 1).toUpperCase()}</span>
-            <span>${me.username}</span>
-          </span>
+          <div class="user-menu-wrap">
+            <button class="user-chip" id="layoutUserChip" type="button">
+              <span class="user-avatar">${
+                me.avatarUrl
+                  ? `<img src="${me.avatarUrl}" alt="" />`
+                  : (me.username || "?").slice(0, 1).toUpperCase()
+              }</span>
+              <span>${me.username}</span>
+            </button>
+            <div class="user-menu" id="layoutUserMenu">
+              <a class="user-menu-item" href="/user-center">用户中心</a>
+              <a class="user-menu-item" href="/user-center#pwdForm">修改密码</a>
+              <button class="user-menu-item danger" id="layoutLogout" type="button">退出登录</button>
+            </div>
+          </div>
           <button class="btn sm ghost" id="layoutTheme" type="button" title="切换主题">${THEME_LABELS[currentTheme()]}风</button>
-          <button class="btn sm ghost" id="layoutLogout" type="button">登出</button>
         </div>
       </header>
       <div class="content" id="pageContent"></div>
@@ -193,6 +210,8 @@ function renderShell(me, { active, title, crumb }) {
   shell.querySelector("#layoutLogout").addEventListener("click", () => logout());
   const themeBtn = shell.querySelector("#layoutTheme");
   themeBtn.addEventListener("click", () => toggleTheme(themeBtn));
+
+  // 用户菜单：鼠标悬停展示/收起（纯 CSS :hover，见 theme.css .user-menu-wrap），不用点击展开。
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin) return;
     if (event.data?.type === "image-workbench:request-theme") {
@@ -218,4 +237,18 @@ export function setCredits(value) {
   document.querySelectorAll("[data-credits]").forEach((el) => {
     el.textContent = String(value);
   });
+}
+
+// 供用户中心页在头像上传成功后立即刷新顶栏头像，不用等下次导航。
+export function setAvatar(url) {
+  const el = document.querySelector(".topbar .user-avatar");
+  if (!el) {
+    return;
+  }
+  el.innerHTML = url ? `<img src="${url}" alt="" />` : el.innerHTML;
+  const me = readCachedMe();
+  if (me) {
+    me.avatarUrl = url;
+    cacheMe(me);
+  }
 }

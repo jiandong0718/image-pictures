@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>用户中心 · 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+    <script src="/shared/theme-init.js"></script>
+  </head>
+  <body>
+    <div id="page">
+      <div class="card profile-hero" style="margin-bottom: 22px">
+        <div class="avatar-preview lg" id="avatarPreview">?</div>
+        <div class="profile-hero-info">
+          <div class="profile-hero-name" id="profileName">--</div>
+          <div class="profile-hero-sub">
+            <span class="tier-badge" id="profileTierBadge">--</span>
+            <span id="profileTotal" class="card-desc" style="margin: 0"></span>
+          </div>
+          <div style="margin-top: 10px">
+            <button class="btn sm" id="avatarBtn" type="button">更换头像</button>
+            <input id="avatarInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+          </div>
+          <p class="msg" id="avatarMsg"></p>
+        </div>
+      </div>
+
+      <div class="responsive-2col">
+        <div>
+          <div class="card" style="margin-bottom: 22px">
+            <div class="card-title">绑定邮箱</div>
+            <div class="card-desc" style="margin-bottom: 16px">用于后续找回密码等场景，可留空。</div>
+            <form id="emailForm">
+              <label class="field"><span>邮箱</span>
+                <input class="input" id="email" type="email" placeholder="name@example.com" />
+              </label>
+              <p class="msg" id="emailMsg"></p>
+              <button class="btn primary full" id="emailBtn" type="submit">保存邮箱</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-title">修改密码</div>
+            <div class="card-desc" style="margin-bottom: 16px">定期更换密码更安全。</div>
+            <form id="pwdForm">
+              <label class="field"><span>原密码</span>
+                <input class="input" id="oldPwd" type="password" autocomplete="current-password" />
+              </label>
+              <label class="field"><span>新密码</span>
+                <input class="input" id="newPwd" type="password" autocomplete="new-password" placeholder="6-64 位" />
+              </label>
+              <label class="field"><span>确认新密码</span>
+                <input class="input" id="newPwd2" type="password" autocomplete="new-password" />
+              </label>
+              <p class="msg" id="pwdMsg"></p>
+              <button class="btn primary full" id="pwdBtn" type="submit">保存新密码</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card vip-card">
+          <div class="section-label">成长等级</div>
+          <div class="card-title" style="margin-bottom: 4px">VIP 权益</div>
+          <div class="card-desc" style="margin-bottom: 18px">
+            累计生成张数达到对应门槛即解锁更高档位与专属单价，用于展示成长权益；当前生成仍按 1 积分 = 1 张计费，不受等级影响。
+          </div>
+
+          <div class="vip-progress-wrap">
+            <div class="vip-progress-labels">
+              <span id="vipCurrentLabel">--</span>
+              <span id="vipNextLabel" class="card-desc" style="margin: 0"></span>
+            </div>
+            <div class="vip-progress-track">
+              <div class="vip-progress-fill" id="vipProgressFill"></div>
+            </div>
+          </div>
+
+          <table class="table vip-table" id="vipTable">
+            <thead>
+              <tr>
+                <th>等级</th>
+                <th>单价</th>
+                <th>达成状态</th>
+              </tr>
+            </thead>
+            <tbody id="vipTableBody">
+              <tr><td colspan="3"><div class="empty">加载中…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/pages/user-center/user-center.js"></script>
+  </body>
+</html>

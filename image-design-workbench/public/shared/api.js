@@ -19,6 +19,19 @@ export async function apiUpload(url, formData) {
   return handle(res);
 }
 
+// 生图接口只同步返回 taskId（避免单个请求挂太久撞上 Cloudflare 100s 超时），
+// 真正的生成结果通过这里轮询 /api/tasks/:id 拿到。
+export async function pollTask(taskId, { interval = 2000, timeoutMs = 5 * 60 * 1000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const data = await apiGet(`/api/tasks/${encodeURIComponent(taskId)}`);
+    if (data.status === "done") return data.result;
+    if (data.status === "error") throw new Error(data.error || "生成失败");
+    if (Date.now() > deadline) throw new Error("生成超时，请稍后重试");
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+}
+
 async function handle(res) {
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) {

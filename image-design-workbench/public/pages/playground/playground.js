@@ -1,7 +1,7 @@
 // 自由生图页：文生图，1-4 张，每张 1 积分。生成后更新顶栏余额。
 
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost } from "/shared/api.js";
+import { apiGet, apiPost, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 
 let loading = false;
@@ -117,7 +117,7 @@ async function generate(e) {
   renderState();
   renderResults();
   try {
-    const data = await apiPost("/api/playground/images", {
+    const { taskId } = await apiPost("/api/playground/images", {
       mode: "generate",
       prompt,
       count: Number(els.count.value),
@@ -125,10 +125,11 @@ async function generate(e) {
       system: els.system.value.trim(),
       imageSpec: buildImageSpec(els.sizePreset.value, els.ratioPreset.value),
     });
-    results = data.images || [];
+    const result = await pollTask(taskId);
+    results = result.images || [];
     saveState();
-    if (typeof data.credits === "number") {
-      setCredits(data.credits);
+    if (typeof result.credits === "number") {
+      setCredits(result.credits);
     }
     setMsg(`已生成 ${results.length} 张图片`, "success");
   } catch (err) {

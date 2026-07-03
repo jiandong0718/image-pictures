@@ -3,7 +3,7 @@
 // 套图分配、主图生成/上传、衍生图单张/批量生成、图板渲染、积分余额联动。
 
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost, apiUpload } from "/shared/api.js";
+import { apiGet, apiPost, apiUpload, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 
 const SIZE_PRESETS = { "1k": 1024, "2k": 2048, "4k": 4096 };
@@ -199,14 +199,15 @@ export function createStudio(config) {
     setLoading("main", true);
     setMsg("main", "");
     try {
-      const data = await apiPost("/api/images/main", {
+      const { taskId } = await apiPost("/api/images/main", {
         prompt,
         imageSetId: imageSet.id,
         imageSpec: normalizeSpec(state.spec),
       });
-      state.images.main = data.image;
+      const result = await pollTask(taskId);
+      state.images.main = result.image;
       saveState();
-      if (typeof data.credits === "number") setCredits(data.credits);
+      if (typeof result.credits === "number") setCredits(result.credits);
       setMsg("main", "主图已生成", "success");
     } catch (err) {
       setMsg("main", err.message, "error");
@@ -266,16 +267,17 @@ export function createStudio(config) {
     setLoading(type, true);
     setMsg(type, "");
     try {
-      const data = await apiPost("/api/images/derived", {
+      const { taskId } = await apiPost("/api/images/derived", {
         type,
         prompt,
         mainImageId: state.images.main.id,
         imageSetId: imageSet.id,
         imageSpec: normalizeSpec(state.spec),
       });
-      state.images[type] = data.image;
+      const result = await pollTask(taskId);
+      state.images[type] = result.image;
       saveState();
-      if (typeof data.credits === "number") setCredits(data.credits);
+      if (typeof result.credits === "number") setCredits(result.credits);
       setMsg(type, `${typeLabels[type]}已生成`, "success");
     } catch (err) {
       setMsg(type, err.message, "error");
@@ -306,23 +308,24 @@ export function createStudio(config) {
       setMsg(type, "");
     });
     try {
-      const data = await apiPost("/api/images/derived/batch", {
+      const { taskId } = await apiPost("/api/images/derived/batch", {
         types: derivedTypes,
         mainImageId: state.images.main.id,
         imageSetId: imageSet.id,
         prompts,
         imageSpec: normalizeSpec(state.spec),
       });
+      const result = await pollTask(taskId);
       derivedTypes.forEach((type) => {
-        if (data.results?.[type]) {
-          state.images[type] = data.results[type];
+        if (result.results?.[type]) {
+          state.images[type] = result.results[type];
           setMsg(type, `${typeLabels[type]}已生成`, "success");
-        } else if (data.errors?.[type]) {
-          setMsg(type, data.errors[type], "error");
+        } else if (result.errors?.[type]) {
+          setMsg(type, result.errors[type], "error");
         }
       });
       saveState();
-      if (typeof data.credits === "number") setCredits(data.credits);
+      if (typeof result.credits === "number") setCredits(result.credits);
     } catch (err) {
       derivedTypes.forEach((type) => setMsg(type, err.message, "error"));
     } finally {

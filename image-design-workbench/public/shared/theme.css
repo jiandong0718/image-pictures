@@ -280,6 +280,10 @@ h3 {
   font-size: 15px;
 }
 
+.user-menu-wrap {
+  position: relative;
+}
+
 .user-chip {
   display: inline-flex;
   align-items: center;
@@ -290,6 +294,56 @@ h3 {
   background: var(--surface);
   font-size: 13px;
   color: var(--ink-soft);
+  transition: border 0.15s, background 0.15s;
+}
+
+.user-chip:hover {
+  border-color: var(--line-strong);
+  background: var(--bg-2);
+}
+
+.user-menu {
+  position: absolute;
+  /* 紧贴触发区顶部（不留缝隙），用 padding-top 让菜单项在视觉上留白，
+     这样鼠标从头像滑到菜单的路径上全程都在可悬停的盒子内，不会中途判定成“移出”而闪烁关闭。 */
+  top: 100%;
+  right: 0;
+  min-width: 160px;
+  padding: 8px 6px 6px;
+  background: var(--surface-solid);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  z-index: 30;
+  flex-direction: column;
+  gap: 2px;
+  /* 默认隐藏，鼠标悬停在触发区容器上时展示；纯 CSS，不依赖点击。
+     注意：不用 :focus-within ——头像是个 <button>，点一下就会拿到焦点，
+     :focus-within 会让菜单在鼠标移开后仍因为焦点还在而“卡住不收起”。 */
+  display: none;
+}
+
+.user-menu-wrap:hover .user-menu {
+  display: flex;
+}
+
+.user-menu-item {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+}
+
+.user-menu-item:hover {
+  background: rgba(var(--tint), 0.06);
+}
+
+.user-menu-item.danger {
+  color: var(--danger);
 }
 
 .user-avatar {
@@ -302,6 +356,164 @@ h3 {
   font-size: 12px;
   font-weight: 700;
   color: var(--bg-0);
+  overflow: hidden;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-preview {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--bg-0);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+}
+
+.avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-preview.lg {
+  width: 104px;
+  height: 104px;
+  font-size: 36px;
+  flex-shrink: 0;
+}
+
+/* ============================ 用户中心：个人信息头 ============================ */
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.profile-hero-info {
+  min-width: 0;
+}
+
+.profile-hero-name {
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.profile-hero-sub {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ============================ VIP 等级 ============================ */
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--bg-0);
+  background: linear-gradient(135deg, var(--ink-mute), var(--ink-soft));
+}
+
+.tier-normal {
+  background: linear-gradient(135deg, #8b93a8, #6b7691);
+}
+
+.tier-silver {
+  background: linear-gradient(135deg, #e3e9f2, #a7b4c7);
+}
+
+.tier-platinum {
+  background: linear-gradient(135deg, #d7f3ff, #7fb8cf);
+}
+
+.tier-diamond {
+  color: var(--bg-0);
+  background: linear-gradient(135deg, #9be7ff, #4ea8ff);
+  box-shadow: 0 0 16px rgba(78, 168, 255, 0.35);
+}
+
+.tier-vip {
+  color: #f4f1ff;
+  background: linear-gradient(135deg, #b98cff, #6e5bff);
+  box-shadow: 0 0 16px rgba(110, 91, 255, 0.35);
+}
+
+.tier-svip {
+  color: #2a1d00;
+  background: linear-gradient(135deg, #ffe9a8, #d4a437);
+  box-shadow: 0 0 18px rgba(212, 164, 55, 0.45);
+}
+
+.vip-card {
+  background: linear-gradient(180deg, rgba(110, 91, 255, 0.06), var(--surface) 40%);
+}
+
+.vip-progress-wrap {
+  margin-bottom: 20px;
+}
+
+.vip-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vip-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.vip-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width 0.3s;
+}
+
+.vip-table tr.current td {
+  background: var(--accent-soft);
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.tier-status {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tier-status.current {
+  color: var(--accent);
+}
+
+.tier-status.done {
+  color: var(--ink-soft);
+}
+
+.tier-status.pending {
+  color: var(--ink-mute);
+  font-family: var(--mono);
 }
 
 .content {
@@ -482,6 +694,26 @@ h3 {
   margin-top: 6px;
 }
 
+/* ============================ 分页 ============================ */
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-right: auto;
+}
+
+.pagination-size {
+  width: auto;
+  padding: 8px 10px;
+}
+
 .msg.error {
   color: var(--danger);
 }
@@ -634,6 +866,11 @@ h3 {
   }
   .field-grid-2 {
     grid-template-columns: 1fr;
+  }
+  .profile-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
   }
 }
 

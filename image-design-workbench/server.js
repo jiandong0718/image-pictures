@@ -4,6 +4,7 @@ const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
+const crypto = require("crypto");
 const { spawn } = require("child_process");
 
 // 在求值任何依赖 process.env 的常量之前，先加载 .env。
@@ -13,6 +14,7 @@ const db = require("./lib/db");
 const accounts = require("./lib/accounts");
 const auth = require("./lib/auth");
 const imageConfig = require("./lib/image-config");
+const imageSets = require("./lib/image-sets");
 const { createAccountApi } = require("./lib/api-accounts");
 
 const ROOT_DIR = __dirname;
@@ -26,6 +28,7 @@ const GPT_IMAGE_PLAYGROUND_DIST_DIR = path.join(
   "dist",
 );
 const OUTPUT_DIR = path.join(ROOT_DIR, "generated-images", "product-design");
+const AVATAR_DIR = path.join(ROOT_DIR, "generated-images", "avatars");
 const EMBEDDED_SKILL_SCRIPT = path.join(
   ROOT_DIR,
   "skills",
@@ -186,6 +189,51 @@ const IMAGE_FILE_PATTERN = /^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp|gif)$/i;
 let imageSetAllocationQueue = Promise.resolve();
 // 生图端点（多组 key+url）与提示词配置已迁移到 MySQL，见 lib/image-config.js。
 
+// 生图任务表：Cloudflare 橙云代理单请求 100s 超时，而生图常需数分钟，
+// 所以生图接口不再同步等待完成，改为「提交任务 -> 后台生成 -> 前端轮询」。
+// ponytail: 单进程内存态，重启即丢；要多实例部署或任务要跨重启存活，再迁移到 DB。
+const GENERATION_TASKS = new Map();
+const GENERATION_TASK_TTL_MS = 15 * 60 * 1000;
+
+function createGenerationTask(userId) {
+  const id = crypto.randomUUID();
+  GENERATION_TASKS.set(id, { userId, status: "running", result: null, error: null, createdAt: Date.now() });
+  return id;
+}
+
+function getGenerationTask(id, user) {
+  const task = GENERATION_TASKS.get(id);
+  if (!task || (task.userId !== user.id && user.role !== "admin")) {
+    return null;
+  }
+  return task;
+}
+
+function finishGenerationTask(id, result) {
+  const task = GENERATION_TASKS.get(id);
+  if (task) {
+    task.status = "done";
+    task.result = result;
+  }
+}
+
+function failGenerationTask(id, message) {
+  const task = GENERATION_TASKS.get(id);
+  if (task) {
+    task.status = "error";
+    task.error = message || "生成失败";
+  }
+}
+
+setInterval(() => {
+  const cutoff = Date.now() - GENERATION_TASK_TTL_MS;
+  for (const [id, task] of GENERATION_TASKS) {
+    if (task.createdAt < cutoff) {
+      GENERATION_TASKS.delete(id);
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -265,7 +313,14 @@ function cleanPrompt(value) {
 }
 
 // 账户 / 认证 / 管理员相关接口，复用本文件的响应工具。
-const accountApi = createAccountApi({ sendJson, sendError, readJson });
+const accountApi = createAccountApi({
+  sendJson,
+  sendError,
+  readJson,
+  readMultipartFile,
+  inferUploadedImageExt,
+  avatarDir: AVATAR_DIR,
+});
 
 function parseEnvLine(line) {
   const stripped = line.trim();
@@ -1230,7 +1285,7 @@ function resolveOutputFile(id) {
   return filePath;
 }
 
-async function allocateImageSetNow() {
+async function allocateImageSetNow(ownerUserId) {
   await fsp.mkdir(OUTPUT_DIR, { recursive: true });
   const entries = await fsp.readdir(OUTPUT_DIR, { withFileTypes: true }).catch(() => []);
   const maxOrder = entries.reduce((max, entry) => {
@@ -1243,6 +1298,7 @@ async function allocateImageSetNow() {
   const folderName = String(order).padStart(3, "0");
   const dir = resolveImageSetDir(folderName);
   await fsp.mkdir(dir, { recursive: true });
+  await imageSets.recordOwner(folderName, ownerUserId);
   return {
     id: folderName,
     order,
@@ -1252,8 +1308,11 @@ async function allocateImageSetNow() {
   };
 }
 
-function allocateImageSet() {
-  const allocation = imageSetAllocationQueue.then(allocateImageSetNow, allocateImageSetNow);
+function allocateImageSet(ownerUserId) {
+  const allocation = imageSetAllocationQueue.then(
+    () => allocateImageSetNow(ownerUserId),
+    () => allocateImageSetNow(ownerUserId),
+  );
   imageSetAllocationQueue = allocation.catch(() => {});
   return allocation;
 }
@@ -1276,21 +1335,38 @@ async function clearOutputDirContents(outputDir = OUTPUT_DIR) {
   return entries.length;
 }
 
-async function resetImageSets() {
+// 只清空调用者自己名下的套图目录，不影响其他账户的数据。
+async function resetImageSets(ownerUserId) {
   const reset = imageSetAllocationQueue.then(
-    async () => {
-      const removedCount = await clearOutputDirContents(OUTPUT_DIR);
-      const imageSet = await allocateImageSetNow();
-      return { removedCount, imageSet };
-    },
-    async () => {
-      const removedCount = await clearOutputDirContents(OUTPUT_DIR);
-      const imageSet = await allocateImageSetNow();
-      return { removedCount, imageSet };
-    },
+    () => resetImageSetsNow(ownerUserId),
+    () => resetImageSetsNow(ownerUserId),
   );
   imageSetAllocationQueue = reset.catch(() => {});
   return reset;
+}
+
+async function resetImageSetsNow(ownerUserId) {
+  const ownedIds = await imageSets.listOwnedIds(ownerUserId);
+  await Promise.all(
+    ownedIds.map((id) => fsp.rm(resolveImageSetDir(id), { recursive: true, force: true })),
+  );
+  await imageSets.removeOwned(ownerUserId);
+  const imageSet = await allocateImageSetNow(ownerUserId);
+  return { removedCount: ownedIds.length, imageSet };
+}
+
+// 校验某个套图是否属于当前用户；管理员不受限。imageSetId 为空时交给各接口自身的必填校验处理。
+async function assertOwnsImageSet(user, imageSetId) {
+  const id = normalizeImageSetId(imageSetId);
+  if (!id || user.role === "admin") {
+    return;
+  }
+  const ownerId = await imageSets.getOwner(id);
+  if (ownerId === undefined || Number(ownerId) !== Number(user.id)) {
+    const error = new Error("无权访问该套图");
+    error.statusCode = 403;
+    throw error;
+  }
 }
 
 function parseGeneratedImagePath(stdout) {
@@ -1329,7 +1405,7 @@ function makeImageRecord(filePath, type, prompt, sourceMainId = "") {
   };
 }
 
-async function generatePlaygroundImages(rawRequest = {}) {
+async function generatePlaygroundImages(rawRequest = {}, user) {
   const request = normalizePlaygroundRequest(rawRequest);
   if (!SKILL_SCRIPT || !fs.existsSync(SKILL_SCRIPT)) {
     throw new Error(
@@ -1345,12 +1421,13 @@ async function generatePlaygroundImages(rawRequest = {}) {
     if (!request.referenceImageId) {
       throw new Error("编辑模式需要先选择参考图");
     }
+    await assertOwnsImageSet(user, getImageSetIdFromImageId(request.referenceImageId));
     sourcePath = resolveOutputFile(request.referenceImageId);
     await fsp.access(sourcePath, fs.constants.R_OK);
     sourceMainId = makeImageId(sourcePath);
   }
 
-  const imageSet = await allocateImageSet();
+  const imageSet = await allocateImageSet(user.id);
   const outputDir = imageSet.outputDir;
   const apiConfig = await imageConfig.pickEndpoint();
   const args = buildImageGeneratorArgs({
@@ -1531,6 +1608,7 @@ const PAGE_ROUTES = {
   "/playground": { dir: "playground", auth: "user" },
   "/full-playground": { dir: "full-playground", auth: "user" },
   "/account": { dir: "account", auth: "user" },
+  "/user-center": { dir: "user-center", auth: "user" },
   "/admin": { dir: "admin", auth: "admin" },
 };
 
@@ -1672,8 +1750,9 @@ async function serveGptImagePlayground(req, res, pathname) {
   await serveStaticFromDir(req, res, GPT_IMAGE_PLAYGROUND_DIST_DIR, relativePath, "index.html");
 }
 
-async function serveImage(req, res, id, attachment) {
+async function serveImage(req, res, id, attachment, user) {
   try {
+    await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
     const filePath = resolveOutputFile(id);
     const data = await fsp.readFile(filePath);
     const ext = path.extname(filePath).toLowerCase();
@@ -2043,26 +2122,58 @@ async function handleApi(req, res, pathname, searchParams) {
   }
 
   if (req.method === "POST" && pathname === "/api/image-sets") {
-    const imageSet = await allocateImageSet();
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const imageSet = await allocateImageSet(user.id);
     sendJson(res, 200, { ok: true, imageSet });
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/image-sets/reset") {
-    const { removedCount, imageSet } = await resetImageSets();
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const { removedCount, imageSet } = await resetImageSets(user.id);
     sendJson(res, 200, { ok: true, removedCount, imageSet });
     return;
   }
 
   if (req.method === "GET" && pathname.startsWith("/api/images/file/")) {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     const id = decodeURIComponent(pathname.replace("/api/images/file/", ""));
-    await serveImage(req, res, id, false);
+    await serveImage(req, res, id, false, user);
     return;
   }
 
   if (req.method === "GET" && pathname.startsWith("/api/images/download/")) {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     const id = decodeURIComponent(pathname.replace("/api/images/download/", ""));
-    await serveImage(req, res, id, true);
+    await serveImage(req, res, id, true, user);
+    return;
+  }
+
+  // 生图任务轮询：Cloudflare 100s 超时下，生图接口只返回 taskId，真正结果靠这个接口轮询取。
+  if (req.method === "GET" && pathname.startsWith("/api/tasks/")) {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const id = decodeURIComponent(pathname.replace("/api/tasks/", ""));
+    const task = getGenerationTask(id, user);
+    if (!task) {
+      sendError(res, 404, "任务不存在或已过期");
+      return;
+    }
+    sendJson(res, 200, { ok: true, status: task.status, result: task.result, error: task.error });
     return;
   }
 
@@ -2083,25 +2194,40 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
     try {
+      await assertOwnsImageSet(user, payload.imageSetId);
       await accounts.assertEnoughCredits(user.id, 1);
     } catch (error) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const image = await generateImage({
-      type: "main",
-      prompt: payload.prompt,
-      imageSetId: payload.imageSetId,
-      imageSpec: payload.imageSpec,
-    });
-    const balance = await accounts.consumeCredits(user.id, 1, "生成主图");
-    sendJson(res, 200, { ok: true, image, credits: balance });
+    const taskId = createGenerationTask(user.id);
+    sendJson(res, 200, { ok: true, taskId });
+    (async () => {
+      try {
+        const image = await generateImage({
+          type: "main",
+          prompt: payload.prompt,
+          imageSetId: payload.imageSetId,
+          imageSpec: payload.imageSpec,
+        });
+        const balance = await accounts.consumeCredits(user.id, 1, "生成主图");
+        finishGenerationTask(taskId, { image, credits: balance });
+      } catch (error) {
+        failGenerationTask(taskId, error.message);
+      }
+    })();
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/images/main/upload") {
     const user = await accountApi.requireUser(req, res);
     if (!user) {
+      return;
+    }
+    try {
+      await assertOwnsImageSet(user, searchParams.get("imageSetId"));
+    } catch (error) {
+      sendError(res, error.statusCode || 403, error.message);
       return;
     }
     const image = await saveUploadedMain(
@@ -2134,20 +2260,29 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
     try {
+      await assertOwnsImageSet(user, payload.imageSetId);
       await accounts.assertEnoughCredits(user.id, 1);
     } catch (error) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const image = await generateImage({
-      type: payload.type,
-      prompt: payload.prompt,
-      mainImageId: payload.mainImageId,
-      imageSetId: payload.imageSetId,
-      imageSpec: payload.imageSpec,
-    });
-    const balance = await accounts.consumeCredits(user.id, 1, `生成${IMAGE_TYPES[payload.type].label}`);
-    sendJson(res, 200, { ok: true, image, credits: balance });
+    const taskId = createGenerationTask(user.id);
+    sendJson(res, 200, { ok: true, taskId });
+    (async () => {
+      try {
+        const image = await generateImage({
+          type: payload.type,
+          prompt: payload.prompt,
+          mainImageId: payload.mainImageId,
+          imageSetId: payload.imageSetId,
+          imageSpec: payload.imageSpec,
+        });
+        const balance = await accounts.consumeCredits(user.id, 1, `生成${IMAGE_TYPES[payload.type].label}`);
+        finishGenerationTask(taskId, { image, credits: balance });
+      } catch (error) {
+        failGenerationTask(taskId, error.message);
+      }
+    })();
     return;
   }
 
@@ -2172,48 +2307,48 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     // 批量按「成功生成张数」扣费，失败不扣。发起前要求余额至少能覆盖全部张数。
     try {
+      await assertOwnsImageSet(user, payload.imageSetId);
       await accounts.assertEnoughCredits(user.id, batchTypes.length);
     } catch (error) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const tasks = batchTypes.map(async (type) => {
-      try {
-        const image = await generateImage({
-          type,
-          prompt: payload.prompts?.[type],
-          mainImageId: payload.mainImageId,
-          imageSetId: payload.imageSetId,
-          imageSpec: payload.imageSpec,
-        });
-        return [type, { image }];
-      } catch (error) {
-        return [type, { error: error.message }];
+    const taskId = createGenerationTask(user.id);
+    sendJson(res, 200, { ok: true, taskId });
+    (async () => {
+      const tasks = batchTypes.map(async (type) => {
+        try {
+          const image = await generateImage({
+            type,
+            prompt: payload.prompts?.[type],
+            mainImageId: payload.mainImageId,
+            imageSetId: payload.imageSetId,
+            imageSpec: payload.imageSpec,
+          });
+          return [type, { image }];
+        } catch (error) {
+          return [type, { error: error.message }];
+        }
+      });
+      const entries = await Promise.all(tasks);
+      const results = {};
+      const errors = {};
+      for (const [type, value] of entries) {
+        if (value.image) {
+          results[type] = value.image;
+        } else {
+          errors[type] = value.error || "生成失败";
+        }
       }
-    });
-    const entries = await Promise.all(tasks);
-    const results = {};
-    const errors = {};
-    for (const [type, value] of entries) {
-      if (value.image) {
-        results[type] = value.image;
+      const successCount = Object.keys(results).length;
+      let balance;
+      if (successCount > 0) {
+        balance = await accounts.consumeCredits(user.id, successCount, `批量生成 ${successCount} 张衍生图`);
       } else {
-        errors[type] = value.error || "生成失败";
+        balance = (await accounts.getUserById(user.id))?.credits ?? 0;
       }
-    }
-    const successCount = Object.keys(results).length;
-    let balance;
-    if (successCount > 0) {
-      balance = await accounts.consumeCredits(user.id, successCount, `批量生成 ${successCount} 张衍生图`);
-    } else {
-      balance = (await accounts.getUserById(user.id))?.credits ?? 0;
-    }
-    sendJson(res, 200, {
-      ok: Object.keys(errors).length === 0,
-      results,
-      errors,
-      credits: balance,
-    });
+      finishGenerationTask(taskId, { results, errors, credits: balance });
+    })();
     return;
   }
 
@@ -2229,43 +2364,52 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, 400, error.message);
       return;
     }
+    let requestedCount;
     try {
-      const requestedCount = clampInteger(payload.count, 1, 1, PLAYGROUND_IMAGE_COUNT_MAX);
+      requestedCount = clampInteger(payload.count, 1, 1, PLAYGROUND_IMAGE_COUNT_MAX);
       await accounts.assertEnoughCredits(user.id, requestedCount);
-      const result = await generatePlaygroundImages(payload);
-      const generated = result.images.length;
-      let balance;
-      if (generated > 0) {
-        balance = await accounts.consumeCredits(user.id, generated, `自由生图 ${generated} 张`);
-      } else {
-        balance = (await accounts.getUserById(user.id))?.credits ?? 0;
-      }
-      sendJson(res, 200, {
-        ok: true,
-        imageSet: result.imageSet,
-        images: result.images,
-        credits: balance,
-      });
     } catch (error) {
-      if (error.statusCode === 402 || error.statusCode === 404) {
-        sendError(res, error.statusCode, error.message);
-        return;
-      }
-      const message = error.message || "自由生图失败";
-      const statusCode =
-        message.includes("提示词") || message.includes("参考图") || message.includes("不存在")
-          ? 400
-          : 502;
-      sendError(res, statusCode, "自由生图失败", message);
+      sendError(res, error.statusCode || 402, error.message);
+      return;
     }
+    const taskId = createGenerationTask(user.id);
+    sendJson(res, 200, { ok: true, taskId });
+    (async () => {
+      try {
+        const result = await generatePlaygroundImages(payload, user);
+        const generated = result.images.length;
+        let balance;
+        if (generated > 0) {
+          balance = await accounts.consumeCredits(user.id, generated, `自由生图 ${generated} 张`);
+        } else {
+          balance = (await accounts.getUserById(user.id))?.credits ?? 0;
+        }
+        finishGenerationTask(taskId, { imageSet: result.imageSet, images: result.images, credits: balance });
+      } catch (error) {
+        failGenerationTask(taskId, error.message || "自由生图失败");
+      }
+    })();
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/images/download-all") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
     const payload = await readJson(req);
     const ids = Array.isArray(payload.ids) ? payload.ids : [];
     if (!ids.length) {
       sendError(res, 400, "没有可下载的图片");
+      return;
+    }
+    try {
+      const setIds = new Set(ids.map((id) => getImageSetIdFromImageId(id)).filter(Boolean));
+      for (const setId of setIds) {
+        await assertOwnsImageSet(user, setId);
+      }
+    } catch (error) {
+      sendError(res, error.statusCode || 403, error.message);
       return;
     }
     const zip = await createZip(ids);
@@ -2312,6 +2456,13 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+async function listExistingImageSetIds() {
+  const entries = await fsp.readdir(OUTPUT_DIR, { withFileTypes: true }).catch(() => []);
+  return entries
+    .filter((entry) => entry.isDirectory() && IMAGE_SET_ID_PATTERN.test(entry.name))
+    .map((entry) => entry.name);
+}
+
 if (require.main === module) {
   db.init()
     .then(() =>
@@ -2324,6 +2475,8 @@ if (require.main === module) {
         promptModel: getPromptExtractModel(),
       }),
     )
+    // 套图归属表建好；磁盘上已有但表里还没记录的旧套图目录全部划给管理员账号。
+    .then(async () => imageSets.init(await listExistingImageSetIds()))
     .then(() => {
       server.listen(PORT, HOST, () => {
         console.log(`商品图片设计工作台已启动：http://${HOST}:${PORT}`);
