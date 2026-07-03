@@ -1,7 +1,7 @@
 // 配置中心（仅管理员）：多组生图端点 + 调度策略、提示词提取 API、重置缓存。三块互相独立。
 
 import { mountLayout } from "/shared/layout.js";
-import { apiGet, apiPost } from "/shared/api.js";
+import { apiGet, apiPost, apiUpload } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 
 const els = {};
@@ -57,7 +57,11 @@ async function loadStatus() {
     }
   }
   try {
-    const [img, prompt] = await Promise.all([apiGet("/api/image-config"), apiGet("/api/prompt-config")]);
+    const [img, prompt, contact] = await Promise.all([
+      apiGet("/api/image-config"),
+      apiGet("/api/prompt-config"),
+      apiGet("/api/contact"),
+    ]);
     renderEndpoints(img.endpoints);
     if (img.schedule) {
       els.schedule.value = img.schedule;
@@ -67,6 +71,8 @@ async function loadStatus() {
       els.promptUrl.value = prompt.config.apiBase;
     }
     els.promptModel.value = prompt.config?.model || "gpt-4o-mini";
+    els.contactText.value = contact.contact || "";
+    renderQrPreview(contact.qrUrl);
   } catch (err) {
     setMsg(els.imageMsg, err.message, "error");
   }
@@ -161,6 +167,51 @@ async function savePrompt(e) {
   }
 }
 
+async function saveContact(e) {
+  e.preventDefault();
+  els.saveContact.disabled = true;
+  setMsg(els.contactMsg, "保存中…");
+  try {
+    await apiPost("/api/contact", { contact: els.contactText.value });
+    setMsg(els.contactMsg, "联系方式已保存", "success");
+  } catch (err) {
+    setMsg(els.contactMsg, err.message, "error");
+  } finally {
+    els.saveContact.disabled = false;
+  }
+}
+
+function renderQrPreview(qrUrl) {
+  els.qrPreview.innerHTML = qrUrl ? `<img src="${qrUrl}" alt="" />` : "未上传";
+}
+
+function bindQrUpload() {
+  els.qrBtn.addEventListener("click", () => els.qrInput.click());
+  els.qrInput.addEventListener("change", async () => {
+    const file = els.qrInput.files[0];
+    els.qrInput.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setMsg(els.qrMsg, "请选择图片文件", "error");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setMsg(els.qrMsg, "二维码图片不能超过 5MB", "error");
+      return;
+    }
+    setMsg(els.qrMsg, "上传中…");
+    try {
+      const fd = new FormData();
+      fd.append("qr", file);
+      const data = await apiUpload("/api/contact/qr", fd);
+      renderQrPreview(`${data.qrUrl}?t=${Date.now()}`);
+      setMsg(els.qrMsg, "二维码已更新", "success");
+    } catch (err) {
+      setMsg(els.qrMsg, err.message, "error");
+    }
+  });
+}
+
 async function resetCache() {
   if (!window.confirm("这会删除所有已生成图片文件，套图编号从 001 重新开始。继续吗？")) {
     return;
@@ -201,13 +252,23 @@ async function main() {
     saveImage: document.getElementById("saveImage"),
     savePrompt: document.getElementById("savePrompt"),
     resetCache: document.getElementById("resetCache"),
+    contactForm: document.getElementById("contactForm"),
+    contactText: document.getElementById("contactText"),
+    contactMsg: document.getElementById("contactMsg"),
+    saveContact: document.getElementById("saveContact"),
+    qrPreview: document.getElementById("qrPreview"),
+    qrBtn: document.getElementById("qrBtn"),
+    qrInput: document.getElementById("qrInput"),
+    qrMsg: document.getElementById("qrMsg"),
   });
   els.imageForm.addEventListener("submit", addEndpoint);
   els.promptForm.addEventListener("submit", savePrompt);
+  els.contactForm.addEventListener("submit", saveContact);
   els.schedule.addEventListener("change", changeSchedule);
   els.resetCache.addEventListener("click", resetCache);
   els.promptUrl.addEventListener("input", saveDraft);
   els.promptModel.addEventListener("input", saveDraft);
+  bindQrUpload();
   await loadStatus();
 }
 

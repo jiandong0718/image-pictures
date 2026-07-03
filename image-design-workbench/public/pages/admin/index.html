@@ -29,12 +29,13 @@
                   <th>ID</th>
                   <th>用户名</th>
                   <th>角色</th>
+                  <th>等级</th>
                   <th style="text-align: right">积分</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody id="userBody">
-                <tr><td colspan="5"><div class="empty">点击搜索加载用户</div></td></tr>
+                <tr><td colspan="6"><div class="empty">点击搜索加载用户</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -54,6 +55,13 @@
           </label>
           <p class="msg" id="rechargeMsg"></p>
           <button class="btn primary full" id="rechargeBtn" type="button" disabled>确认充值</button>
+
+          <div style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line)">
+            <div class="section-label">角色管理</div>
+            <div class="card-desc" style="margin-bottom: 12px">授权/取消该用户的管理员权限，不能修改自己。</div>
+            <p class="msg" id="roleMsg"></p>
+            <button class="btn full" id="roleBtn" type="button" disabled></button>
+          </div>
         </div>
       </div>
     </div>

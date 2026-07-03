@@ -15,6 +15,7 @@ const NAV = [
   { group: "账户" },
   { href: "/account", label: "我的积分", key: "account" },
   { href: "/user-center", label: "用户中心", key: "user-center" },
+  { href: "/contact", label: "联系充值", key: "contact" },
 ];
 
 // 仅管理员可见：配置中心（生图端点/提示词）+ 充值管理。

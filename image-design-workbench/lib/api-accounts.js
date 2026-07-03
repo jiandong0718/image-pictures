@@ -242,6 +242,25 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
       return true;
     }
 
+    if (req.method === "POST" && pathname === "/api/admin/set-role") {
+      const admin = await requireAdmin(req, res);
+      if (!admin) {
+        return true;
+      }
+      const payload = await readJson(req);
+      if (Number(payload.userId) === Number(admin.id)) {
+        sendError(res, 400, "不能修改自己的角色");
+        return true;
+      }
+      try {
+        const user = await accounts.setRole(payload.userId, payload.role);
+        sendJson(res, 200, { ok: true, user });
+      } catch (error) {
+        sendError(res, error.statusCode || 400, error.message || "操作失败");
+      }
+      return true;
+    }
+
     return false;
   }
 

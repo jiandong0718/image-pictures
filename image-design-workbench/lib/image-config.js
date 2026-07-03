@@ -219,6 +219,26 @@ async function getRequiredPromptConfig() {
   return config;
 }
 
+// ---------- 联系方式（充值咨询入口）：单个文本，存 app_settings ----------
+
+async function getContactInfo() {
+  return getSetting("contact_info", "");
+}
+
+async function setContactInfo(value) {
+  const text = String(value || "").trim().slice(0, 500);
+  await setSetting("contact_info", text);
+  return text;
+}
+
+async function getContactQrFilename() {
+  return getSetting("contact_qr_path", "");
+}
+
+async function setContactQrFilename(filename) {
+  await setSetting("contact_qr_path", String(filename || ""));
+}
+
 // 首次启动迁移：DB 为空且 .env 里还有旧值时，各种一次性种子进来，之后完全走 DB。
 async function seedFromEnv({ imageBase, imageKey, promptBase, promptKey, promptModel } = {}) {
   if ((await countEndpoints()) === 0 && clean(imageBase) && clean(imageKey)) {
@@ -271,5 +291,9 @@ module.exports = {
   getPromptConfigSummary,
   setPromptConfig,
   getRequiredPromptConfig,
+  getContactInfo,
+  setContactInfo,
+  getContactQrFilename,
+  setContactQrFilename,
   seedFromEnv,
 };

@@ -29,6 +29,7 @@ const GPT_IMAGE_PLAYGROUND_DIST_DIR = path.join(
 );
 const OUTPUT_DIR = path.join(ROOT_DIR, "generated-images", "product-design");
 const AVATAR_DIR = path.join(ROOT_DIR, "generated-images", "avatars");
+const CONTACT_QR_DIR = path.join(ROOT_DIR, "generated-images", "contact-qr");
 const EMBEDDED_SKILL_SCRIPT = path.join(
   ROOT_DIR,
   "skills",
@@ -1609,6 +1610,7 @@ const PAGE_ROUTES = {
   "/full-playground": { dir: "full-playground", auth: "user" },
   "/account": { dir: "account", auth: "user" },
   "/user-center": { dir: "user-center", auth: "user" },
+  "/contact": { dir: "contact", auth: "user" },
   "/admin": { dir: "admin", auth: "admin" },
 };
 
@@ -2076,6 +2078,84 @@ async function handleApi(req, res, pathname, searchParams) {
       ok: true,
       config,
     });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/contact") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const [contact, qrFilename] = await Promise.all([
+      imageConfig.getContactInfo(),
+      imageConfig.getContactQrFilename(),
+    ]);
+    sendJson(res, 200, { ok: true, contact, qrUrl: qrFilename ? "/api/contact/qr" : "" });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/contact") {
+    const admin = await accountApi.requireAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+    const payload = await readJson(req);
+    const contact = await imageConfig.setContactInfo(payload.contact);
+    sendJson(res, 200, { ok: true, contact });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/contact/qr") {
+    const admin = await accountApi.requireAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+    try {
+      const upload = await readMultipartFile(req, "qr");
+      const ext = inferUploadedImageExt(upload.data, upload.mime);
+      if (!ext) {
+        throw new Error("只支持 PNG、JPG、WEBP 或 GIF 图片");
+      }
+      if (upload.data.length > 5 * 1024 * 1024) {
+        throw new Error("二维码图片不能超过 5MB");
+      }
+      await fsp.mkdir(CONTACT_QR_DIR, { recursive: true });
+      const previous = await imageConfig.getContactQrFilename();
+      const filename = `qr.${ext}`;
+      await fsp.writeFile(path.join(CONTACT_QR_DIR, filename), upload.data);
+      if (previous && previous !== filename) {
+        await fsp.unlink(path.join(CONTACT_QR_DIR, previous)).catch(() => {});
+      }
+      await imageConfig.setContactQrFilename(filename);
+      sendJson(res, 200, { ok: true, qrUrl: "/api/contact/qr" });
+    } catch (error) {
+      sendError(res, 400, error.message || "二维码上传失败");
+    }
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/contact/qr") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const filename = await imageConfig.getContactQrFilename();
+    if (!filename) {
+      sendError(res, 404, "还没有二维码");
+      return;
+    }
+    try {
+      const data = await fsp.readFile(path.join(CONTACT_QR_DIR, filename));
+      const ext = path.extname(filename).toLowerCase();
+      res.writeHead(200, {
+        "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
+        "Content-Length": data.length,
+        "Cache-Control": "no-store",
+      });
+      res.end(data);
+    } catch {
+      sendError(res, 404, "二维码文件不存在");
+    }
     return;
   }
 

@@ -516,6 +516,76 @@ h3 {
   font-family: var(--mono);
 }
 
+/* ============================ 联系充值 ============================ */
+.contact-row {
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.contact-row:last-child {
+  border-bottom: none;
+}
+
+.contact-row-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+/* 一个标签下可能有多条（如两个邮箱），每条单独一行、单独可复制。 */
+.contact-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 5px 0;
+}
+
+.contact-item-value {
+  min-width: 0;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.qr-preview {
+  width: 84px;
+  height: 84px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-1);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  color: var(--ink-mute);
+  font-size: 11px;
+  text-align: center;
+}
+
+.qr-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+
+/* 二维码图片通常是竖版整图（头像+昵称+码+文案），按原始比例显示，
+   不强行塞进正方形框——那样会被压扁留白、显得又小又空。 */
+.contact-qr {
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-line);
+  background: #fff;
+  padding: 14px;
+  display: block;
+  box-shadow: var(--glow);
+}
+
 .content {
   padding: 28px clamp(28px, 4vw, 72px);
   width: 100%;

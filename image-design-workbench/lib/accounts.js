@@ -21,7 +21,7 @@ function publicUser(row) {
   if (!row) {
     return null;
   }
-  return {
+  const result = {
     id: row.id,
     username: row.username,
     role: row.role,
@@ -30,6 +30,11 @@ function publicUser(row) {
     avatarUrl: row.avatar_path ? `/api/account/avatar/${row.id}` : "",
     createdAt: row.created_at,
   };
+  // 只有查询里带了 total_generated（如管理员用户列表）才附带等级，避免给每个 publicUser 调用点都加一次查询。
+  if (row.total_generated !== undefined) {
+    result.vipTier = resolveVipStatus(row.total_generated).currentTier;
+  }
+  return result;
 }
 
 async function getUserById(id) {
@@ -226,11 +231,32 @@ async function searchUsers(keyword, { page, pageSize } = {}) {
   const { page: p, pageSize: ps, offset } = normalizePagination(page, pageSize);
   const pool = getPool();
   const [[{ total }]] = await pool.query("SELECT COUNT(*) AS total FROM users WHERE username LIKE ?", [like]);
+  // LEFT JOIN 一次性把每个用户的累计生成张数带出来，算 VIP 等级用，避免逐行再查一次。
   const [rows] = await pool.query(
-    "SELECT id, username, role, credits, email, avatar_path, created_at FROM users WHERE username LIKE ? ORDER BY id ASC LIMIT ? OFFSET ?",
+    `SELECT u.id, u.username, u.role, u.credits, u.email, u.avatar_path, u.created_at,
+            COALESCE(t.total, 0) AS total_generated
+     FROM users u
+     LEFT JOIN (
+       SELECT user_id, SUM(-amount) AS total FROM credit_transactions WHERE type = 'consume' GROUP BY user_id
+     ) t ON t.user_id = u.id
+     WHERE u.username LIKE ?
+     ORDER BY u.id ASC LIMIT ? OFFSET ?`,
     [like, ps, offset],
   );
   return { items: rows.map(publicUser), total, page: p, pageSize: ps };
+}
+
+// 管理员授权/取消他人的管理员身份；不允许修改自己的角色（调用方需在 HTTP 层拦一次）。
+async function setRole(userId, role) {
+  if (!["user", "admin"].includes(role)) {
+    throw new AccountError("角色不合法");
+  }
+  const [rows] = await getPool().query("SELECT id FROM users WHERE id = ? LIMIT 1", [userId]);
+  if (!rows.length) {
+    throw new AccountError("用户不存在", 404);
+  }
+  await getPool().query("UPDATE users SET role = ? WHERE id = ?", [role, userId]);
+  return publicUser(await getUserById(userId));
 }
 
 // 绑定/清空邮箱；传空串清空。
@@ -274,6 +300,7 @@ module.exports = {
   listTransactions,
   changePassword,
   searchUsers,
+  setRole,
   setEmail,
   setAvatarPath,
   getAvatarPath,

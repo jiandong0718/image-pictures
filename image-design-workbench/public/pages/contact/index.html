@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>联系充值 · 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+    <script src="/shared/theme-init.js"></script>
+  </head>
+  <body>
+    <div id="page">
+      <div class="card" style="margin-bottom: 22px">
+        <div class="section-label">充值咨询</div>
+        <div class="card-title" style="margin-bottom: 4px">积分不够用了？</div>
+        <div class="card-desc">
+          1 积分 = 1 元 = 1 张图，按下面任意方式联系管理员，转账备注用户名后管理员会尽快为你充值。
+        </div>
+      </div>
+
+      <div id="emptyState" class="card" hidden>
+        <div class="empty">管理员还没有配置联系方式，请通过其他渠道联系管理员。</div>
+      </div>
+
+      <div class="responsive-2col" id="contactLayout" hidden>
+        <div class="card">
+          <div class="section-label">联系方式</div>
+          <div class="card-title" style="margin-bottom: 14px">选一种方式联系我</div>
+          <div id="contactRows"></div>
+          <p class="msg" id="copyMsg"></p>
+        </div>
+
+        <div class="card" id="qrCard" hidden style="text-align: center">
+          <div class="section-label">微信扫码</div>
+          <div class="card-title" style="margin-bottom: 14px">扫码添加，备注「充值」</div>
+          <img class="contact-qr" id="contactQr" alt="微信二维码" style="margin: 0 auto" />
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/pages/contact/contact.js"></script>
+  </body>
+</html>
