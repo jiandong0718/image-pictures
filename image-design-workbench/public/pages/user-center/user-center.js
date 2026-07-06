@@ -109,6 +109,25 @@ function bindEmailForm(me) {
   });
 }
 
+function bindPhoneForm(me) {
+  document.getElementById("phone").value = me.phone || "";
+  document.getElementById("phoneForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const phone = document.getElementById("phone").value.trim();
+    const btn = document.getElementById("phoneBtn");
+    btn.disabled = true;
+    setMsg("phoneMsg", "保存中…");
+    try {
+      await apiPost("/api/account/phone", { phone });
+      setMsg("phoneMsg", "手机号已保存", "success");
+    } catch (err) {
+      setMsg("phoneMsg", err.message, "error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 function bindPasswordForm() {
   const form = document.getElementById("pwdForm");
   const btn = document.getElementById("pwdBtn");
@@ -154,6 +173,7 @@ async function main() {
   renderAvatarPreview(me);
   bindAvatar(me);
   bindEmailForm(me);
+  bindPhoneForm(me);
   bindPasswordForm();
 
   const { vip } = await apiGet("/api/account/vip");

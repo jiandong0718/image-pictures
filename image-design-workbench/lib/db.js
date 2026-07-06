@@ -106,6 +106,7 @@ async function createTables() {
   // 用户中心：绑定邮箱 + 头像，老库上没有这两列，启动时按需补上。
   await ensureColumn("users", "email", "email VARCHAR(255) NULL DEFAULT NULL");
   await ensureColumn("users", "avatar_path", "avatar_path VARCHAR(255) NULL DEFAULT NULL");
+  await ensureColumn("users", "phone", "phone VARCHAR(32) NULL DEFAULT NULL");
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS credit_transactions (

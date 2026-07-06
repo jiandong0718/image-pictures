@@ -9,6 +9,7 @@ const { resolveVipStatus } = require("./vip-tiers");
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_一-龥]{2,32}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_PATTERN = /^1[3-9]\d{9}$/;
 
 class AccountError extends Error {
   constructor(message, statusCode = 400) {
@@ -27,6 +28,7 @@ function publicUser(row) {
     role: row.role,
     credits: row.credits,
     email: row.email || "",
+    phone: row.phone || "",
     avatarUrl: row.avatar_path ? `/api/account/avatar/${row.id}` : "",
     createdAt: row.created_at,
   };
@@ -39,7 +41,7 @@ function publicUser(row) {
 
 async function getUserById(id) {
   const [rows] = await getPool().query(
-    "SELECT id, username, role, credits, email, avatar_path, created_at FROM users WHERE id = ? LIMIT 1",
+    "SELECT id, username, role, credits, email, phone, avatar_path, created_at FROM users WHERE id = ? LIMIT 1",
     [id],
   );
   return rows[0] || null;
@@ -47,20 +49,31 @@ async function getUserById(id) {
 
 async function getUserByUsername(username) {
   const [rows] = await getPool().query(
-    "SELECT id, username, password_hash, role, credits, email, avatar_path, created_at FROM users WHERE username = ? LIMIT 1",
+    "SELECT id, username, password_hash, role, credits, email, phone, avatar_path, created_at FROM users WHERE username = ? LIMIT 1",
     [username],
   );
   return rows[0] || null;
 }
 
-async function register(username, password) {
+async function register(username, password, { email, phone } = {}) {
   const name = String(username || "").trim();
   const pass = String(password || "");
+  const emailValue = String(email || "").trim();
+  const phoneValue = String(phone || "").trim();
   if (!USERNAME_PATTERN.test(name)) {
     throw new AccountError("用户名需为 2-32 位字母、数字、下划线或中文");
   }
   if (pass.length < 6 || pass.length > 64) {
     throw new AccountError("密码长度需为 6-64 位");
+  }
+  if (!emailValue && !phoneValue) {
+    throw new AccountError("请填写邮箱或手机号（至少一项）");
+  }
+  if (emailValue && !EMAIL_PATTERN.test(emailValue)) {
+    throw new AccountError("邮箱格式不正确");
+  }
+  if (phoneValue && !PHONE_PATTERN.test(phoneValue)) {
+    throw new AccountError("手机号格式不正确");
   }
 
   const pool = getPool();
@@ -71,9 +84,21 @@ async function register(username, password) {
     if (existing.length) {
       throw new AccountError("用户名已被注册", 409);
     }
+    if (emailValue) {
+      const [dup] = await conn.query("SELECT id FROM users WHERE email = ? LIMIT 1", [emailValue]);
+      if (dup.length) {
+        throw new AccountError("该邮箱已被注册", 409);
+      }
+    }
+    if (phoneValue) {
+      const [dup] = await conn.query("SELECT id FROM users WHERE phone = ? LIMIT 1", [phoneValue]);
+      if (dup.length) {
+        throw new AccountError("该手机号已被注册", 409);
+      }
+    }
     const [result] = await conn.query(
-      "INSERT INTO users (username, password_hash, role, credits) VALUES (?, ?, 'user', ?)",
-      [name, hashPassword(pass), SIGNUP_BONUS_CREDITS],
+      "INSERT INTO users (username, password_hash, role, credits, email, phone) VALUES (?, ?, 'user', ?, ?, ?)",
+      [name, hashPassword(pass), SIGNUP_BONUS_CREDITS, emailValue || null, phoneValue || null],
     );
     const userId = result.insertId;
     if (SIGNUP_BONUS_CREDITS > 0) {
@@ -233,7 +258,7 @@ async function searchUsers(keyword, { page, pageSize } = {}) {
   const [[{ total }]] = await pool.query("SELECT COUNT(*) AS total FROM users WHERE username LIKE ?", [like]);
   // LEFT JOIN 一次性把每个用户的累计生成张数带出来，算 VIP 等级用，避免逐行再查一次。
   const [rows] = await pool.query(
-    `SELECT u.id, u.username, u.role, u.credits, u.email, u.avatar_path, u.created_at,
+    `SELECT u.id, u.username, u.role, u.credits, u.email, u.phone, u.avatar_path, u.created_at,
             COALESCE(t.total, 0) AS total_generated
      FROM users u
      LEFT JOIN (
@@ -266,6 +291,15 @@ async function setEmail(userId, email) {
     throw new AccountError("邮箱格式不正确");
   }
   await getPool().query("UPDATE users SET email = ? WHERE id = ?", [value || null, userId]);
+  return value;
+}
+
+async function setPhone(userId, phone) {
+  const value = String(phone || "").trim();
+  if (value && !PHONE_PATTERN.test(value)) {
+    throw new AccountError("手机号格式不正确");
+  }
+  await getPool().query("UPDATE users SET phone = ? WHERE id = ?", [value || null, userId]);
   return value;
 }
 
@@ -302,6 +336,7 @@ module.exports = {
   searchUsers,
   setRole,
   setEmail,
+  setPhone,
   setAvatarPath,
   getAvatarPath,
   getVipStatus,

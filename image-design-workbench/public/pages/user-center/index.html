@@ -29,13 +29,25 @@
         <div>
           <div class="card" style="margin-bottom: 22px">
             <div class="card-title">绑定邮箱</div>
-            <div class="card-desc" style="margin-bottom: 16px">用于后续找回密码等场景，可留空。</div>
+            <div class="card-desc" style="margin-bottom: 16px">用于后续找回密码等场景，注册时至少填过邮箱或手机号一项。</div>
             <form id="emailForm">
               <label class="field"><span>邮箱</span>
                 <input class="input" id="email" type="email" placeholder="name@example.com" />
               </label>
               <p class="msg" id="emailMsg"></p>
               <button class="btn primary full" id="emailBtn" type="submit">保存邮箱</button>
+            </form>
+          </div>
+
+          <div class="card" style="margin-bottom: 22px">
+            <div class="card-title">绑定手机号</div>
+            <div class="card-desc" style="margin-bottom: 16px">11 位手机号。</div>
+            <form id="phoneForm">
+              <label class="field"><span>手机号</span>
+                <input class="input" id="phone" type="tel" placeholder="11 位手机号" />
+              </label>
+              <p class="msg" id="phoneMsg"></p>
+              <button class="btn primary full" id="phoneBtn" type="submit">保存手机号</button>
             </form>
           </div>
 

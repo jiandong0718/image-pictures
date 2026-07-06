@@ -42,6 +42,17 @@
             <span>密码</span>
             <input class="input" id="password" type="password" autocomplete="current-password" placeholder="至少 6 位" />
           </label>
+          <div id="contactFields" hidden>
+            <label class="field">
+              <span>邮箱</span>
+              <input class="input" id="regEmail" type="email" autocomplete="email" placeholder="name@example.com" />
+            </label>
+            <label class="field">
+              <span>手机号</span>
+              <input class="input" id="regPhone" type="tel" autocomplete="tel" placeholder="11 位手机号" />
+            </label>
+            <p class="card-desc" style="margin: -10px 0 16px">邮箱、手机号至少填一项，用于后续联系与找回账户。</p>
+          </div>
           <p class="msg" id="authMsg"></p>
           <button class="btn primary full" id="submitBtn" type="submit">登录</button>
         </form>

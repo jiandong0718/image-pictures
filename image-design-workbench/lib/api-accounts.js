@@ -68,7 +68,10 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
     if (req.method === "POST" && pathname === "/api/auth/register") {
       const payload = await readJson(req);
       try {
-        const user = await accounts.register(payload.username, payload.password);
+        const user = await accounts.register(payload.username, payload.password, {
+          email: payload.email,
+          phone: payload.phone,
+        });
         const { token, expiresAt } = await auth.createSession(user.id);
         setCookie(res, auth.buildSessionCookie(token, expiresAt));
         sendJson(res, 200, { ok: true, user });
@@ -147,6 +150,21 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
         sendJson(res, 200, { ok: true, email });
       } catch (error) {
         sendError(res, error.statusCode || 400, error.message || "邮箱绑定失败");
+      }
+      return true;
+    }
+
+    if (req.method === "POST" && pathname === "/api/account/phone") {
+      const user = await requireUser(req, res);
+      if (!user) {
+        return true;
+      }
+      const payload = await readJson(req);
+      try {
+        const phone = await accounts.setPhone(user.id, payload.phone);
+        sendJson(res, 200, { ok: true, phone });
+      } catch (error) {
+        sendError(res, error.statusCode || 400, error.message || "手机号绑定失败");
       }
       return true;
     }
@@ -271,6 +289,7 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
       role: user.role,
       credits: user.credits,
       email: user.email || "",
+      phone: user.phone || "",
       avatarUrl: user.avatarUrl || "",
       createdAt: user.createdAt,
     };

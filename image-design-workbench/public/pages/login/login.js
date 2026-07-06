@@ -9,6 +9,9 @@ const els = {
   title: document.getElementById("formTitle"),
   username: document.getElementById("username"),
   password: document.getElementById("password"),
+  contactFields: document.getElementById("contactFields"),
+  email: document.getElementById("regEmail"),
+  phone: document.getElementById("regPhone"),
   msg: document.getElementById("authMsg"),
   submit: document.getElementById("submitBtn"),
   switchHint: document.getElementById("switchHint"),
@@ -30,6 +33,7 @@ function renderMode() {
   els.password.autocomplete = isLogin ? "current-password" : "new-password";
   els.switchHint.textContent = isLogin ? "还没有账户？" : "已有账户？";
   els.switchMode.textContent = isLogin ? "立即注册" : "去登录";
+  els.contactFields.hidden = isLogin;
   setMsg("");
 }
 
@@ -52,11 +56,18 @@ els.form.addEventListener("submit", async (e) => {
     setMsg("请输入用户名和密码", "error");
     return;
   }
+  const email = els.email.value.trim();
+  const phone = els.phone.value.trim();
+  if (mode === "register" && !email && !phone) {
+    setMsg("请填写邮箱或手机号（至少一项）", "error");
+    return;
+  }
   els.submit.disabled = true;
   setMsg(mode === "login" ? "登录中…" : "注册中…");
   try {
     const path = mode === "login" ? "/api/auth/login" : "/api/auth/register";
-    await apiPost(path, { username, password });
+    const payload = mode === "login" ? { username, password } : { username, password, email, phone };
+    await apiPost(path, payload);
     location.href = redirectTarget();
   } catch (err) {
     setMsg(err.message, "error");
