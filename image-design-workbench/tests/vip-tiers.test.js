@@ -4,20 +4,22 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { resolveVipStatus } = require("../lib/vip-tiers");
 
-test("resolves the correct tier at each cumulative boundary", () => {
+test("resolves the correct tier at each absolute threshold", () => {
   const cases = [
     [0, "normal"],
-    [99, "normal"],
-    [100, "silver"],
+    [199, "normal"],
+    [200, "silver"],
     [299, "silver"],
     [300, "platinum"],
-    [599, "platinum"],
-    [600, "diamond"],
-    [1099, "diamond"],
-    [1100, "vip"],
-    [2099, "vip"],
-    [2100, "svip"],
-    [999999, "svip"],
+    [499, "platinum"],
+    [500, "diamond"],
+    [799, "diamond"],
+    [800, "vip"],
+    [999, "vip"],
+    [1000, "svip"],
+    [1999, "svip"],
+    [2000, "supreme"],
+    [999999, "supreme"],
   ];
   for (const [total, expected] of cases) {
     const status = resolveVipStatus(total);
@@ -28,7 +30,7 @@ test("resolves the correct tier at each cumulative boundary", () => {
 test("computes remaining count to next tier, and null next tier at the top", () => {
   const mid = resolveVipStatus(50);
   assert.equal(mid.nextTier.key, "silver");
-  assert.equal(mid.remainingToNext, 50);
+  assert.equal(mid.remainingToNext, 150);
 
   const top = resolveVipStatus(5000);
   assert.equal(top.nextTier, null);

@@ -10,6 +10,26 @@ const { resolveVipStatus } = require("./vip-tiers");
 const USERNAME_PATTERN = /^[a-zA-Z0-9_一-龥]{2,32}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_PATTERN = /^1[3-9]\d{9}$/;
+// 禁止注册成看起来像管理员/官方身份的用户名，防止冒充。大小写、全半角均视为等价。
+const RESERVED_USERNAME_WORDS = [
+  "admin",
+  "administrator",
+  "root",
+  "superadmin",
+  "system",
+  "official",
+  "support",
+  "客服",
+  "管理员",
+  "官方",
+  "系统",
+  "运营",
+];
+
+function isReservedUsername(name) {
+  const normalized = name.toLowerCase();
+  return RESERVED_USERNAME_WORDS.some((word) => normalized.includes(word.toLowerCase()));
+}
 
 class AccountError extends Error {
   constructor(message, statusCode = 400) {
@@ -32,9 +52,11 @@ function publicUser(row) {
     avatarUrl: row.avatar_path ? `/api/account/avatar/${row.id}` : "",
     createdAt: row.created_at,
   };
-  // 只有查询里带了 total_generated（如管理员用户列表）才附带等级，避免给每个 publicUser 调用点都加一次查询。
+  // 只有查询里带了 total_generated（如管理员用户列表）才附带等级/总消耗，避免给每个 publicUser 调用点都加一次查询。
+  // 1 积分 = 1 张图，累计生成张数就是累计消耗积分数。
   if (row.total_generated !== undefined) {
     result.vipTier = resolveVipStatus(row.total_generated).currentTier;
+    result.totalConsumed = Number(row.total_generated) || 0;
   }
   return result;
 }
@@ -62,6 +84,9 @@ async function register(username, password, { email, phone } = {}) {
   const phoneValue = String(phone || "").trim();
   if (!USERNAME_PATTERN.test(name)) {
     throw new AccountError("用户名需为 2-32 位字母、数字、下划线或中文");
+  }
+  if (isReservedUsername(name)) {
+    throw new AccountError("该用户名不可用，请换一个");
   }
   if (pass.length < 6 || pass.length > 64) {
     throw new AccountError("密码长度需为 6-64 位");

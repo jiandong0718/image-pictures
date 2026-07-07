@@ -61,7 +61,7 @@ async function search({ resetPage = true } = {}) {
   if (resetPage) {
     pageState = { ...pageState, page: 1 };
   }
-  els.userBody.innerHTML = `<tr><td colspan="6"><div class="empty">加载中…</div></td></tr>`;
+  els.userBody.innerHTML = `<tr><td colspan="7"><div class="empty">加载中…</div></td></tr>`;
   try {
     const data = await apiGet(
       `/api/admin/users?keyword=${encodeURIComponent(keyword)}&page=${pageState.page}&pageSize=${pageState.pageSize}`,
@@ -79,13 +79,13 @@ async function search({ resetPage = true } = {}) {
       },
     });
   } catch (err) {
-    els.userBody.innerHTML = `<tr><td colspan="6"><div class="empty">${err.message}</div></td></tr>`;
+    els.userBody.innerHTML = `<tr><td colspan="7"><div class="empty">${err.message}</div></td></tr>`;
   }
 }
 
 function renderUsers(users) {
   if (!users.length) {
-    els.userBody.innerHTML = `<tr><td colspan="6"><div class="empty">没有匹配的用户</div></td></tr>`;
+    els.userBody.innerHTML = `<tr><td colspan="7"><div class="empty">没有匹配的用户</div></td></tr>`;
     return;
   }
   els.userBody.innerHTML = "";
@@ -97,6 +97,7 @@ function renderUsers(users) {
       <td>${u.username}</td>
       <td><span class="badge${u.role === "admin" ? " ok" : ""}">${u.role === "admin" ? "管理员" : "用户"}</span></td>
       <td><span class="tier-badge tier-${tier.key}">${tier.label}</span></td>
+      <td class="mono" style="text-align: right">${u.totalConsumed ?? 0}</td>
       <td class="mono" style="text-align: right; font-weight: 700">${u.credits}</td>
       <td style="text-align: right"><button class="btn sm" type="button">选择</button></td>
     `;

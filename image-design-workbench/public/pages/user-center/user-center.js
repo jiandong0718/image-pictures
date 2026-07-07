@@ -34,9 +34,12 @@ function renderVip(vip) {
     ? `还差 ${remainingToNext} 张升级${nextTier.label}`
     : "已是最高等级";
 
-  const span = nextTier ? nextTier.start - currentTier.start : currentTier.width;
-  const progressed = totalGenerated - currentTier.start;
-  const percent = nextTier ? Math.min(100, Math.max(0, (progressed / span) * 100)) : 100;
+  let percent = 100;
+  if (nextTier) {
+    const span = nextTier.start - currentTier.start;
+    const progressed = totalGenerated - currentTier.start;
+    percent = Math.min(100, Math.max(0, (progressed / span) * 100));
+  }
   document.getElementById("vipProgressFill").style.width = `${percent}%`;
 
   document.getElementById("vipTableBody").innerHTML = tiers
@@ -90,38 +93,48 @@ function bindAvatar(me) {
   });
 }
 
-function bindEmailForm(me) {
-  document.getElementById("email").value = me.email || "";
-  document.getElementById("emailForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const email = document.getElementById("email").value.trim();
-    const btn = document.getElementById("emailBtn");
-    btn.disabled = true;
-    setMsg("emailMsg", "保存中…");
-    try {
-      await apiPost("/api/account/email", { email });
-      setMsg("emailMsg", "邮箱已保存", "success");
-    } catch (err) {
-      setMsg("emailMsg", err.message, "error");
-    } finally {
-      btn.disabled = false;
-    }
-  });
-}
+// 邮箱/手机号已经填过就直接展示（带图标），点「修改」才切到编辑表单；没填过直接给表单。
+function bindContactField(key, apiPath, fieldName, initialValue) {
+  const display = document.getElementById(`${key}Display`);
+  const valueEl = document.getElementById(`${key}Value`);
+  const form = document.getElementById(`${key}Form`);
+  const input = document.getElementById(key);
+  const btn = document.getElementById(`${key}Btn`);
+  const msgId = `${key}Msg`;
 
-function bindPhoneForm(me) {
-  document.getElementById("phone").value = me.phone || "";
-  document.getElementById("phoneForm").addEventListener("submit", async (e) => {
+  function showDisplay(value) {
+    valueEl.textContent = value;
+    display.hidden = false;
+    form.hidden = true;
+  }
+  function showForm() {
+    display.hidden = true;
+    form.hidden = false;
+    input.focus();
+  }
+
+  input.value = initialValue || "";
+  if (initialValue) {
+    showDisplay(initialValue);
+  } else {
+    showForm();
+  }
+
+  document.getElementById(`${key}EditBtn`).addEventListener("click", showForm);
+
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const phone = document.getElementById("phone").value.trim();
-    const btn = document.getElementById("phoneBtn");
+    const value = input.value.trim();
     btn.disabled = true;
-    setMsg("phoneMsg", "保存中…");
+    setMsg(msgId, "保存中…");
     try {
-      await apiPost("/api/account/phone", { phone });
-      setMsg("phoneMsg", "手机号已保存", "success");
+      await apiPost(apiPath, { [key]: value });
+      setMsg(msgId, `${fieldName}已保存`, "success");
+      if (value) {
+        showDisplay(value);
+      }
     } catch (err) {
-      setMsg("phoneMsg", err.message, "error");
+      setMsg(msgId, err.message, "error");
     } finally {
       btn.disabled = false;
     }
@@ -172,8 +185,8 @@ async function main() {
   renderProfileHero(me);
   renderAvatarPreview(me);
   bindAvatar(me);
-  bindEmailForm(me);
-  bindPhoneForm(me);
+  bindContactField("email", "/api/account/email", "邮箱", me.email);
+  bindContactField("phone", "/api/account/phone", "手机号", me.phone);
   bindPasswordForm();
 
   const { vip } = await apiGet("/api/account/vip");

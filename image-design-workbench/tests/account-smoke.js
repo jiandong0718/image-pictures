@@ -16,10 +16,21 @@ async function main() {
   const password = "smoke-pass-123";
 
   try {
-    // 1) 注册赠送积分
-    const user = await accounts.register(username, password);
+    // 1) 注册赠送积分（邮箱/手机号至少一项，这里用邮箱）
+    const user = await accounts.register(username, password, { email: `${username}@smoke.test` });
     assert.equal(user.credits, db.SIGNUP_BONUS_CREDITS, "注册应赠送配置的积分");
     console.log(`✓ 注册成功，赠送 ${user.credits} 积分`);
+
+    // 1b) 不填邮箱/手机号应拒绝；保留用户名应拒绝
+    await assert.rejects(
+      () => accounts.register(`${username}_b`, password),
+      /邮箱或手机号/,
+    );
+    await assert.rejects(
+      () => accounts.register("admin_test", password, { email: "x@smoke.test" }),
+      /不可用/,
+    );
+    console.log("✓ 注册校验：邮箱/手机号必填、保留用户名拦截");
 
     // 2) 登录校验
     const logged = await accounts.login(username, password);
@@ -45,9 +56,9 @@ async function main() {
     console.log(`✓ 充值 50 积分，余额 ${recharged.credits}`);
 
     // 6) 流水
-    const tx = await accounts.listTransactions(user.id, 10);
-    assert.ok(tx.length >= 3, "应有注册/消费/充值流水");
-    console.log(`✓ 流水 ${tx.length} 条`);
+    const tx = await accounts.listTransactions(user.id, { pageSize: 10 });
+    assert.ok(tx.items.length >= 3, "应有注册/消费/充值流水");
+    console.log(`✓ 流水 ${tx.items.length} 条`);
 
     console.log("\n全部通过 ✅");
   } finally {

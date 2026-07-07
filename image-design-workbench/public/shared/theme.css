@@ -460,6 +460,12 @@ h3 {
   box-shadow: 0 0 18px rgba(212, 164, 55, 0.45);
 }
 
+.tier-supreme {
+  color: #ffe9a8;
+  background: linear-gradient(135deg, #3a0d0d, #0a0a0a 45%, #d4a437);
+  box-shadow: 0 0 22px rgba(212, 164, 55, 0.55), 0 0 8px rgba(217, 60, 60, 0.4);
+}
+
 .vip-card {
   background: linear-gradient(180deg, rgba(110, 91, 255, 0.06), var(--surface) 40%);
 }
@@ -545,6 +551,30 @@ h3 {
 }
 
 .contact-item-value {
+  min-width: 0;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.contact-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.contact-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.contact-display-value {
+  flex: 1;
   min-width: 0;
   font-size: 14px;
   word-break: break-word;
