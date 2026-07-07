@@ -416,6 +416,47 @@ h3 {
   flex-wrap: wrap;
 }
 
+/* 邮箱/手机号紧凑展示，塞进头像卡右侧原本空着的区域，不用单独大卡片。 */
+.profile-hero-contact {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 220px;
+  align-self: center;
+}
+
+.contact-compact .contact-display {
+  gap: 8px;
+}
+
+.contact-compact .contact-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.contact-compact .contact-display-value {
+  font-size: 13px;
+}
+
+.contact-compact-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.contact-compact-form .input {
+  width: auto;
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.contact-compact .msg {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
 /* ============================ VIP 等级 ============================ */
 .tier-badge {
   display: inline-flex;
@@ -578,28 +619,6 @@ h3 {
   min-width: 0;
   font-size: 14px;
   word-break: break-word;
-}
-
-.qr-preview {
-  width: 84px;
-  height: 84px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-strong);
-  background: var(--bg-1);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  flex-shrink: 0;
-  color: var(--ink-mute);
-  font-size: 11px;
-  text-align: center;
-}
-
-.qr-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: #fff;
 }
 
 /* 二维码图片通常是竖版整图（头像+昵称+码+文案），按原始比例显示，
@@ -837,12 +856,14 @@ h3 {
   text-transform: uppercase;
   color: var(--ink-mute);
   border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
 }
 
 .table td {
   padding: 12px 14px;
   border-bottom: 1px solid var(--line);
   color: var(--ink-soft);
+  white-space: nowrap;
 }
 
 .table tr:hover td {
@@ -915,6 +936,12 @@ h3 {
   min-width: 460px;
 }
 
+/* 用户列表列数多（ID/用户名/角色/等级/总消耗/余额/操作），容器窄时靠这个最小宽度
+   触发横向滚动，而不是把数字列挤没——之前就是被挤没了导致余额看不见。 */
+.table-scroll .user-table {
+  min-width: 760px;
+}
+
 /* ≤960：侧栏变顶部横向导航 */
 @media (max-width: 960px) {
   .shell {
@@ -971,6 +998,10 @@ h3 {
     flex-direction: column;
     align-items: flex-start;
     text-align: left;
+  }
+  .profile-hero-contact {
+    margin-left: 0;
+    width: 100%;
   }
 }
 
