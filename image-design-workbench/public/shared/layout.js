@@ -6,6 +6,7 @@ import { fetchMe, logout } from "./api.js";
 const NAV = [
   { group: "工具" },
   { href: "/playground", label: "自由生图", key: "playground" },
+  { href: "/retouch", label: "AI 修图", key: "retouch" },
   { href: "/full-playground", label: "绘图聚集地", key: "full-playground" },
   { href: "/prompt", label: "提示词提取", key: "prompt" },
   { group: "工作台" },
@@ -158,8 +159,8 @@ function renderShell(me, { active, title, crumb }) {
       <div class="brand">
         <div class="brand-mark"></div>
         <div>
-          <div class="brand-name">图像设计工作台</div>
-          <div class="brand-sub">Image Studio</div>
+          <div class="brand-name">AI 图像设计工作台</div>
+          <div class="brand-sub">AI Image Studio</div>
         </div>
       </div>
       <nav class="nav">${navHtml}</nav>

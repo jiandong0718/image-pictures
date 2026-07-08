@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 修图 · AI 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+    <script src="/shared/theme-init.js"></script>
+    <link rel="stylesheet" href="/pages/retouch/retouch.css" />
+  </head>
+  <body>
+    <div id="page">
+      <div class="rt-studio">
+        <!-- 中间：画布（上传 / 照片 / 处理中 / 前后对比 + 底部信息 + 历史） -->
+        <div class="card rt-canvas">
+          <div class="rt-canvas-head">
+            <div>
+              <div class="section-label">结果预览</div>
+              <div class="card-title" id="canvasTitle">上传照片开始</div>
+            </div>
+            <span class="badge" id="canvasBadge">0 个结果</span>
+          </div>
+          <div class="rt-canvas-body" id="canvas"></div>
+        </div>
+
+        <!-- 右侧：控制面板 -->
+        <div class="card rt-panel">
+          <div class="rt-panel-scroll">
+            <div class="section-label">处理能力</div>
+            <div class="rt-caps" id="caps"></div>
+
+            <div class="section-label" style="margin-top: 18px">输出比例</div>
+            <div class="rt-ratios" id="ratios"></div>
+            <div class="rt-custom-size" id="customSize" hidden>
+              <label class="rt-cs-field"><span>宽</span>
+                <input class="input" id="customW" type="number" min="256" max="4096" step="1" value="1024" />
+              </label>
+              <span class="rt-cs-x">×</span>
+              <label class="rt-cs-field"><span>高</span>
+                <input class="input" id="customH" type="number" min="256" max="4096" step="1" value="1024" />
+              </label>
+              <span class="rt-cs-unit">px（256–4096）</span>
+            </div>
+
+            <details class="rt-advanced" id="advanced">
+              <summary>
+                <span class="rt-edit-label">编辑<span class="rt-adv-hint">（提示词，仅对你生效）</span></span>
+                <span class="rt-edit-poke" id="editPoke">👈 点这里改提示词</span>
+              </summary>
+              <div class="rt-advanced-body">
+                <textarea class="textarea" id="prompt" rows="5"></textarea>
+                <a href="#" id="resetPrompt" class="rt-reset">恢复默认</a>
+              </div>
+            </details>
+          </div>
+
+          <div class="rt-panel-foot">
+            <p class="msg" id="msg"></p>
+            <button class="btn primary full" id="generateBtn" type="button">开始生成</button>
+            <p class="card-desc" id="configHint" style="margin-top: 10px"></p>
+          </div>
+        </div>
+      </div>
+      <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+    </div>
+    <script type="module" src="/pages/retouch/retouch.js"></script>
+  </body>
+</html>

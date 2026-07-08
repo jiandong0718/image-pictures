@@ -1,47 +1,79 @@
-.pg-grid {
+/* ============ 自由生图：赛博画布布局（中间画布 + 右侧面板），与 AI 修图同款 ============ */
+.pg-studio {
   display: grid;
-  grid-template-columns: 400px 1fr;
-  gap: 22px;
-  align-items: start;
+  grid-template-columns: 1fr 340px;
+  gap: 20px;
+  align-items: stretch;
 }
 
-/* 表单按内容自然高度：不拉伸，避免按钮上方出现空隙 */
-#pgForm {
-  align-self: start;
-}
-
-/* 只让结果卡拉伸到与表单等高、内容区填满，右侧不再留白 */
-.pg-result-card {
-  align-self: stretch;
+/* ---------- 中间画布 ---------- */
+.pg-canvas {
   display: flex;
   flex-direction: column;
+  min-height: 620px;
 }
 
-.pg-result-card .pg-results {
+.pg-canvas-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.pg-prompt-field {
+  margin-bottom: 14px;
+}
+
+.pg-stage {
   flex: 1;
-}
-
-/* 空的提示行不占位，去掉按钮上方的空白 */
-#pgForm .msg:empty {
-  min-height: 0;
-  margin: 0;
-}
-
-.pg-results {
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
-  min-height: 320px;
-  align-content: start;
+  place-items: center;
+  overflow: auto;
+  min-height: 340px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
 }
 
-.pg-results .empty {
-  grid-column: 1 / -1;
-  margin: auto;
+/* 赛博角标 */
+.pg-stage::before,
+.pg-stage::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  opacity: 0.5;
+}
+.pg-stage::before {
+  top: 10px;
+  left: 10px;
+  border-top: 2px solid var(--accent);
+  border-left: 2px solid var(--accent);
+}
+.pg-stage::after {
+  bottom: 10px;
+  right: 10px;
+  border-bottom: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
 }
 
 .pg-loading {
-  margin: auto;
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  color: var(--ink-soft);
+}
+
+/* 结果网格 */
+.pg-results {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  align-content: start;
 }
 
 .pg-item {
@@ -49,6 +81,12 @@
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--bg-1);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pg-item:hover {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 16px rgba(56, 224, 208, 0.18);
 }
 
 .pg-item img {
@@ -66,16 +104,146 @@
   padding: 8px 10px;
 }
 
-.pg-loading {
-  grid-column: 1 / -1;
-  display: grid;
-  place-items: center;
-  gap: 10px;
+/* ---------- 右侧面板 ---------- */
+.pg-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pg-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.pg-panel-foot {
+  padding-top: 14px;
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.pg-panel-foot .msg:empty {
+  min-height: 0;
+  margin: 0;
+}
+
+.pg-panel-foot .btn.primary {
+  box-shadow: 0 0 22px rgba(56, 224, 208, 0.28);
+}
+.pg-panel-foot .btn.primary:hover:not(:disabled) {
+  box-shadow: 0 0 28px rgba(56, 224, 208, 0.42);
+}
+
+/* 药丸 chip（张数 / 分辨率 / 比例通用） */
+.pg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pg-chip {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: rgba(var(--tint), 0.03);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.pg-chip:hover {
+  border-color: var(--accent-line);
+  color: var(--ink);
+}
+
+.pg-chip.active {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  box-shadow: 0 0 14px var(--accent-soft), inset 0 0 0 1px var(--accent-line);
+}
+
+/* 自定义尺寸 */
+.pg-custom-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pg-cs-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.pg-cs-field span {
+  font-size: 12px;
   color: var(--ink-mute);
 }
 
-@media (max-width: 900px) {
-  .pg-grid {
+.pg-cs-field .input {
+  width: 72px;
+  padding: 7px 9px;
+  font-family: var(--mono);
+}
+
+.pg-cs-x {
+  color: var(--ink-mute);
+}
+
+.pg-cs-unit {
+  font-size: 11px;
+  color: var(--ink-mute);
+  font-family: var(--mono);
+}
+
+/* 折叠的附加要求 */
+.pg-advanced {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.pg-advanced > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  list-style: none;
+  user-select: none;
+}
+
+.pg-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pg-advanced > summary::before {
+  content: "▸ ";
+  color: var(--accent);
+}
+
+.pg-advanced[open] > summary::before {
+  content: "▾ ";
+}
+
+.pg-adv-hint {
+  color: var(--ink-mute);
+  font-weight: 400;
+}
+
+.pg-advanced-body {
+  margin-top: 12px;
+}
+
+@media (max-width: 980px) {
+  .pg-studio {
     grid-template-columns: 1fr;
   }
 }

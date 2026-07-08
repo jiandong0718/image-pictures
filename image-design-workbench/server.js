@@ -1607,6 +1607,7 @@ const PAGE_ROUTES = {
   "/studio/3d": { dir: "studio-3d", auth: "user" },
   "/prompt": { dir: "prompt", auth: "user" },
   "/playground": { dir: "playground", auth: "user" },
+  "/retouch": { dir: "retouch", auth: "user" },
   "/full-playground": { dir: "full-playground", auth: "user" },
   "/account": { dir: "account", auth: "user" },
   "/user-center": { dir: "user-center", auth: "user" },
@@ -2559,7 +2560,7 @@ if (require.main === module) {
     .then(async () => imageSets.init(await listExistingImageSetIds()))
     .then(() => {
       server.listen(PORT, HOST, () => {
-        console.log(`商品图片设计工作台已启动：http://${HOST}:${PORT}`);
+        console.log(`AI 图像设计工作台已启动：http://${HOST}:${PORT}`);
       });
     })
     .catch((error) => {
