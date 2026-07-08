@@ -43,7 +43,7 @@ async function load() {
       const promptText = img.prompt ? escapeHtml(img.prompt) : "（无提示词）";
       card.innerHTML = `
         <div class="mi-thumb">
-          <img src="${img.url}?t=${encodeURIComponent(img.createdAt || "")}" alt="${escapeHtml(img.label || "图片")}" loading="lazy" />
+          <img src="${img.url}?thumb=1&t=${encodeURIComponent(img.createdAt || "")}" alt="${escapeHtml(img.label || "图片")}" loading="lazy" />
         </div>
         <div class="mi-meta">
           <div class="mi-meta-top">

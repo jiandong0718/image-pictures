@@ -29,6 +29,9 @@ const GPT_IMAGE_PLAYGROUND_DIST_DIR = path.join(
   "dist",
 );
 const OUTPUT_DIR = path.join(ROOT_DIR, "generated-images", "product-design");
+// 图库缩略图缓存目录（首次访问按需生成，之后走缓存）。.thumbs 不匹配套图 ID 规则，天然不进套图/图库回填。
+const THUMB_DIR = path.join(OUTPUT_DIR, ".thumbs");
+const THUMB_MAX_PX = 400;
 const AVATAR_DIR = path.join(ROOT_DIR, "generated-images", "avatars");
 const CONTACT_QR_DIR = path.join(ROOT_DIR, "generated-images", "contact-qr");
 const EMBEDDED_SKILL_SCRIPT = path.join(
@@ -1214,6 +1217,36 @@ async function normalizeGeneratedImageFile(filePath, spec, label) {
   return assertImageSpecFile(filePath, normalized, label);
 }
 
+// 缩略图缩放命令：只缩不放、保持比例。magick 用 -thumbnail，sips 用 -Z（限制长边）。
+function getThumbnailCommand(command, filePath, size) {
+  const name = path.basename(command).toLowerCase();
+  if (name === "convert" || name === "magick") {
+    return { command, args: [filePath, "-thumbnail", `${size}x${size}>`, filePath] };
+  }
+  return { command, args: ["-Z", String(size), filePath] };
+}
+
+// 返回 id 对应的缩略图路径，不存在则从原图生成并缓存到 .thumbs。id 已由调用方经 resolveOutputFile 校验安全。
+async function ensureThumbnail(id, srcPath) {
+  const thumbPath = path.join(THUMB_DIR, id);
+  try {
+    await fsp.access(thumbPath, fs.constants.R_OK);
+    return thumbPath;
+  } catch {
+    /* 未缓存，继续生成 */
+  }
+  await fsp.mkdir(path.dirname(thumbPath), { recursive: true });
+  await fsp.copyFile(srcPath, thumbPath);
+  const cmd = getThumbnailCommand(IMAGE_NORMALIZER_COMMAND, thumbPath, THUMB_MAX_PX);
+  try {
+    await runProcess(cmd.command, cmd.args, ROOT_DIR);
+  } catch (error) {
+    await fsp.unlink(thumbPath).catch(() => {});
+    throw error;
+  }
+  return thumbPath;
+}
+
 function normalizeImageSetId(value) {
   const id = typeof value === "string" ? value.trim() : "";
   if (!id) {
@@ -1838,16 +1871,22 @@ async function serveGptImagePlayground(req, res, pathname) {
   await serveStaticFromDir(req, res, GPT_IMAGE_PLAYGROUND_DIST_DIR, relativePath, "index.html");
 }
 
-async function serveImage(req, res, id, attachment, user) {
+async function serveImage(req, res, id, attachment, user, thumb = false) {
   try {
     await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
     const filePath = resolveOutputFile(id);
-    const data = await fsp.readFile(filePath);
-    const ext = path.extname(filePath).toLowerCase();
+    let servePath = filePath;
+    if (thumb) {
+      // 缩略图生成失败（如 GIF/命令缺失）时回退原图，保证图能显示。
+      servePath = await ensureThumbnail(id, filePath).catch(() => filePath);
+    }
+    const data = await fsp.readFile(servePath);
+    const ext = path.extname(servePath).toLowerCase();
     const headers = {
       "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
       "Content-Length": data.length,
-      "Cache-Control": "no-store",
+      // 图片按 id/路径不可变（文件名带时间戳），按用户私有长缓存，避免每次打开图库重复下载。
+      "Cache-Control": "private, max-age=604800, immutable",
     };
     if (attachment) {
       headers["Content-Disposition"] = `attachment; filename="${path.basename(filePath)}"`;
@@ -2313,7 +2352,7 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
     const id = decodeURIComponent(pathname.replace("/api/images/file/", ""));
-    await serveImage(req, res, id, false, user);
+    await serveImage(req, res, id, false, user, searchParams.get("thumb") === "1");
     return;
   }
 
