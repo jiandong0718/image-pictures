@@ -93,19 +93,27 @@ function bindAvatar(me) {
   });
 }
 
-// 邮箱/手机号已经填过就直接展示（带图标），点「修改」才切到编辑表单；没填过直接给表单。
+// 邮箱/手机号：默认始终「展示态」——有值显示值 +「修改」，没值显示「未绑定X」+「添加」。
+// 只有点了「修改/添加」才切出输入框；保存后回到展示态。
 function bindContactField(key, apiPath, fieldName, initialValue) {
   const display = document.getElementById(`${key}Display`);
   const valueEl = document.getElementById(`${key}Value`);
+  const editBtn = document.getElementById(`${key}EditBtn`);
   const form = document.getElementById(`${key}Form`);
   const input = document.getElementById(key);
+  const cancelBtn = document.getElementById(`${key}Cancel`);
   const btn = document.getElementById(`${key}Btn`);
   const msgId = `${key}Msg`;
+  const emptyText = `未绑定${fieldName}`;
 
   function showDisplay(value) {
-    valueEl.textContent = value;
+    const has = Boolean(value);
+    valueEl.textContent = has ? value : emptyText;
+    valueEl.classList.toggle("is-empty", !has);
+    editBtn.textContent = has ? "修改" : "添加";
     display.hidden = false;
     form.hidden = true;
+    setMsg(msgId, "");
   }
   function showForm() {
     display.hidden = true;
@@ -114,13 +122,15 @@ function bindContactField(key, apiPath, fieldName, initialValue) {
   }
 
   input.value = initialValue || "";
-  if (initialValue) {
-    showDisplay(initialValue);
-  } else {
-    showForm();
-  }
+  showDisplay(initialValue);
 
-  document.getElementById(`${key}EditBtn`).addEventListener("click", showForm);
+  editBtn.addEventListener("click", showForm);
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", () => {
+      input.value = (valueEl.classList.contains("is-empty") ? "" : valueEl.textContent) || "";
+      showDisplay(input.value);
+    });
+  }
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -129,10 +139,8 @@ function bindContactField(key, apiPath, fieldName, initialValue) {
     setMsg(msgId, "保存中…");
     try {
       await apiPost(apiPath, { [key]: value });
+      showDisplay(value);
       setMsg(msgId, `${fieldName}已保存`, "success");
-      if (value) {
-        showDisplay(value);
-      }
     } catch (err) {
       setMsg(msgId, err.message, "error");
     } finally {

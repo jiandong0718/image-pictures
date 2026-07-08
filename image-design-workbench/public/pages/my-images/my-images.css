@@ -1,0 +1,95 @@
+/* ============ 我的图库：搜索头 + 响应式网格 ============ */
+.mi-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.mi-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mi-search .input {
+  width: 220px;
+  max-width: 52vw;
+}
+
+.mi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.mi-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-1);
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.mi-item:hover {
+  border-color: var(--accent-line);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+}
+
+.mi-thumb {
+  aspect-ratio: 1 / 1;
+  background: var(--bg-2, var(--bg-1));
+  overflow: hidden;
+}
+
+.mi-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  cursor: zoom-in;
+}
+
+.mi-meta {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mi-meta-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mi-time {
+  font-size: 11px;
+  color: var(--ink-mute);
+}
+
+.mi-prompt {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.8em;
+}
+
+.mi-dl {
+  align-self: flex-start;
+}
+
+@media (max-width: 560px) {
+  .mi-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+}

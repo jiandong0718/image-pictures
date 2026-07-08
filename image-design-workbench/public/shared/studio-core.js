@@ -48,6 +48,8 @@ export function createStudio(config) {
     images: {},
     loading: {},
     hasImageConfig: false,
+    // 正在进行的生成任务（切走页面也要能续上，回来把图捞回，避免扣了费图却丢了）。
+    pending: null,
   };
 
   let board;
@@ -75,6 +77,9 @@ export function createStudio(config) {
     if (saved.images && typeof saved.images === "object") {
       state.images = saved.images;
     }
+    if (saved.pending && typeof saved.pending === "object" && saved.pending.taskId) {
+      state.pending = saved.pending;
+    }
   }
 
   function saveState() {
@@ -83,7 +88,55 @@ export function createStudio(config) {
       spec: state.spec,
       prompts: state.prompts,
       images: state.images,
+      pending: state.pending,
     });
+  }
+
+  // 记录/清除「进行中的任务」。同一时刻按钮互斥，最多一个任务在跑。
+  function setPending(types, taskId) {
+    state.pending = { types, taskId };
+    saveState();
+  }
+  function clearPending() {
+    state.pending = null;
+    saveState();
+  }
+
+  // 轮询任务并把结果落到对应图位。main/derived 返回 {image}，批量返回 {results,errors}。
+  async function pollAndApply(types, taskId) {
+    const result = await pollTask(taskId);
+    if (result.results) {
+      types.forEach((type) => {
+        if (result.results[type]) {
+          state.images[type] = result.results[type];
+          setMsg(type, `${typeLabels[type]}已生成`, "success");
+        } else if (result.errors?.[type]) {
+          setMsg(type, result.errors[type], "error");
+        }
+      });
+    } else if (result.image) {
+      const type = types[0];
+      state.images[type] = result.image;
+      setMsg(type, type === "main" ? "主图已生成" : `${typeLabels[type]}已生成`, "success");
+    }
+    if (typeof result.credits === "number") setCredits(result.credits);
+    saveState();
+  }
+
+  // 页面挂载时，若上次离开时还有任务没轮询完，续上把图捞回来。
+  async function resumePending() {
+    const p = state.pending;
+    if (!p || !p.taskId || !Array.isArray(p.types)) return;
+    p.types.forEach((type) => setLoading(type, true));
+    try {
+      await pollAndApply(p.types, p.taskId);
+      clearPending();
+    } catch {
+      // 任务已过期或失败：只清 pending，已有的图片一律保留不动。
+      clearPending();
+    } finally {
+      p.types.forEach((type) => setLoading(type, false));
+    }
   }
 
   async function ensureImageSet() {
@@ -204,13 +257,12 @@ export function createStudio(config) {
         imageSetId: imageSet.id,
         imageSpec: normalizeSpec(state.spec),
       });
-      const result = await pollTask(taskId);
-      state.images.main = result.image;
-      saveState();
-      if (typeof result.credits === "number") setCredits(result.credits);
-      setMsg("main", "主图已生成", "success");
+      setPending(["main"], taskId);
+      await pollAndApply(["main"], taskId);
+      clearPending();
     } catch (err) {
       setMsg("main", err.message, "error");
+      clearPending();
     } finally {
       setLoading("main", false);
     }
@@ -274,13 +326,12 @@ export function createStudio(config) {
         imageSetId: imageSet.id,
         imageSpec: normalizeSpec(state.spec),
       });
-      const result = await pollTask(taskId);
-      state.images[type] = result.image;
-      saveState();
-      if (typeof result.credits === "number") setCredits(result.credits);
-      setMsg(type, `${typeLabels[type]}已生成`, "success");
+      setPending([type], taskId);
+      await pollAndApply([type], taskId);
+      clearPending();
     } catch (err) {
       setMsg(type, err.message, "error");
+      clearPending();
     } finally {
       setLoading(type, false);
     }
@@ -315,19 +366,12 @@ export function createStudio(config) {
         prompts,
         imageSpec: normalizeSpec(state.spec),
       });
-      const result = await pollTask(taskId);
-      derivedTypes.forEach((type) => {
-        if (result.results?.[type]) {
-          state.images[type] = result.results[type];
-          setMsg(type, `${typeLabels[type]}已生成`, "success");
-        } else if (result.errors?.[type]) {
-          setMsg(type, result.errors[type], "error");
-        }
-      });
-      saveState();
-      if (typeof result.credits === "number") setCredits(result.credits);
+      setPending(derivedTypes, taskId);
+      await pollAndApply(derivedTypes, taskId);
+      clearPending();
     } catch (err) {
       derivedTypes.forEach((type) => setMsg(type, err.message, "error"));
+      clearPending();
     } finally {
       derivedTypes.forEach((type) => (state.loading[type] = false));
       derivedTypes.forEach((type) => renderCard(type));
@@ -471,6 +515,8 @@ export function createStudio(config) {
     allTypes.forEach((type) => renderCard(type));
     renderControls();
     await ensureImageSet().catch(() => {});
+    // 续上离开前没轮询完的任务（不阻塞首屏，图片就绪后自动补上）。
+    resumePending();
   }
 
   return { start };

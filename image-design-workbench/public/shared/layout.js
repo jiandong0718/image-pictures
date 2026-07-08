@@ -15,6 +15,7 @@ const NAV = [
   { href: "/studio/3d", label: "3D 转平面", key: "studio-3d" },
   { group: "账户" },
   { href: "/account", label: "我的积分", key: "account" },
+  { href: "/my-images", label: "我的图库", key: "my-images" },
   { href: "/user-center", label: "用户中心", key: "user-center" },
   { href: "/contact", label: "联系充值", key: "contact" },
 ];
@@ -26,11 +27,14 @@ const ADMIN_NAV = [
   { href: "/admin", label: "充值管理", key: "admin" },
 ];
 
-// 主题切换：tech(深色科技) / xianxia(仙侠)。data-theme 由 theme-init.js 在渲染前同步应用。
-const THEME_LABELS = { tech: "科技", xianxia: "仙侠" };
+// 主题切换：tech(深色科技) / xianxia(仙侠) / mystic(玄幻)。点按钮按此顺序循环。
+// data-theme 由 theme-init.js 在渲染前同步应用。
+const THEME_LABELS = { tech: "科技", xianxia: "仙侠", mystic: "玄幻" };
+const THEME_ORDER = ["tech", "xianxia", "mystic"];
 
 function currentTheme() {
-  return document.documentElement.dataset.theme === "xianxia" ? "xianxia" : "tech";
+  const theme = document.documentElement.dataset.theme;
+  return THEME_ORDER.includes(theme) ? theme : "tech";
 }
 
 function broadcastTheme() {
@@ -57,7 +61,8 @@ function applyTheme(name) {
 }
 
 function toggleTheme(btn) {
-  const next = currentTheme() === "xianxia" ? "tech" : "xianxia";
+  const idx = THEME_ORDER.indexOf(currentTheme());
+  const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
   applyTheme(next);
   if (btn) btn.textContent = `${THEME_LABELS[next]}风`;
 }

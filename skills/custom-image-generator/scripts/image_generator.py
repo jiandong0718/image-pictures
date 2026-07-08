@@ -448,18 +448,25 @@ def extract_inline_images(text: str) -> list[ImagePayload]:
 
 def collect_image_candidates(node: Any, images: list[ImagePayload], urls: list[str]) -> None:
     if isinstance(node, dict):
+        # 同一个数据项若已带内联图（b64_json 等），就不要再把它的 url 当作第二张：
+        # 部分上游会对同一张图同时回 b64_json 和 url，否则会落成重复图、导致多扣费。
+        has_inline = False
         for key, value in node.items():
             if key in {"b64_json", "image_base64", "result"} and isinstance(value, str):
                 decoded = decode_base64_image(value)
                 if decoded is not None:
                     images.append(decoded)
-            elif key in {"url", "image_url"}:
-                if isinstance(value, str) and looks_like_image_url(value):
-                    urls.append(value)
-                elif isinstance(value, dict):
-                    nested_url = value.get("url")
-                    if looks_like_image_url(nested_url):
-                        urls.append(nested_url)
+                    has_inline = True
+        if not has_inline:
+            for key, value in node.items():
+                if key in {"url", "image_url"}:
+                    if isinstance(value, str) and looks_like_image_url(value):
+                        urls.append(value)
+                    elif isinstance(value, dict):
+                        nested_url = value.get("url")
+                        if looks_like_image_url(nested_url):
+                            urls.append(nested_url)
+        for value in node.values():
             collect_image_candidates(value, images, urls)
         return
 

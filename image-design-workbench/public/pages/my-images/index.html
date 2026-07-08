@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我的图库 · AI 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+    <script src="/shared/theme-init.js"></script>
+    <link rel="stylesheet" href="/pages/my-images/my-images.css" />
+  </head>
+  <body>
+    <div id="page">
+      <div class="card">
+        <div class="mi-head">
+          <div>
+            <div class="section-label">我的图库</div>
+            <div class="card-title">生成过的图都在这里</div>
+            <div class="card-desc">图片长期保存在服务器，换设备、清缓存都不会丢。</div>
+          </div>
+          <form class="mi-search" id="searchForm">
+            <input class="input" id="keyword" type="search" placeholder="按提示词搜索…" autocomplete="off" />
+            <button class="btn" type="submit">搜索</button>
+          </form>
+        </div>
+        <div class="mi-grid" id="grid">
+          <div class="empty">加载中…</div>
+        </div>
+        <div class="pagination" id="pagination"></div>
+      </div>
+    </div>
+    <script type="module" src="/pages/my-images/my-images.js"></script>
+  </body>
+</html>

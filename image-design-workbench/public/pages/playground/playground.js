@@ -29,6 +29,7 @@ let background = "";
 let results = [];
 let loading = false;
 let hasImageConfig = false;
+let pendingTask = null; // 进行中的任务 id：切走页面也持久化，回来续查把图捞回
 
 function buildImageSpec() {
   if (currentRatio === "custom") {
@@ -77,6 +78,7 @@ function loadSaved() {
   if (saved.customW) els.customW.value = clampPx(saved.customW);
   if (saved.customH) els.customH.value = clampPx(saved.customH);
   if (Array.isArray(saved.results)) results = saved.results;
+  if (typeof saved.pendingTask === "string") pendingTask = saved.pendingTask;
   els.background.value = background;
 }
 
@@ -91,6 +93,7 @@ function save() {
     customW: els.customW.value,
     customH: els.customH.value,
     results,
+    pendingTask,
   });
 }
 
@@ -161,6 +164,24 @@ function renderStage() {
   });
 }
 
+// 轮询任务并落地结果。切走页面时轮询会中断，但 pendingTask 已持久化，回来会 resume。
+async function awaitTask(taskId) {
+  try {
+    const done = await pollTask(taskId);
+    results = done.images || [];
+    if (typeof done.credits === "number") setCredits(done.credits);
+    setMsg(`已生成 ${results.length} 张图片`, "success");
+  } catch (err) {
+    setMsg(err.message, "error");
+  } finally {
+    pendingTask = null;
+    loading = false;
+    save();
+    renderState();
+    renderStage();
+  }
+}
+
 async function generate() {
   const prompt = els.prompt.value.trim();
   if (!prompt) return setMsg("提示词不能为空", "error");
@@ -168,27 +189,26 @@ async function generate() {
   setMsg("");
   renderState();
   renderStage();
+  let taskId;
   try {
-    const { taskId } = await apiPost("/api/playground/images", {
+    ({ taskId } = await apiPost("/api/playground/images", {
       mode: "generate",
       prompt,
       count,
       background: els.background.value,
       system: els.system.value.trim(),
       imageSpec: buildImageSpec(),
-    });
-    const done = await pollTask(taskId);
-    results = done.images || [];
-    save();
-    if (typeof done.credits === "number") setCredits(done.credits);
-    setMsg(`已生成 ${results.length} 张图片`, "success");
+    }));
   } catch (err) {
-    setMsg(err.message, "error");
-  } finally {
     loading = false;
+    setMsg(err.message, "error");
     renderState();
     renderStage();
+    return;
   }
+  pendingTask = taskId;
+  save();
+  await awaitTask(taskId);
 }
 
 async function main() {
@@ -230,6 +250,14 @@ async function main() {
   }
   renderState();
   renderStage();
+
+  // 若离开前还有生成任务没轮询完，回来续上把图捞回（避免扣了费图却丢了）。
+  if (pendingTask) {
+    loading = true;
+    renderState();
+    renderStage();
+    awaitTask(pendingTask);
+  }
 }
 
 main();

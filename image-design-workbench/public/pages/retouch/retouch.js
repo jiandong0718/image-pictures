@@ -69,6 +69,7 @@ let imageSet = null;
 let loading = false;
 let hasImageConfig = false;
 let hintSeen = false;
+let pendingTask = null; // 进行中的任务 { taskId, before, label }：切走也持久化，回来续查把结果捞回
 
 function buildImageSpec() {
   // 自定义：用户填宽高像素 → 长边作 customSize，宽高比约分为 customRatio（后端上限 99，超了按比例缩）。
@@ -115,6 +116,7 @@ function loadSaved() {
   if (saved.customH) els.customH.value = clampPx(saved.customH);
   if (saved.hintSeen) hintSeen = true;
   if (Array.isArray(saved.history)) history = saved.history.slice(0, HISTORY_MAX);
+  if (saved.pendingTask && typeof saved.pendingTask === "object" && saved.pendingTask.taskId) pendingTask = saved.pendingTask;
 }
 
 function save() {
@@ -126,6 +128,7 @@ function save() {
     customH: els.customH.value,
     hintSeen,
     history,
+    pendingTask,
   });
 }
 
@@ -306,6 +309,31 @@ async function ensureImageSet() {
   return imageSet;
 }
 
+// 轮询任务并把结果落成前后对比。切走页面轮询会中断，但 pendingTask 已持久化，回来 resume。
+async function awaitTask(pending) {
+  try {
+    const done = await pollTask(pending.taskId);
+    const out = (done.images || [])[0];
+    if (typeof done.credits === "number") setCredits(done.credits);
+    if (!out) {
+      setMsg("未生成结果，请重试", "error");
+    } else {
+      active = { before: pending.before, after: out.url, afterDownload: out.downloadUrl, label: pending.label };
+      history.unshift(active);
+      history = history.slice(0, HISTORY_MAX);
+      setMsg("处理完成（消耗 1 积分）", "success");
+    }
+  } catch (err) {
+    setMsg(err.message, "error");
+  } finally {
+    pendingTask = null;
+    loading = false;
+    save();
+    renderState();
+    renderCanvas();
+  }
+}
+
 async function generate() {
   if (!file) return setMsg("请先上传图片", "error");
   const prompt = els.prompt.value.trim();
@@ -314,6 +342,9 @@ async function generate() {
   setMsg("");
   renderState();
   renderCanvas();
+  let taskId;
+  let beforeUrl;
+  const label = CAPS.find((c) => c.key === currentCap)?.label || "结果";
   try {
     const spec = buildImageSpec();
     const set = await ensureImageSet();
@@ -330,35 +361,25 @@ async function generate() {
       imageSpecCustomRatioHeight: String(spec.customRatioHeight),
     });
     const uploaded = await apiUpload(`/api/images/main/upload?${params}`, fd);
-    const beforeUrl = uploaded.image.url;
+    beforeUrl = uploaded.image.url;
 
-    const { taskId } = await apiPost("/api/playground/images", {
+    ({ taskId } = await apiPost("/api/playground/images", {
       mode: "edit",
       prompt,
       count: 1,
       referenceImageId: uploaded.image.id,
       imageSpec: spec,
-    });
-    const done = await pollTask(taskId);
-    const out = (done.images || [])[0];
-    if (typeof done.credits === "number") setCredits(done.credits);
-    if (!out) {
-      setMsg("未生成结果，请重试", "error");
-    } else {
-      const label = CAPS.find((c) => c.key === currentCap)?.label || "结果";
-      active = { before: beforeUrl, after: out.url, afterDownload: out.downloadUrl, label };
-      history.unshift(active);
-      history = history.slice(0, HISTORY_MAX);
-      save();
-      setMsg("处理完成（消耗 1 积分）", "success");
-    }
+    }));
   } catch (err) {
-    setMsg(err.message, "error");
-  } finally {
     loading = false;
+    setMsg(err.message, "error");
     renderState();
     renderCanvas();
+    return;
   }
+  pendingTask = { taskId, before: beforeUrl, label };
+  save();
+  await awaitTask(pendingTask);
 }
 
 async function main() {
@@ -431,6 +452,14 @@ async function main() {
   }
   renderState();
   renderCanvas();
+
+  // 若离开前还有修图任务没轮询完，回来续上把结果捞回（避免扣了费图却丢了）。
+  if (pendingTask) {
+    loading = true;
+    renderState();
+    renderCanvas();
+    awaitTask(pendingTask);
+  }
 }
 
 main();

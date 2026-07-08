@@ -416,13 +416,13 @@ h3 {
   flex-wrap: wrap;
 }
 
-/* 邮箱/手机号紧凑展示，塞进头像卡右侧原本空着的区域，不用单独大卡片。 */
+/* 邮箱/手机号左右两列分布，撑开原本空着的中间区域，比竖排贴右更舒适。 */
 .profile-hero-contact {
   margin-left: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 220px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 32px;
+  min-width: 520px;
   align-self: center;
 }
 
@@ -437,6 +437,10 @@ h3 {
 
 .contact-compact .contact-display-value {
   font-size: 13px;
+}
+
+.contact-display-value.is-empty {
+  color: var(--ink-mute);
 }
 
 .contact-compact-form {
@@ -1002,6 +1006,8 @@ h3 {
   .profile-hero-contact {
     margin-left: 0;
     width: 100%;
+    min-width: 0;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1107,5 +1113,157 @@ h3 {
   border-radius: var(--radius) var(--radius) 0 0;
   background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent);
   opacity: 0.55;
+  pointer-events: none;
+}
+
+
+/* ============================================================================
+   玄幻风 mystic：幽蓝夜空 + 极光紫青 + 缓缓漂移的星雾 + 微微上浮的灵光点。
+   通过 <html data-theme="mystic"> 启用。灵逸飘动感来自 body::before/::after 两层慢动画。
+   ============================================================================ */
+:root[data-theme="mystic"] {
+  --bg-0: #0a0a1c;          /* 幽蓝夜空 */
+  --bg-1: #10102a;
+  --bg-2: #171636;
+  --bg-3: #201e46;
+  --surface: rgba(28, 26, 60, 0.6);
+  --surface-solid: #14132e;
+  --line: rgba(150, 130, 255, 0.16);       /* 紫霭描边 */
+  --line-strong: rgba(120, 220, 210, 0.3);  /* 极光青描边 */
+  --tint: 190, 170, 255;
+
+  --ink: #f0ecff;           /* 月华白 */
+  --ink-soft: #c3b8ea;
+  --ink-mute: #8a7fb8;
+
+  --accent: #7fe3d0;        /* 极光青（灵，主） */
+  --accent-2: #b98cff;      /* 玄紫（副） */
+  --accent-soft: rgba(127, 227, 208, 0.12);
+  --accent-line: rgba(127, 227, 208, 0.38);
+  --glow: 0 0 0 1px var(--accent-line), 0 0 24px rgba(127, 227, 208, 0.22);
+
+  --danger: #ff6b8a;        /* 霞绯 */
+  --danger-soft: rgba(255, 107, 138, 0.12);
+  --warn: #f0c66b;          /* 月金 */
+  --shadow: 0 18px 46px rgba(60, 30, 120, 0.3);
+}
+
+/* 幽蓝夜空底 + 三团极光辉光（静态基底） */
+:root[data-theme="mystic"] body {
+  background-color: var(--bg-0);
+  background-image:
+    radial-gradient(1000px 700px at 15% 8%, rgba(120, 90, 220, 0.22), transparent 60%),
+    radial-gradient(900px 650px at 88% 18%, rgba(90, 200, 200, 0.16), transparent 60%),
+    radial-gradient(1100px 820px at 60% 104%, rgba(150, 110, 255, 0.16), transparent 62%);
+  background-attachment: fixed, fixed, fixed;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+}
+
+/* 灵逸飘动·其一：缓缓漂移+呼吸缩放的星雾（固定全屏，垫在内容后） */
+:root[data-theme="mystic"] body::before {
+  content: "";
+  position: fixed;
+  inset: -25%;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(600px 600px at 30% 40%, rgba(140, 110, 240, 0.16), transparent 60%),
+    radial-gradient(520px 520px at 70% 60%, rgba(110, 220, 205, 0.12), transparent 60%),
+    radial-gradient(480px 480px at 50% 82%, rgba(180, 140, 255, 0.12), transparent 60%);
+  animation: mystic-drift 26s ease-in-out infinite alternate;
+}
+
+/* 灵逸飘动·其二：微微上浮的灵光点 */
+:root[data-theme="mystic"] body::after {
+  content: "";
+  position: fixed;
+  inset: -10% 0 0 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.85;
+  background-repeat: no-repeat;
+  background-image:
+    radial-gradient(2px 2px at 20% 30%, rgba(200, 230, 255, 0.7), transparent),
+    radial-gradient(2px 2px at 75% 22%, rgba(190, 160, 255, 0.6), transparent),
+    radial-gradient(1.5px 1.5px at 50% 58%, rgba(160, 240, 220, 0.6), transparent),
+    radial-gradient(2px 2px at 85% 74%, rgba(220, 210, 255, 0.55), transparent),
+    radial-gradient(1.5px 1.5px at 15% 80%, rgba(180, 220, 255, 0.55), transparent),
+    radial-gradient(1.5px 1.5px at 40% 14%, rgba(200, 180, 255, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 62% 88%, rgba(170, 235, 225, 0.5), transparent);
+  animation: mystic-float 20s ease-in-out infinite alternate;
+}
+
+@keyframes mystic-drift {
+  0%   { transform: translate3d(-2%, -1%, 0) scale(1); }
+  50%  { transform: translate3d(2%, 1.5%, 0) scale(1.06); }
+  100% { transform: translate3d(-1%, 2%, 0) scale(1.02); }
+}
+
+@keyframes mystic-float {
+  0%   { transform: translateY(0) translateX(0); }
+  100% { transform: translateY(-20px) translateX(7px); }
+}
+
+/* 尊重系统「减少动态效果」偏好：关掉飘动，保留静态玄幻底 */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="mystic"] body::before,
+  :root[data-theme="mystic"] body::after {
+    animation: none;
+  }
+}
+
+/* 侧栏/顶栏半透，透出夜空与星雾 */
+:root[data-theme="mystic"] .sidebar {
+  background: linear-gradient(180deg, rgba(16, 16, 42, 0.72), rgba(10, 10, 28, 0.72));
+  backdrop-filter: blur(6px);
+  border-right-color: rgba(150, 130, 255, 0.2);
+}
+:root[data-theme="mystic"] .topbar {
+  background: rgba(14, 13, 36, 0.55);
+  border-bottom-color: rgba(127, 227, 208, 0.18);
+}
+
+/* 标题用衬线书法体，添古意仙气 */
+:root[data-theme="mystic"] h1,
+:root[data-theme="mystic"] h2,
+:root[data-theme="mystic"] h3,
+:root[data-theme="mystic"] .brand-name {
+  font-family: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", serif;
+  letter-spacing: 0.03em;
+}
+:root[data-theme="mystic"] .brand-name {
+  text-shadow: 0 0 14px rgba(185, 140, 255, 0.5);
+}
+
+/* 主按钮：青→紫极光渐变 + 柔光 */
+:root[data-theme="mystic"] .btn.primary {
+  color: #0a0a1c;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 22px rgba(127, 227, 208, 0.32);
+}
+:root[data-theme="mystic"] .btn.primary:hover:not(:disabled) {
+  box-shadow: 0 0 30px rgba(185, 140, 255, 0.45);
+}
+
+/* 卡片：通透玻璃 + 紫霭描边 + 顶部青紫流光条，浮于星雾之上 */
+:root[data-theme="mystic"] .card,
+:root[data-theme="mystic"] .studio-card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(26, 24, 58, 0.58), rgba(16, 15, 40, 0.66));
+  border: 1px solid rgba(150, 130, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(127, 227, 208, 0.05), 0 16px 44px rgba(50, 25, 110, 0.28);
+  backdrop-filter: blur(7px);
+}
+:root[data-theme="mystic"] .card::before,
+:root[data-theme="mystic"] .studio-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent);
+  opacity: 0.6;
   pointer-events: none;
 }
