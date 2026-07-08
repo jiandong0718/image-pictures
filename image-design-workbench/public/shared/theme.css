@@ -156,6 +156,13 @@ h3 {
   text-transform: uppercase;
 }
 
+/* 导航区吃掉侧栏剩余高度并在菜单过多时内部滚动，防止最底部菜单项被视口截断。 */
+.nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .nav-group {
   margin-top: 14px;
   padding: 0 10px;
@@ -205,7 +212,8 @@ h3 {
 }
 
 .nav-spacer {
-  flex: 1;
+  /* 导航区已用 flex:1 吃满高度，这里不再需要撑开；留 0 高度即可（保留标记兼容旧结构）。 */
+  flex: 0 0 0;
 }
 
 .nav-foot {
@@ -997,6 +1005,9 @@ h3 {
     display: flex;
     flex-wrap: wrap;
     gap: 4px 6px;
+    flex: initial;
+    min-height: initial;
+    overflow: visible;
   }
   .nav-group,
   .nav-spacer,
