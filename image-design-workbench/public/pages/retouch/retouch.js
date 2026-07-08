@@ -193,7 +193,7 @@ function renderCanvas() {
     const base = active?.before || previewUrl || "";
     stage = `<div class="rt-stage rt-stage-loading">
       ${base ? `<img class="rt-stage-img dim" src="${base}" alt="" />` : ""}
-      <div class="rt-loading"><span class="spinner"></span>正在处理…</div>
+      <div class="rt-loading">正在处理…<div class="progress"></div></div>
     </div>`;
   } else if (active) {
     stage = `<div class="rt-stage">

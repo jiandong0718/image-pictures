@@ -32,17 +32,24 @@ function renderEndpoints(endpoints) {
     return;
   }
   els.endpointList.innerHTML = list
-    .map((ep) => `
-      <div class="endpoint-item">
+    .map((ep) => {
+      const enabled = ep.enabled !== false;
+      return `
+      <div class="endpoint-item${enabled ? "" : " disabled"}">
         <div class="endpoint-meta">
-          <div class="endpoint-url">${esc(ep.apiBase)}</div>
-          <div class="endpoint-sub">${ep.label ? esc(ep.label) + " · " : ""}Key ${esc(ep.keyMasked)}</div>
+          <div class="endpoint-url">${esc(ep.apiBase)}${enabled ? "" : ' <span class="endpoint-tag">已停用</span>'}</div>
+          <div class="endpoint-sub">${ep.label ? esc(ep.label) + " · " : ""}模型 ${ep.model ? esc(ep.model) : "默认"} · Key ${esc(ep.keyMasked)}</div>
         </div>
+        <button type="button" class="btn sm" data-toggle="${esc(ep.id)}" data-enabled="${enabled ? "1" : "0"}">${enabled ? "停用" : "启用"}</button>
         <button type="button" class="btn danger sm" data-del="${esc(ep.id)}">删除</button>
-      </div>`)
+      </div>`;
+    })
     .join("");
   els.endpointList.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", () => deleteEndpoint(btn.dataset.del));
+  });
+  els.endpointList.querySelectorAll("[data-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => toggleEndpoint(btn.dataset.toggle, btn.dataset.enabled !== "1"));
   });
 }
 
@@ -57,9 +64,10 @@ async function loadStatus() {
     }
   }
   try {
-    const [img, prompt] = await Promise.all([
+    const [img, prompt, video] = await Promise.all([
       apiGet("/api/image-config"),
       apiGet("/api/prompt-config"),
+      apiGet("/api/video-config"),
     ]);
     renderEndpoints(img.endpoints);
     if (img.schedule) {
@@ -70,6 +78,8 @@ async function loadStatus() {
       els.promptUrl.value = prompt.config.apiBase;
     }
     els.promptModel.value = prompt.config?.model || "gpt-4o-mini";
+    badge(els.videoStatus, video.config?.uploaded);
+    els.videoModel.value = video.config?.model || "agnes-video-v2.0";
   } catch (err) {
     setMsg(els.imageMsg, err.message, "error");
   }
@@ -87,6 +97,7 @@ async function addEndpoint(e) {
   const apiBase = els.apiUrl.value.trim();
   const apiKey = els.apiKey.value.trim();
   const label = els.apiLabel.value.trim();
+  const model = els.apiModel.value.trim();
   if (!apiBase) {
     setMsg(els.imageMsg, "API URL 不能为空", "error");
     return;
@@ -98,10 +109,11 @@ async function addEndpoint(e) {
   els.saveImage.disabled = true;
   setMsg(els.imageMsg, "添加中…");
   try {
-    const data = await apiPost("/api/image-config", { action: "add", apiBase, apiKey, label });
+    const data = await apiPost("/api/image-config", { action: "add", apiBase, apiKey, label, model });
     renderEndpoints(data.endpoints);
     els.apiUrl.value = "";
     els.apiKey.value = "";
+    els.apiModel.value = "";
     els.apiLabel.value = "";
     setMsg(els.imageMsg, "端点已添加", "success");
   } catch (err) {
@@ -120,6 +132,17 @@ async function deleteEndpoint(id) {
     const data = await apiPost("/api/image-config", { action: "delete", id });
     renderEndpoints(data.endpoints);
     setMsg(els.imageMsg, "端点已删除", "success");
+  } catch (err) {
+    setMsg(els.imageMsg, err.message, "error");
+  }
+}
+
+async function toggleEndpoint(id, enabled) {
+  setMsg(els.imageMsg, enabled ? "启用中…" : "停用中…");
+  try {
+    const data = await apiPost("/api/image-config", { action: "toggle", id, enabled });
+    renderEndpoints(data.endpoints);
+    setMsg(els.imageMsg, enabled ? "端点已启用" : "端点已停用", "success");
   } catch (err) {
     setMsg(els.imageMsg, err.message, "error");
   }
@@ -164,6 +187,29 @@ async function savePrompt(e) {
   }
 }
 
+async function saveVideo(e) {
+  e.preventDefault();
+  const apiKey = els.videoKey.value.trim();
+  const model = els.videoModel.value.trim() || "agnes-video-v2.0";
+  if (!apiKey) {
+    setMsg(els.videoMsg, "生视频 API Key 不能为空", "error");
+    return;
+  }
+  els.saveVideo.disabled = true;
+  setMsg(els.videoMsg, "保存中…");
+  try {
+    const data = await apiPost("/api/video-config", { apiKey, model });
+    badge(els.videoStatus, data.config?.uploaded);
+    els.videoModel.value = data.config?.model || model;
+    els.videoKey.value = "";
+    setMsg(els.videoMsg, "生视频配置已生效", "success");
+  } catch (err) {
+    setMsg(els.videoMsg, err.message, "error");
+  } finally {
+    els.saveVideo.disabled = false;
+  }
+}
+
 async function resetCache() {
   if (!window.confirm("这会删除所有已生成图片文件，套图编号从 001 重新开始。继续吗？")) {
     return;
@@ -188,12 +234,19 @@ async function main() {
   Object.assign(els, {
     imageForm: document.getElementById("imageForm"),
     promptForm: document.getElementById("promptForm"),
+    videoForm: document.getElementById("videoForm"),
     imageStatus: document.getElementById("imageStatus"),
     promptStatus: document.getElementById("promptStatus"),
+    videoStatus: document.getElementById("videoStatus"),
+    videoKey: document.getElementById("videoKey"),
+    videoModel: document.getElementById("videoModel"),
+    videoMsg: document.getElementById("videoMsg"),
+    saveVideo: document.getElementById("saveVideo"),
     schedule: document.getElementById("schedule"),
     endpointList: document.getElementById("endpointList"),
     apiUrl: document.getElementById("apiUrl"),
     apiKey: document.getElementById("apiKey"),
+    apiModel: document.getElementById("apiModel"),
     apiLabel: document.getElementById("apiLabel"),
     promptUrl: document.getElementById("promptUrl"),
     promptKey: document.getElementById("promptKey"),
@@ -207,6 +260,7 @@ async function main() {
   });
   els.imageForm.addEventListener("submit", addEndpoint);
   els.promptForm.addEventListener("submit", savePrompt);
+  els.videoForm.addEventListener("submit", saveVideo);
   els.schedule.addEventListener("change", changeSchedule);
   els.resetCache.addEventListener("click", resetCache);
   els.promptUrl.addEventListener("input", saveDraft);

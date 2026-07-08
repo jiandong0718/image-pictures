@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 生视频 · AI 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+    <script src="/shared/theme-init.js"></script>
+    <link rel="stylesheet" href="/pages/video/video.css" />
+  </head>
+  <body>
+    <div id="page">
+      <div class="vid-studio">
+        <!-- 中间画布：模式切换 + 提示词 + 结果 -->
+        <div class="card vid-canvas">
+          <div class="vid-canvas-head">
+            <div>
+              <div class="section-label">AI 生视频</div>
+              <div class="card-title" id="modeTitle">文生视频</div>
+            </div>
+            <span class="badge" id="canvasBadge">就绪</span>
+          </div>
+
+          <div class="vid-modes" id="modes">
+            <button type="button" class="vid-mode active" data-mode="text">文生视频</button>
+            <button type="button" class="vid-mode" data-mode="image">图生视频</button>
+          </div>
+
+          <!-- 图生视频：源图上传（仅图生模式显示） -->
+          <div class="vid-source" id="sourceBlock" hidden>
+            <div class="section-label">源图</div>
+            <label class="vid-drop" id="sourceDrop">
+              <input type="file" id="sourceInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+              <div class="vid-drop-inner" id="sourceInner">
+                <span class="vid-drop-plus">＋</span>
+                <span class="vid-drop-hint">点击上传首帧参考图（PNG / JPG / WEBP）</span>
+              </div>
+            </label>
+          </div>
+
+          <label class="field vid-prompt-field">
+            <span>提示词</span>
+            <textarea class="textarea" id="prompt" rows="3" placeholder="描述画面内容与镜头运动：主体、动作、环境、光线、运镜…"></textarea>
+          </label>
+
+          <div class="vid-stage" id="stage"></div>
+
+          <div class="vid-recent" id="recentBlock" hidden>
+            <div class="section-label">最近生成</div>
+            <div class="vid-recent-grid" id="recentGrid"></div>
+          </div>
+        </div>
+
+        <!-- 右侧：控制面板 -->
+        <div class="card vid-panel">
+          <div class="vid-panel-scroll">
+            <div class="section-label">画面比例</div>
+            <div class="vid-chips" id="ratios"></div>
+
+            <div class="section-label" style="margin-top: 18px">清晰度</div>
+            <div class="vid-chips" id="qualities"></div>
+
+            <div class="section-label" style="margin-top: 18px">时长</div>
+            <div class="vid-chips" id="durations"></div>
+
+            <details class="vid-advanced">
+              <summary>高级参数<span class="vid-adv-hint">（可选）</span></summary>
+              <div class="vid-advanced-body">
+                <label class="field">
+                  <span>负向提示词</span>
+                  <textarea class="textarea" id="negative" rows="2" placeholder="要规避的内容，如：模糊、畸变、文字水印"></textarea>
+                </label>
+                <div class="field-grid-2">
+                  <label class="field">
+                    <span>种子（seed）</span>
+                    <input class="input" id="seed" type="number" step="1" placeholder="留空随机" />
+                  </label>
+                  <label class="field">
+                    <span>推理步数</span>
+                    <input class="input" id="steps" type="number" step="1" min="1" placeholder="默认" />
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <p class="vid-note">生成的是<strong>无声视频</strong>（接口不含音频），配音配乐需后期合成。</p>
+          </div>
+
+          <div class="vid-panel-foot">
+            <p class="msg" id="msg"></p>
+            <button class="btn primary full" id="generateBtn" type="button">生成视频</button>
+            <p class="card-desc" id="configHint" style="margin-top: 10px"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/pages/video/video.js"></script>
+  </body>
+</html>

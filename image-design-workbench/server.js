@@ -16,6 +16,8 @@ const auth = require("./lib/auth");
 const imageConfig = require("./lib/image-config");
 const imageSets = require("./lib/image-sets");
 const images = require("./lib/images");
+const videos = require("./lib/videos");
+const videoClient = require("./lib/video-client");
 const { createAccountApi } = require("./lib/api-accounts");
 
 const ROOT_DIR = __dirname;
@@ -113,6 +115,13 @@ const MAX_IMAGE_SPEC_SIZE = 4096;
 const PLAYGROUND_IMAGE_COUNT_MIN = 1;
 const PLAYGROUND_IMAGE_COUNT_MAX = 4;
 const PROMPT_EXTRACT_CREDIT_COST = 1;
+// 生视频接入 Agnes AI：地址服务端固定，页面只填 Key（与生图端点解耦）。
+const FIXED_VIDEO_API_BASE = process.env.VIDEO_API_BASE || "https://apihub.agnes-ai.com/v1";
+// 生视频比生图重得多，单条固定扣此积分数。ponytail: 先用固定值，要按时长/分辨率阶梯计费再拆。
+const VIDEO_CREDIT_COST = Number(process.env.VIDEO_CREDIT_COST) || 5;
+const VIDEO_GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
+// 轮询基础间隔。Agnes 的 /agnesapi 有频率限制，太密会 429；撞到限频时代码里会再叠加退避。
+const VIDEO_POLL_INTERVAL_MS = 8000;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_PROXY_UPLOAD_BYTES = 80 * 1024 * 1024;
 const UPLOAD_MIME_EXT = {
@@ -250,7 +259,10 @@ const MIME_TYPES = {
   ".webp": "image/webp",
   ".gif": "image/gif",
   ".svg": "image/svg+xml; charset=utf-8",
+  ".mp4": "video/mp4",
 };
+
+const VIDEO_FILE_PATTERN = /^[a-zA-Z0-9._-]+\.mp4$/i;
 
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -461,6 +473,7 @@ function buildImageGeneratorArgs({
   count = 1,
   background = "",
   system = "",
+  model = "",
 }) {
   const args = [
     skillScript,
@@ -478,6 +491,10 @@ function buildImageGeneratorArgs({
     "--timeout",
     "180",
   ];
+  // 每组端点自带的模型名；留空则不传 --model，脚本回退到全局默认（CUSTOM_IMAGE_MODEL/.env/内置）。
+  if (cleanPrompt(model)) {
+    args.push("--model", cleanPrompt(model));
+  }
   if (background) {
     args.push("--background", background);
   }
@@ -1387,6 +1404,7 @@ async function resetImageSetsNow(ownerUserId) {
   );
   await imageSets.removeOwned(ownerUserId);
   await images.removeByOwner(ownerUserId);
+  await videos.removeByOwner(ownerUserId);
   const imageSet = await allocateImageSetNow(ownerUserId);
   return { removedCount: ownedIds.length, imageSet };
 }
@@ -1552,6 +1570,7 @@ async function generatePlaygroundImages(rawRequest = {}, user) {
     count: request.count,
     background: request.background,
     system: request.system,
+    model: apiConfig.model,
   });
 
   if (endpoint === "edits") {
@@ -1631,6 +1650,7 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
     outputDir,
     filenamePrefix: config.prefix,
     requestSize: normalizedSpec.requestSize,
+    model: apiConfig.model,
   });
 
   let sourceMainId = "";
@@ -1658,6 +1678,238 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
     throw error;
   }
   return makeImageRecord(imagePath, type, normalizedPrompt, sourceMainId);
+}
+
+// ---------- 生视频（Agnes AI）----------
+// 比例/清晰度/时长都用预设，服务端据此算 width/height/num_frames，不信任前端几何，避免 422/500。
+const VIDEO_RATIOS = { "16:9": [16, 9], "9:16": [9, 16], "1:1": [1, 1], "4:3": [4, 3], "3:4": [3, 4] };
+const VIDEO_QUALITY_BASE = { "480p": 854, "720p": 1280, "1080p": 1920 }; // 长边像素
+const VIDEO_DURATIONS = { "3s": 81, "5s": 121, "10s": 241 }; // 帧数（均满足 8n+1）
+const VIDEO_FPS = 24;
+const VIDEO_SOURCE_PREFIX = "video-source";
+
+function round8(n) {
+  return Math.max(8, Math.round(n / 8) * 8);
+}
+
+// 由比例 + 清晰度算出 width/height（长边取该档基准，短边按比例，取 8 的倍数）。
+function computeVideoSize(ratio, quality) {
+  const [rw, rh] = VIDEO_RATIOS[ratio] || VIDEO_RATIOS["16:9"];
+  const base = VIDEO_QUALITY_BASE[quality] || VIDEO_QUALITY_BASE["720p"];
+  let width = base;
+  let height = base;
+  if (rw >= rh) {
+    height = (base * rh) / rw;
+  } else {
+    width = (base * rw) / rh;
+  }
+  return { width: round8(width), height: round8(height) };
+}
+
+function videoStamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const ymd = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const hms = `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  return { ymd, hms, iso: d.toISOString() };
+}
+
+function makeVideoRecord({ filePath, mode, prompt, seconds, size }) {
+  const id = makeImageId(filePath);
+  const filename = path.basename(filePath);
+  const imageSetId = getImageSetIdFromImageId(id);
+  const { iso } = videoStamp();
+  return {
+    id,
+    mode,
+    prompt,
+    imageSetId,
+    filename,
+    seconds: seconds || "",
+    size: size || "",
+    url: `/api/videos/file/${encodeURIComponent(id)}`,
+    downloadUrl: `/api/videos/download/${encodeURIComponent(id)}`,
+    createdAt: iso,
+  };
+}
+
+// 把上传的图生视频源图落进新套图，返回可引用的图片记录（走 /api/images/file 预览）。
+async function saveVideoSource(req, user) {
+  const upload = await readMultipartFile(req, "image");
+  const ext = inferUploadedImageExt(upload.data, upload.mime);
+  if (!ext) {
+    throw new Error("只支持 PNG、JPG、WEBP 或 GIF 图片");
+  }
+  const imageSet = await allocateImageSet(user.id);
+  const { ymd, hms } = videoStamp();
+  const filePath = path.join(imageSet.outputDir, `${VIDEO_SOURCE_PREFIX}-${ymd}-${hms}.${ext}`);
+  await fsp.writeFile(filePath, upload.data);
+  const id = makeImageId(filePath);
+  return {
+    id,
+    imageSetId: imageSet.folderName,
+    url: `/api/images/file/${encodeURIComponent(id)}`,
+    filename: path.basename(filePath),
+  };
+}
+
+// 读源图 -> data URL，供 Agnes 图生视频。ponytail: 传 data URL；若接口只认裸 base64 再改。
+async function readImageAsDataUrl(filePath) {
+  const data = await fsp.readFile(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  const mime = MIME_TYPES[ext] || "image/png";
+  return `data:${mime};base64,${data.toString("base64")}`;
+}
+
+async function downloadVideoFile(url, destPath) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`下载视频失败（HTTP ${res.status}）`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  await fsp.writeFile(destPath, buf);
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 提交 -> 轮询 -> 下载 -> 落盘 -> 记库。返回视频记录。整个流程跑在后台任务里（见 /api/videos）。
+async function generateVideo({ user, mode, prompt, ratio, quality, duration, negativePrompt, seed, steps, sourceImageId }) {
+  const normalizedPrompt = cleanPrompt(prompt);
+  if (!normalizedPrompt) {
+    throw new Error("视频提示词不能为空");
+  }
+  const config = await imageConfig.getRequiredVideoConfig();
+  const { width, height } = computeVideoSize(ratio, quality);
+  const numFrames = VIDEO_DURATIONS[duration] || VIDEO_DURATIONS["5s"];
+
+  // 确定套图目录：图生视频落在源图同套图，文生视频新分配一个。
+  let imageSetId;
+  let image = "";
+  if (mode === "image") {
+    if (!sourceImageId) {
+      throw new Error("图生视频需要先上传一张源图");
+    }
+    imageSetId = getImageSetIdFromImageId(sourceImageId);
+    await assertOwnsImageSet(user, imageSetId);
+    const sourcePath = resolveOutputFile(sourceImageId);
+    await fsp.access(sourcePath, fs.constants.R_OK);
+    image = await readImageAsDataUrl(sourcePath);
+  } else {
+    const imageSet = await allocateImageSet(user.id);
+    imageSetId = imageSet.folderName;
+  }
+  const outputDir = resolveImageSetDir(imageSetId);
+  await fsp.mkdir(outputDir, { recursive: true });
+
+  const { videoId } = await videoClient.submitVideo({
+    apiBase: FIXED_VIDEO_API_BASE,
+    apiKey: config.apiKey,
+    model: config.model,
+    prompt: normalizedPrompt,
+    image,
+    width,
+    height,
+    numFrames,
+    frameRate: VIDEO_FPS,
+    negativePrompt: cleanPrompt(negativePrompt),
+    seed: Number.isFinite(Number(seed)) && String(seed).trim() !== "" ? Number(seed) : undefined,
+    steps: Number.isFinite(Number(steps)) && String(steps).trim() !== "" ? Number(steps) : undefined,
+  });
+
+  const deadline = Date.now() + VIDEO_GENERATION_TIMEOUT_MS;
+  let last;
+  let backoff = 0; // 撞到 429/网关抖动时，在基础间隔上叠加的退避（递增，最多 +30s）
+  while (true) {
+    await sleep(VIDEO_POLL_INTERVAL_MS + backoff);
+    try {
+      last = await videoClient.fetchVideoStatus({ apiBase: FIXED_VIDEO_API_BASE, apiKey: config.apiKey, videoId });
+    } catch (error) {
+      // 限频/网关抖动：退避后继续轮询（视频还在生成），不把整个任务判失败。硬错误才抛出。
+      if (error.retryable && Date.now() <= deadline) {
+        backoff = Math.min(backoff + VIDEO_POLL_INTERVAL_MS, 30000);
+        continue;
+      }
+      throw error;
+    }
+    backoff = 0;
+    if (last.status === "completed") {
+      break;
+    }
+    if (last.status === "failed") {
+      throw new Error(last.error || "视频生成失败");
+    }
+    if (Date.now() > deadline) {
+      throw new Error("视频生成超时，请稍后重试");
+    }
+  }
+  if (!last.url) {
+    throw new Error("视频已完成但未返回下载地址");
+  }
+
+  const prefix = mode === "image" ? "image-to-video" : "text-to-video";
+  const { ymd, hms } = videoStamp();
+  const destPath = path.join(outputDir, `${prefix}-${ymd}-${hms}-01.mp4`);
+  await downloadVideoFile(last.url, destPath);
+
+  const record = makeVideoRecord({
+    filePath: destPath,
+    mode,
+    prompt: normalizedPrompt,
+    seconds: last.seconds,
+    size: last.size || `${width}x${height}`,
+  });
+  try {
+    await videos.recordVideo({
+      id: record.id,
+      ownerUserId: user.id,
+      imageSetId: record.imageSetId,
+      mode,
+      prompt: normalizedPrompt,
+      filename: record.filename,
+      seconds: record.seconds,
+      size: record.size,
+    });
+  } catch (error) {
+    console.error("记录视频失败：", error.message);
+  }
+  return record;
+}
+
+// 生视频文件按 <套图>/<文件名>.mp4 组织；只允许 mp4，避免路径穿越。
+function resolveVideoFile(id) {
+  if (typeof id !== "string") {
+    throw new Error("视频 ID 不正确");
+  }
+  const parts = id.split(/[\\/]/).filter(Boolean);
+  if (parts.length !== 2 || !IMAGE_SET_ID_PATTERN.test(parts[0]) || !VIDEO_FILE_PATTERN.test(parts[1])) {
+    throw new Error("视频 ID 不正确");
+  }
+  const filePath = path.resolve(OUTPUT_DIR, parts[0], parts[1]);
+  if (path.dirname(filePath) !== path.resolve(OUTPUT_DIR, parts[0])) {
+    throw new Error("视频路径不正确");
+  }
+  return filePath;
+}
+
+async function serveVideo(req, res, id, attachment, user) {
+  try {
+    await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
+    const filePath = resolveVideoFile(id);
+    const data = await fsp.readFile(filePath);
+    const headers = {
+      "Content-Type": "video/mp4",
+      "Content-Length": data.length,
+      "Cache-Control": "private, max-age=604800, immutable",
+    };
+    if (attachment) {
+      headers["Content-Disposition"] = `attachment; filename="${path.basename(filePath)}"`;
+    }
+    // ponytail: 整段返回，不支持 Range；短片够用，要拖动播放/大文件再补 Range。
+    res.writeHead(200, headers);
+    res.end(data);
+  } catch (error) {
+    sendError(res, 404, "视频不存在", error.message);
+  }
 }
 
 function runProcess(command, args, cwd, env = process.env) {
@@ -1724,6 +1976,7 @@ const PAGE_ROUTES = {
   "/studio/3d": { dir: "studio-3d", auth: "user" },
   "/prompt": { dir: "prompt", auth: "user" },
   "/playground": { dir: "playground", auth: "user" },
+  "/video": { dir: "video", auth: "user" },
   "/retouch": { dir: "retouch", auth: "user" },
   "/full-playground": { dir: "full-playground", auth: "user" },
   "/account": { dir: "account", auth: "user" },
@@ -2156,6 +2409,8 @@ async function handleApi(req, res, pathname, searchParams) {
     try {
       if (action === "delete") {
         await imageConfig.deleteEndpoint(payload.id);
+      } else if (action === "toggle") {
+        await imageConfig.setEndpointEnabled(payload.id, Boolean(payload.enabled));
       } else if (action === "schedule") {
         await imageConfig.setSchedule(payload.schedule);
       } else {
@@ -2203,6 +2458,36 @@ async function handleApi(req, res, pathname, searchParams) {
       ok: true,
       config,
     });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/video-config") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      config: await imageConfig.getVideoConfigSummary(),
+      cost: VIDEO_CREDIT_COST,
+    });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/video-config") {
+    const admin = await accountApi.requireAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+    const payload = await readJson(req);
+    let config;
+    try {
+      config = await imageConfig.setVideoConfig(payload);
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+    sendJson(res, 200, { ok: true, config });
     return;
   }
 
@@ -2363,6 +2648,113 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     const id = decodeURIComponent(pathname.replace("/api/images/download/", ""));
     await serveImage(req, res, id, true, user);
+    return;
+  }
+
+  // 生视频文件：与生图分开的 mp4 服务（IMAGE_FILE_PATTERN 不含 mp4）。
+  if (req.method === "GET" && pathname.startsWith("/api/videos/file/")) {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const id = decodeURIComponent(pathname.replace("/api/videos/file/", ""));
+    await serveVideo(req, res, id, false, user);
+    return;
+  }
+
+  if (req.method === "GET" && pathname.startsWith("/api/videos/download/")) {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const id = decodeURIComponent(pathname.replace("/api/videos/download/", ""));
+    await serveVideo(req, res, id, true, user);
+    return;
+  }
+
+  // 图生视频源图上传（先传图拿 id，再带 id 提交生成）。
+  if (req.method === "POST" && pathname === "/api/videos/source") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    try {
+      const image = await saveVideoSource(req, user);
+      sendJson(res, 200, { ok: true, image });
+    } catch (error) {
+      sendError(res, 400, error.message);
+    }
+    return;
+  }
+
+  // 最近生成的视频列表（避免刷新丢失已扣费的视频）。
+  if (req.method === "GET" && pathname === "/api/videos") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const page = Number(searchParams.get("page")) || 1;
+    const pageSize = Number(searchParams.get("pageSize")) || 12;
+    const data = await videos.listVideos(user.id, { page, pageSize });
+    const items = data.items.map((row) => ({
+      id: row.id,
+      mode: row.mode,
+      prompt: row.prompt || "",
+      seconds: row.seconds || "",
+      size: row.size || "",
+      createdAt: row.created_at,
+      url: `/api/videos/file/${encodeURIComponent(row.id)}`,
+      downloadUrl: `/api/videos/download/${encodeURIComponent(row.id)}`,
+    }));
+    sendJson(res, 200, { ok: true, items, pagination: { page: data.page, pageSize: data.pageSize, total: data.total } });
+    return;
+  }
+
+  // 生视频：提交后返回 taskId，后台跑 Agnes 提交/轮询/下载，前端轮询 /api/tasks/:id 取结果。
+  if (req.method === "POST" && pathname === "/api/videos") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const payload = await readJson(req);
+    try {
+      await imageConfig.getRequiredVideoConfig();
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+    if (!cleanPrompt(payload.prompt)) {
+      sendError(res, 400, "视频提示词不能为空");
+      return;
+    }
+    try {
+      await accounts.assertEnoughCredits(user.id, VIDEO_CREDIT_COST);
+    } catch (error) {
+      sendError(res, error.statusCode || 402, error.message);
+      return;
+    }
+    const taskId = createGenerationTask(user.id);
+    sendJson(res, 200, { ok: true, taskId });
+    (async () => {
+      try {
+        const video = await generateVideo({
+          user,
+          mode: payload.mode === "image" ? "image" : "text",
+          prompt: payload.prompt,
+          ratio: payload.ratio,
+          quality: payload.quality,
+          duration: payload.duration,
+          negativePrompt: payload.negativePrompt,
+          seed: payload.seed,
+          steps: payload.steps,
+          sourceImageId: payload.sourceImageId,
+        });
+        const balance = await accounts.consumeCredits(user.id, VIDEO_CREDIT_COST, "生成视频");
+        finishGenerationTask(taskId, { video, credits: balance });
+      } catch (error) {
+        failGenerationTask(taskId, error.message);
+      }
+    })();
     return;
   }
 
@@ -2714,6 +3106,8 @@ if (require.main === module) {
     .then(async () => imageSets.init(await listExistingImageSetIds()))
     // 图库元数据表建好。
     .then(() => images.init())
+    // 生视频元数据表建好。
+    .then(() => videos.init())
     .then(() => {
       server.listen(PORT, HOST, () => {
         console.log(`AI 图像设计工作台已启动：http://${HOST}:${PORT}`);
@@ -2738,6 +3132,8 @@ module.exports = {
   buildApiEndpoint,
   buildImageGeneratorArgs,
   buildImageGeneratorEnv,
+  computeVideoSize,
+  VIDEO_DURATIONS,
   buildPromptExtractionRequest,
   callPromptExtractionApi,
   clearOutputDirContents,

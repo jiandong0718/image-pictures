@@ -6,6 +6,7 @@ import { fetchMe, logout } from "./api.js";
 const NAV = [
   { group: "工具" },
   { href: "/playground", label: "自由生图", key: "playground" },
+  { href: "/video", label: "AI 生视频", key: "video" },
   { href: "/retouch", label: "AI 修图", key: "retouch" },
   { href: "/full-playground", label: "绘图聚集地", key: "full-playground" },
   { href: "/prompt", label: "提示词提取", key: "prompt" },

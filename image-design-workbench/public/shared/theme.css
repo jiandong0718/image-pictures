@@ -891,6 +891,39 @@ h3 {
   }
 }
 
+/* 不定量进度条：生图/生视频/修图/提取都是「提交->轮询到完成」的黑盒，拿不到真实百分比，
+   用来回滑动的光带诚实表达「进行中」，而不是编一个假的百分比。 */
+.progress {
+  position: relative;
+  width: 100%;
+  max-width: 260px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(var(--tint), 0.1);
+  overflow: hidden;
+}
+
+.progress::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent);
+  animation: progress-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
 .empty {
   display: flex;
   flex-direction: column;

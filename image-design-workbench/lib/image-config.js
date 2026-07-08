@@ -42,7 +42,8 @@ function normalizeEndpointInput(raw = {}) {
     throw new Error("生图 API Key 不能为空");
   }
   const label = clean(raw.label).slice(0, 100);
-  return { apiBase, apiKey, label };
+  const model = clean(raw.model).slice(0, 100); // 该组端点用的模型名，留空则走全局默认
+  return { apiBase, apiKey, label, model };
 }
 
 // key 只在配置中心展示脱敏形式，不回传明文。
@@ -76,6 +77,17 @@ function selectEndpoint(rows, { schedule = SCHEDULE_ROUND_ROBIN, counter = 0, ra
 
 // ---------- DB 层 ----------
 
+// 老库缺列就补上（列已存在时 MySQL 报 1060，忽略即可）。
+async function ensureColumn(table, ddl) {
+  try {
+    await getPool().query(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  } catch (error) {
+    if (error && error.errno !== 1060) {
+      throw error;
+    }
+  }
+}
+
 async function createTables() {
   const db = getPool();
   await db.query(`
@@ -84,11 +96,15 @@ async function createTables() {
       api_base VARCHAR(500) NOT NULL,
       api_key VARCHAR(500) NOT NULL,
       label VARCHAR(100) NOT NULL DEFAULT '',
+      model VARCHAR(100) NOT NULL DEFAULT '',
       enabled TINYINT(1) NOT NULL DEFAULT 1,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
   `);
+  // 已有部署的老表补齐新列（model 每组端点自带的模型名；enabled 兼容更早版本）。
+  await ensureColumn("image_endpoints", "model VARCHAR(100) NOT NULL DEFAULT '' AFTER label");
+  await ensureColumn("image_endpoints", "enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER model");
   await db.query(`
     CREATE TABLE IF NOT EXISTS app_settings (
       k VARCHAR(64) NOT NULL,
@@ -112,28 +128,39 @@ async function setSetting(key, value) {
 
 async function listEndpoints() {
   const [rows] = await getPool().query(
-    "SELECT id, api_base, api_key, label, enabled, created_at FROM image_endpoints WHERE enabled = 1 ORDER BY id ASC",
+    "SELECT id, api_base, api_key, label, model, enabled, created_at FROM image_endpoints WHERE enabled = 1 ORDER BY id ASC",
   );
   return rows;
 }
 
-// 配置中心展示用：key 脱敏。
+// 配置中心展示用：列出全部端点（含已停用的，供 admin 重新启用），key 脱敏。
 async function listEndpointsForDisplay() {
-  const rows = await listEndpoints();
+  const [rows] = await getPool().query(
+    "SELECT id, api_base, api_key, label, model, enabled, created_at FROM image_endpoints ORDER BY id ASC",
+  );
   return rows.map((row) => ({
     id: row.id,
     apiBase: row.api_base,
     keyMasked: maskKey(row.api_key),
     label: row.label || "",
+    model: row.model || "",
+    enabled: Boolean(row.enabled),
     createdAt: row.created_at,
   }));
 }
 
+async function setEndpointEnabled(id, enabled) {
+  await getPool().query(
+    "UPDATE image_endpoints SET enabled = ? WHERE id = ?",
+    [enabled ? 1 : 0, Number(id)],
+  );
+}
+
 async function addEndpoint(raw) {
-  const { apiBase, apiKey, label } = normalizeEndpointInput(raw);
+  const { apiBase, apiKey, label, model } = normalizeEndpointInput(raw);
   const [result] = await getPool().query(
-    "INSERT INTO image_endpoints (api_base, api_key, label) VALUES (?, ?, ?)",
-    [apiBase, apiKey, label],
+    "INSERT INTO image_endpoints (api_base, api_key, label, model) VALUES (?, ?, ?, ?)",
+    [apiBase, apiKey, label, model],
   );
   return result.insertId;
 }
@@ -172,7 +199,7 @@ async function pickEndpoint() {
   const schedule = await getSchedule();
   const { row, nextCounter } = selectEndpoint(rows, { schedule, counter: roundRobinCounter });
   roundRobinCounter = nextCounter;
-  return { apiBase: row.api_base, apiKey: row.api_key };
+  return { apiBase: row.api_base, apiKey: row.api_key, model: row.model || "" };
 }
 
 // ---------- 提示词（视觉理解）配置：单组，存 app_settings ----------
@@ -215,6 +242,49 @@ async function getRequiredPromptConfig() {
   const config = await getPromptConfig();
   if (!config.apiBase || !config.apiKey) {
     throw new Error("请先在配置中心保存提示词 API 配置");
+  }
+  return config;
+}
+
+// ---------- 生视频（Agnes 视频）配置：单组，存 app_settings ----------
+// 接口地址服务端固定（见 server.js FIXED_VIDEO_API_BASE），页面只填 Key 与模型，与生图端点解耦。
+
+const DEFAULT_VIDEO_MODEL = "agnes-video-v2.0";
+
+async function getVideoConfig() {
+  const [apiKey, model] = await Promise.all([
+    getSetting("video_api_key", ""),
+    getSetting("video_model", ""),
+  ]);
+  return { apiKey, model: model || DEFAULT_VIDEO_MODEL };
+}
+
+async function getVideoConfigSummary() {
+  const config = await getVideoConfig();
+  return {
+    uploaded: Boolean(config.apiKey),
+    model: config.model,
+    hasApiKey: Boolean(config.apiKey),
+  };
+}
+
+async function setVideoConfig(raw = {}) {
+  const apiKey = clean(raw.apiKey || raw.api_key);
+  const model = clean(raw.model) || DEFAULT_VIDEO_MODEL;
+  if (!apiKey) {
+    throw new Error("生视频 API Key 不能为空");
+  }
+  await Promise.all([
+    setSetting("video_api_key", apiKey),
+    setSetting("video_model", model),
+  ]);
+  return getVideoConfigSummary();
+}
+
+async function getRequiredVideoConfig() {
+  const config = await getVideoConfig();
+  if (!config.apiKey) {
+    throw new Error("请先在配置中心保存生视频 API Key");
   }
   return config;
 }
@@ -269,6 +339,7 @@ module.exports = {
   SCHEDULE_ROUND_ROBIN,
   SCHEDULE_RANDOM,
   DEFAULT_PROMPT_MODEL,
+  DEFAULT_VIDEO_MODEL,
   // 纯逻辑
   normalizeApiBase,
   normalizeEndpointInput,
@@ -282,6 +353,7 @@ module.exports = {
   listEndpointsForDisplay,
   addEndpoint,
   deleteEndpoint,
+  setEndpointEnabled,
   countEndpoints,
   assertConfigured,
   getSchedule,
@@ -291,6 +363,10 @@ module.exports = {
   getPromptConfigSummary,
   setPromptConfig,
   getRequiredPromptConfig,
+  getVideoConfig,
+  getVideoConfigSummary,
+  setVideoConfig,
+  getRequiredVideoConfig,
   getContactInfo,
   setContactInfo,
   getContactQrFilename,

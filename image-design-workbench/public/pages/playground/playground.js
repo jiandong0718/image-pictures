@@ -140,7 +140,7 @@ function renderState() {
 
 function renderStage() {
   if (loading) {
-    els.stage.innerHTML = `<div class="pg-loading"><span class="spinner"></span>正在生成…</div>`;
+    els.stage.innerHTML = `<div class="pg-loading">正在生成…<div class="progress"></div></div>`;
     return;
   }
   if (!results.length) {

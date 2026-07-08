@@ -19,6 +19,7 @@ function setMsg(text, kind = "") {
 
 function renderState() {
   els.extractBtn.disabled = !hasPromptConfig || !file || loading;
+  els.extractBtn.innerHTML = loading ? `<span class="spinner"></span>提取中…` : "提取提示词";
   els.copyBtn.disabled = loading || !els.output.value.trim();
   els.configHint.textContent = hasPromptConfig
     ? ""
@@ -27,16 +28,19 @@ function renderState() {
 }
 
 function showPreview() {
-  if (loading) {
-    els.preview.innerHTML = `<div class="empty"><span class="spinner"></span>提取中…</div>`;
-    return;
-  }
+  // 提取过程中保持原图可见，只在上面盖一层「提取中 + 进度条」，别把上传的图换掉。
   if (previewUrl) {
     els.preview.innerHTML = "";
     const img = document.createElement("img");
     img.src = previewUrl;
     img.alt = "参考图";
     els.preview.appendChild(img);
+    if (loading) {
+      const overlay = document.createElement("div");
+      overlay.className = "prompt-extracting";
+      overlay.innerHTML = `<div class="prompt-extracting-inner">提取中…<div class="progress"></div></div>`;
+      els.preview.appendChild(overlay);
+    }
     return;
   }
   els.preview.innerHTML = `<div class="empty">点击或拖拽上传图片<br /><span class="mono" style="font-size: 11px">PNG / JPG / WEBP / GIF · ≤20MB</span></div>`;

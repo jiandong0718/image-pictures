@@ -42,6 +42,10 @@
                 <input class="input" id="apiKey" type="password" autocomplete="off" placeholder="sk-..." />
               </label>
               <label class="field">
+                <span>模型（可选）</span>
+                <input class="input" id="apiModel" type="text" autocomplete="off" placeholder="留空＝沿用现有默认模型（不改动老端点）；接 Agnes 才填 agnes-image-2.1-flash" />
+              </label>
+              <label class="field">
                 <span>备注（可选）</span>
                 <input class="input" id="apiLabel" type="text" autocomplete="off" placeholder="如：主号 / 备用" />
               </label>
@@ -74,6 +78,27 @@
             <button class="btn primary full" id="savePrompt" type="submit">保存提示词配置</button>
           </form>
         </div>
+
+        <form class="card" id="videoForm">
+          <div class="config-head-row">
+            <div class="section-label">生视频配置（Agnes AI）</div>
+            <span class="badge" id="videoStatus">未配置</span>
+          </div>
+          <div class="card-title">生视频 API</div>
+          <div class="card-desc" style="margin-bottom: 16px">
+            用于「AI 生视频」的文生视频 / 图生视频。接口地址服务端固定，这里只填 API Key 与模型。
+          </div>
+          <label class="field">
+            <span>生视频 API Key</span>
+            <input class="input" id="videoKey" type="password" autocomplete="off" placeholder="sk-..." />
+          </label>
+          <label class="field">
+            <span>生视频模型</span>
+            <input class="input" id="videoModel" type="text" autocomplete="off" placeholder="agnes-video-v2.0" />
+          </label>
+          <p class="msg" id="videoMsg"></p>
+          <button class="btn primary full" id="saveVideo" type="submit">保存生视频配置</button>
+        </form>
 
         <div class="card config-danger">
           <div class="config-danger-inner">

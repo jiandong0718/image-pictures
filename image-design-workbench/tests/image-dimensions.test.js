@@ -354,7 +354,11 @@ test("parses multiple generated image paths from generator output", () => {
 
 test("normalizes a generation endpoint (url + key) and rejects bad input", () => {
   const ep = normalizeEndpointInput({ apiBase: " https://api.one/v1/ ", apiKey: " key-1 ", label: " 主号 " });
-  assert.deepEqual(ep, { apiBase: "https://api.one/v1", apiKey: "key-1", label: "主号" });
+  assert.deepEqual(ep, { apiBase: "https://api.one/v1", apiKey: "key-1", label: "主号", model: "" });
+
+  // 每组端点可带自己的模型名（供 Agnes 等模型名不同的渠道共用同一套配置）。
+  const withModel = normalizeEndpointInput({ apiBase: "https://api.one/v1", apiKey: "k", model: " agnes-image-2.1-flash " });
+  assert.equal(withModel.model, "agnes-image-2.1-flash");
 
   assert.throws(() => normalizeEndpointInput({ apiBase: "", apiKey: "k" }), /生图 API URL不能为空/);
   assert.throws(() => normalizeEndpointInput({ apiBase: "not-a-url", apiKey: "k" }), /生图 API URL格式不正确/);
