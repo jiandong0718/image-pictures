@@ -7,7 +7,7 @@ import { createLocalState } from "/shared/persistence.js";
 
 const RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4"];
 const QUALITIES = ["480p", "720p", "1080p"];
-const DURATIONS = ["3s", "5s", "10s"];
+const DURATIONS = ["3s", "5s", "10s", "15s"];
 
 const storage = createLocalState("imageStudio:video:v1");
 const els = {};
@@ -20,8 +20,13 @@ let result = null; // 当前结果视频
 let loading = false;
 let uploading = false;
 let hasVideoConfig = false;
-let creditCost = 10;
+let costPerSecond = 1; // 每秒扣多少积分，来自 /api/video-config
 let pendingTask = null;
+
+// 本次消耗 = 选中时长秒数 × 单价（如 10s × 1 = 10 积分）。
+function currentCost() {
+  return (parseInt(duration, 10) || 5) * costPerSecond;
+}
 
 function setMsg(text, kind = "") {
   els.msg.textContent = text || "";
@@ -71,7 +76,7 @@ function chipRow(container, items, current, onPick, labelFn = (x) => x) {
 function renderChips() {
   chipRow(els.ratios, RATIOS, ratio, (v) => { ratio = v; renderChips(); save(); });
   chipRow(els.qualities, QUALITIES, quality, (v) => { quality = v; renderChips(); save(); }, (v) => v.toUpperCase());
-  chipRow(els.durations, DURATIONS, duration, (v) => { duration = v; renderChips(); save(); });
+  chipRow(els.durations, DURATIONS, duration, (v) => { duration = v; renderChips(); save(); renderState(); });
 }
 
 function renderMode() {
@@ -100,7 +105,7 @@ function renderState() {
   els.generateBtn.disabled = !hasVideoConfig || loading || uploading || !hasPrompt || needSource;
   els.generateBtn.innerHTML = loading
     ? `<span class="spinner"></span>生成中…`
-    : `生成视频（${creditCost} 积分）`;
+    : `生成视频（${currentCost()} 积分）`;
   if (!hasVideoConfig) {
     els.configHint.textContent = "尚未配置生视频 API Key，请先到「配置中心」保存。";
     els.configHint.style.color = "var(--warn)";
@@ -287,7 +292,7 @@ async function main() {
   try {
     const cfg = await apiGet("/api/video-config");
     hasVideoConfig = Boolean(cfg.config?.uploaded);
-    if (typeof cfg.cost === "number") creditCost = cfg.cost;
+    if (typeof cfg.costPerSecond === "number") costPerSecond = cfg.costPerSecond;
   } catch {
     hasVideoConfig = false;
   }

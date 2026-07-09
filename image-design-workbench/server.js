@@ -117,8 +117,8 @@ const PLAYGROUND_IMAGE_COUNT_MAX = 4;
 const PROMPT_EXTRACT_CREDIT_COST = 1;
 // 生视频接入 Agnes AI：地址服务端固定，页面只填 Key（与生图端点解耦）。
 const FIXED_VIDEO_API_BASE = process.env.VIDEO_API_BASE || "https://apihub.agnes-ai.com/v1";
-// 生视频比生图重得多，单条固定扣此积分数。ponytail: 先用固定值，要按时长/分辨率阶梯计费再拆。
-const VIDEO_CREDIT_COST = Number(process.env.VIDEO_CREDIT_COST) || 5;
+// 生视频按时长计费：每秒扣此积分数（默认 1 秒 = 1 积分，env 可覆盖）。总价 = 选中时长秒数 × 单价。
+const VIDEO_CREDIT_PER_SECOND = Number(process.env.VIDEO_CREDIT_PER_SECOND) || 1;
 const VIDEO_GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
 // 轮询基础间隔。Agnes 的 /agnesapi 有频率限制，太密会 429；撞到限频时代码里会再叠加退避。
 const VIDEO_POLL_INTERVAL_MS = 8000;
@@ -1684,8 +1684,19 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
 // 比例/清晰度/时长都用预设，服务端据此算 width/height/num_frames，不信任前端几何，避免 422/500。
 const VIDEO_RATIOS = { "16:9": [16, 9], "9:16": [9, 16], "1:1": [1, 1], "4:3": [4, 3], "3:4": [3, 4] };
 const VIDEO_QUALITY_BASE = { "480p": 854, "720p": 1280, "1080p": 1920 }; // 长边像素
-const VIDEO_DURATIONS = { "3s": 81, "5s": 121, "10s": 241 }; // 帧数（均满足 8n+1）
+// 帧数（均满足 8n+1，且 ≤ 接口上限 441）。15s@24fps=361 帧仍在范围内；30s 需 721 帧超限，接口不支持。
+const VIDEO_DURATIONS = { "3s": 81, "5s": 121, "10s": 241, "15s": 361 };
 const VIDEO_FPS = 24;
+
+// 选中时长 -> 秒数（取标签里的数字，如 "10s" -> 10），再乘单价得本次积分。未知时长按 5s 兜底。
+function videoDurationSeconds(duration) {
+  const n = parseInt(String(duration || ""), 10);
+  return VIDEO_DURATIONS[`${n}s`] ? n : 5;
+}
+
+function videoCost(duration) {
+  return videoDurationSeconds(duration) * VIDEO_CREDIT_PER_SECOND;
+}
 const VIDEO_SOURCE_PREFIX = "video-source";
 
 function round8(n) {
@@ -2469,7 +2480,7 @@ async function handleApi(req, res, pathname, searchParams) {
     sendJson(res, 200, {
       ok: true,
       config: await imageConfig.getVideoConfigSummary(),
-      cost: VIDEO_CREDIT_COST,
+      costPerSecond: VIDEO_CREDIT_PER_SECOND,
     });
     return;
   }
@@ -2727,8 +2738,10 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, 400, "视频提示词不能为空");
       return;
     }
+    const cost = videoCost(payload.duration); // 按选中时长计费：秒数 × 单价
+    const seconds = videoDurationSeconds(payload.duration);
     try {
-      await accounts.assertEnoughCredits(user.id, VIDEO_CREDIT_COST);
+      await accounts.assertEnoughCredits(user.id, cost);
     } catch (error) {
       sendError(res, error.statusCode || 402, error.message);
       return;
@@ -2749,7 +2762,7 @@ async function handleApi(req, res, pathname, searchParams) {
           steps: payload.steps,
           sourceImageId: payload.sourceImageId,
         });
-        const balance = await accounts.consumeCredits(user.id, VIDEO_CREDIT_COST, "生成视频");
+        const balance = await accounts.consumeCredits(user.id, cost, `生成${seconds}秒视频`);
         finishGenerationTask(taskId, { video, credits: balance });
       } catch (error) {
         failGenerationTask(taskId, error.message);
@@ -3134,6 +3147,8 @@ module.exports = {
   buildImageGeneratorEnv,
   computeVideoSize,
   VIDEO_DURATIONS,
+  videoCost,
+  videoDurationSeconds,
   buildPromptExtractionRequest,
   callPromptExtractionApi,
   clearOutputDirContents,

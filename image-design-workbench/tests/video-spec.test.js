@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { computeVideoSize, VIDEO_DURATIONS } = require("../server");
+const { computeVideoSize, VIDEO_DURATIONS, videoCost, videoDurationSeconds } = require("../server");
 
 test("computeVideoSize 长边取该档基准，短边按比例，且宽高均为 8 的倍数", () => {
   const l720 = computeVideoSize("16:9", "720p");
@@ -31,9 +31,20 @@ test("未知比例/清晰度回退默认，不抛错", () => {
   assert.equal(fallback.height, 720);
 });
 
-test("所有时长档的帧数满足 Agnes 的 8n+1 规则", () => {
+test("所有时长档的帧数满足 Agnes 的 8n+1 规则且不超上限 441", () => {
   for (const [label, frames] of Object.entries(VIDEO_DURATIONS)) {
     assert.equal((frames - 1) % 8, 0, `${label}=${frames} 不满足 8n+1`);
     assert.ok(frames <= 441, `${label}=${frames} 超过最大帧数 441`);
   }
+  assert.equal(VIDEO_DURATIONS["15s"], 361); // 15s 支持
+  assert.equal(VIDEO_DURATIONS["30s"], undefined); // 30s 超帧数上限，不支持
+});
+
+test("按时长计费：1 秒 1 积分，未知时长兜底 5s", () => {
+  assert.equal(videoDurationSeconds("3s"), 3);
+  assert.equal(videoDurationSeconds("15s"), 15);
+  assert.equal(videoDurationSeconds("99s"), 5); // 不在预设里，兜底
+  assert.equal(videoCost("3s"), 3);
+  assert.equal(videoCost("10s"), 10);
+  assert.equal(videoCost("15s"), 15);
 });
