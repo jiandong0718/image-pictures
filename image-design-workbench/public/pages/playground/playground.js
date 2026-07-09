@@ -29,6 +29,8 @@ let background = "";
 let results = [];
 let loading = false;
 let hasImageConfig = false;
+let nodes = []; // 可选生图节点（脱敏：id + 展示名）
+let endpointId = ""; // 选中的节点 id；空=自动（按调度）
 let pendingTask = null; // 进行中的任务 id：切走页面也持久化，回来续查把图捞回
 
 function buildImageSpec() {
@@ -79,6 +81,7 @@ function loadSaved() {
   if (saved.customH) els.customH.value = clampPx(saved.customH);
   if (Array.isArray(saved.results)) results = saved.results;
   if (typeof saved.pendingTask === "string") pendingTask = saved.pendingTask;
+  if (typeof saved.endpointId === "string") endpointId = saved.endpointId;
   els.background.value = background;
 }
 
@@ -94,6 +97,7 @@ function save() {
     customH: els.customH.value,
     results,
     pendingTask,
+    endpointId,
   });
 }
 
@@ -127,6 +131,20 @@ function renderRatios() {
     save();
   }, (v) => (v === "custom" ? "自定义" : v));
   els.customSize.hidden = currentRatio !== "custom";
+}
+
+// 生图节点选择器：仅本页有。≥2 个节点才显示（1 个时自动即可，没意义）。空=自动。
+function renderNodes() {
+  if (!nodes.length || nodes.length < 2) {
+    els.nodeSection.hidden = true;
+    els.countLabel.style.marginTop = "";
+    return;
+  }
+  els.nodeSection.hidden = false;
+  els.countLabel.style.marginTop = "18px";
+  const items = ["", ...nodes.map((n) => String(n.id))];
+  const labelFn = (v) => (v === "" ? "自动" : nodes.find((n) => String(n.id) === v)?.name || v);
+  chipRow(els.nodeChips, items, endpointId, (v) => { endpointId = v; renderNodes(); save(); }, labelFn);
 }
 
 function renderState() {
@@ -198,6 +216,7 @@ async function generate() {
       background: els.background.value,
       system: els.system.value.trim(),
       imageSpec: buildImageSpec(),
+      endpointId,
     }));
   } catch (err) {
     loading = false;
@@ -229,6 +248,9 @@ async function main() {
     generateBtn: document.getElementById("generateBtn"),
     configHint: document.getElementById("configHint"),
     canvasBadge: document.getElementById("canvasBadge"),
+    nodeSection: document.getElementById("nodeSection"),
+    nodeChips: document.getElementById("nodeChips"),
+    countLabel: document.getElementById("countLabel"),
   });
 
   loadSaved();
@@ -245,9 +267,16 @@ async function main() {
   try {
     const cfg = await apiGet("/api/image-config");
     hasImageConfig = Boolean(cfg.config?.uploaded);
+    nodes = Array.isArray(cfg.nodes) ? cfg.nodes : [];
+    // 选中的节点若已被删/停用，回退到自动。
+    if (endpointId && !nodes.some((n) => String(n.id) === endpointId)) {
+      endpointId = "";
+      save();
+    }
   } catch {
     hasImageConfig = false;
   }
+  renderNodes();
   renderState();
   renderStage();
 

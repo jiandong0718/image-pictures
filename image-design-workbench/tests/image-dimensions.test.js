@@ -240,6 +240,7 @@ test("normalizes playground requests with bounded count and image spec", () => {
         ratio: "1:1",
       },
       referenceImageId: "",
+      endpointId: "",
     },
   );
   assert.deepEqual(
@@ -271,6 +272,7 @@ test("normalizes playground requests with bounded count and image spec", () => {
         ratio: "1:1",
       },
       referenceImageId: "001/main-test.png",
+      endpointId: "",
     },
   );
   assert.throws(() => normalizePlaygroundRequest({ prompt: "" }), /自由生图提示词不能为空/);

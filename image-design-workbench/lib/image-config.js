@@ -156,6 +156,29 @@ async function setEndpointEnabled(id, enabled) {
   );
 }
 
+// 自由生图「指定节点」用：按 id 取一个启用的端点。找不到/已停用则报错。
+async function getEnabledEndpointById(id) {
+  const [rows] = await getPool().query(
+    "SELECT api_base, api_key, model FROM image_endpoints WHERE id = ? AND enabled = 1 LIMIT 1",
+    [Number(id)],
+  );
+  if (!rows.length) {
+    throw new Error("所选生图节点不存在或已停用");
+  }
+  return { apiBase: rows[0].api_base, apiKey: rows[0].api_key, model: rows[0].model || "" };
+}
+
+// 给普通用户选节点用的脱敏列表（只给 id + 展示名，不含 url/key），仅启用的，按 id 排「节点N」。
+async function listSelectableEndpoints() {
+  const [rows] = await getPool().query(
+    "SELECT id, label, model FROM image_endpoints WHERE enabled = 1 ORDER BY id ASC",
+  );
+  return rows.map((row, i) => ({
+    id: row.id,
+    name: `节点${i + 1}` + (row.model ? `：${row.model}` : row.label ? `：${row.label}` : ""),
+  }));
+}
+
 async function addEndpoint(raw) {
   const { apiBase, apiKey, label, model } = normalizeEndpointInput(raw);
   const [result] = await getPool().query(
@@ -354,6 +377,8 @@ module.exports = {
   addEndpoint,
   deleteEndpoint,
   setEndpointEnabled,
+  getEnabledEndpointById,
+  listSelectableEndpoints,
   countEndpoints,
   assertConfigured,
   getSchedule,

@@ -231,11 +231,30 @@ function finishGenerationTask(id, result) {
   }
 }
 
+// 面向用户的错误信息：屏蔽 Python traceback / 上游 API / 超时等技术细节，只给一句友好提示，
+// 真实错误已在服务端日志里。业务类短提示（如"积分不足""请先配置"）会原样保留。
+const TECHNICAL_ERROR_RE =
+  /traceback|file "|line \d+|urllib|socket|ssl|http\.client|runpy|exception|errno|timeout|econn|\bat \w+ \(|<module>/i;
+function friendlyGenerationError(rawMessage, fallback = "生成失败，请稍后重试") {
+  const msg = typeof rawMessage === "string" ? rawMessage.trim() : "";
+  if (!msg) {
+    return fallback;
+  }
+  // 多行 / 含技术关键字 / 过长的，一律视为内部错误，替换成友好提示。
+  if (msg.includes("\n") || msg.length > 80 || TECHNICAL_ERROR_RE.test(msg)) {
+    return fallback;
+  }
+  return msg;
+}
+
 function failGenerationTask(id, message) {
+  if (message) {
+    console.error("生成任务失败：", message); // 完整错误留服务端，前端只拿友好提示
+  }
   const task = GENERATION_TASKS.get(id);
   if (task) {
     task.status = "error";
-    task.error = message || "生成失败";
+    task.error = friendlyGenerationError(message);
   }
 }
 
@@ -460,6 +479,8 @@ function normalizePlaygroundRequest(rawRequest = {}) {
     system,
     imageSpec: normalizeImageSpec(rawRequest.imageSpec),
     referenceImageId: cleanPrompt(rawRequest.referenceImageId),
+    // 自由生图可指定某个生图节点；留空则按调度策略自动选。仅本页有此选项。
+    endpointId: cleanPrompt(rawRequest.endpointId),
   };
 }
 
@@ -1559,7 +1580,10 @@ async function generatePlaygroundImages(rawRequest = {}, user) {
 
   const imageSet = await allocateImageSet(user.id);
   const outputDir = imageSet.outputDir;
-  const apiConfig = await imageConfig.pickEndpoint();
+  // 指定了节点就用该节点，否则按调度策略自动选。
+  const apiConfig = request.endpointId
+    ? await imageConfig.getEnabledEndpointById(request.endpointId)
+    : await imageConfig.pickEndpoint();
   const args = buildImageGeneratorArgs({
     skillScript: SKILL_SCRIPT,
     prompt: request.prompt,
@@ -2392,7 +2416,8 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
     const uploaded = (await imageConfig.countEndpoints()) > 0;
-    const payload = { ok: true, config: { uploaded } };
+    // nodes：脱敏的可选节点列表（供自由生图指定节点，普通用户也能拿，不含 url/key）。
+    const payload = { ok: true, config: { uploaded }, nodes: await imageConfig.listSelectableEndpoints() };
     if (user.role === "admin") {
       payload.endpoints = await imageConfig.listEndpointsForDisplay();
       payload.schedule = await imageConfig.getSchedule();
@@ -2612,12 +2637,14 @@ async function handleApi(req, res, pathname, searchParams) {
         credits,
       });
     } catch (error) {
-      const message = error.message || "提示词提取失败";
-      const statusCode =
-        message.includes("上传") || message.includes("只支持") || message.includes("没有找到")
-          ? 400
-          : 502;
-      sendError(res, statusCode, "提示词提取失败", message);
+      console.error("提示词提取失败：", error.message); // 完整错误留服务端
+      const message = error.message || "";
+      // 用户可纠正的（上传格式等）原样提示；其余上游/技术错误统一给友好提示，不泄露细节。
+      if (message.includes("上传") || message.includes("只支持") || message.includes("没有找到")) {
+        sendError(res, 400, message);
+      } else {
+        sendError(res, 502, "提示词提取失败，请稍后重试");
+      }
     }
     return;
   }
@@ -3092,7 +3119,8 @@ const server = http.createServer(async (req, res) => {
     }
     await serveStatic(req, res, url.pathname);
   } catch (error) {
-    sendError(res, 500, error.message || "服务处理失败");
+    console.error("请求处理异常：", error && error.stack ? error.stack : error);
+    sendError(res, 500, "服务处理失败，请稍后重试");
   }
 });
 
@@ -3149,6 +3177,7 @@ module.exports = {
   VIDEO_DURATIONS,
   videoCost,
   videoDurationSeconds,
+  friendlyGenerationError,
   buildPromptExtractionRequest,
   callPromptExtractionApi,
   clearOutputDirContents,

@@ -2,7 +2,27 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { computeVideoSize, VIDEO_DURATIONS, videoCost, videoDurationSeconds } = require("../server");
+const {
+  computeVideoSize,
+  VIDEO_DURATIONS,
+  videoCost,
+  videoDurationSeconds,
+  friendlyGenerationError,
+} = require("../server");
+
+test("friendlyGenerationError 屏蔽 traceback/技术细节，保留业务短提示", () => {
+  const traceback = `Traceback (most recent call last):
+  File "/opt/.../image_generator.py", line 269, in post_json
+    with request.urlopen(req, timeout=timeout) as response:
+TimeoutError: The read operation timed out`;
+  assert.equal(friendlyGenerationError(traceback), "生成失败，请稍后重试");
+  assert.equal(friendlyGenerationError("TimeoutError: The read operation timed out"), "生成失败，请稍后重试");
+  assert.equal(friendlyGenerationError(""), "生成失败，请稍后重试");
+  assert.equal(friendlyGenerationError(undefined), "生成失败，请稍后重试");
+  // 业务类短提示原样保留，用户能据此纠正
+  assert.equal(friendlyGenerationError("积分不足，请充值"), "积分不足，请充值");
+  assert.equal(friendlyGenerationError("请先在配置中心添加生图 API 端点"), "请先在配置中心添加生图 API 端点");
+});
 
 test("computeVideoSize 长边取该档基准，短边按比例，且宽高均为 8 的倍数", () => {
   const l720 = computeVideoSize("16:9", "720p");

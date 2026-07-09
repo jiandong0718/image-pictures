@@ -30,7 +30,12 @@
         <!-- 右侧：控制面板 -->
         <div class="card pg-panel">
           <div class="pg-panel-scroll">
-            <div class="section-label">生成张数</div>
+            <div id="nodeSection" hidden>
+              <div class="section-label">生图节点</div>
+              <div class="pg-chips" id="nodeChips"></div>
+            </div>
+
+            <div class="section-label" id="countLabel">生成张数</div>
             <div class="pg-chips" id="counts"></div>
 
             <div class="section-label" style="margin-top: 18px">分辨率</div>
