@@ -208,14 +208,16 @@ def make_url(api_base: str, endpoint: str) -> str:
     return normalized + mapping[endpoint]
 
 
-# 让上游直接回 base64（response_format=b64_json，部分渠道如 Agnes 还需 return_base64），
-# 避免回一个需鉴权的输出图床 URL 导致下载 401。
+# 让上游直接回 base64，避免回一个需鉴权的输出图床 URL 导致下载 401。
+# 注意：Agnes(litellm) 不认标准 response_format 参数（会 400 UnsupportedParamsError），
+# 只用它自家的 return_base64。所以 b64_json 只翻译成 return_base64，不再发 response_format。
 def apply_response_format(payload: dict[str, Any], response_format: str) -> None:
     if not response_format:
         return
-    payload["response_format"] = response_format
     if response_format == "b64_json":
         payload["return_base64"] = True
+    else:
+        payload["response_format"] = response_format
 
 
 def build_payload(endpoint: str, prompt: str, args: argparse.Namespace) -> dict[str, Any]:

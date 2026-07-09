@@ -133,18 +133,24 @@ function renderRatios() {
   els.customSize.hidden = currentRatio !== "custom";
 }
 
-// 生图节点选择器：仅本页有。≥2 个节点才显示（1 个时自动即可，没意义）。空=自动。
+// 生图节点选择（下拉，放背景下面）：仅本页有。≥2 个节点才显示（1 个时没得选）。空=随机(按调度)。
 function renderNodes() {
   if (!nodes.length || nodes.length < 2) {
-    els.nodeSection.hidden = true;
-    els.countLabel.style.marginTop = "";
+    els.nodeField.hidden = true;
     return;
   }
-  els.nodeSection.hidden = false;
-  els.countLabel.style.marginTop = "18px";
-  const items = ["", ...nodes.map((n) => String(n.id))];
-  const labelFn = (v) => (v === "" ? "自动" : nodes.find((n) => String(n.id) === v)?.name || v);
-  chipRow(els.nodeChips, items, endpointId, (v) => { endpointId = v; renderNodes(); save(); }, labelFn);
+  els.nodeField.hidden = false;
+  const opts = [`<option value="">随机</option>`].concat(
+    nodes.map((n) => `<option value="${String(n.id)}">${escapeHtml(n.name)}</option>`),
+  );
+  els.nodeSelect.innerHTML = opts.join("");
+  els.nodeSelect.value = endpointId;
+}
+
+function escapeHtml(text) {
+  return String(text == null ? "" : text).replace(/[&<>"]/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]
+  ));
 }
 
 function renderState() {
@@ -248,9 +254,8 @@ async function main() {
     generateBtn: document.getElementById("generateBtn"),
     configHint: document.getElementById("configHint"),
     canvasBadge: document.getElementById("canvasBadge"),
-    nodeSection: document.getElementById("nodeSection"),
-    nodeChips: document.getElementById("nodeChips"),
-    countLabel: document.getElementById("countLabel"),
+    nodeField: document.getElementById("nodeField"),
+    nodeSelect: document.getElementById("nodeSelect"),
   });
 
   loadSaved();
@@ -261,6 +266,7 @@ async function main() {
   els.prompt.addEventListener("input", () => { save(); renderState(); });
   els.system.addEventListener("input", save);
   els.background.addEventListener("change", save);
+  els.nodeSelect.addEventListener("change", () => { endpointId = els.nodeSelect.value; save(); });
   [els.customW, els.customH].forEach((el) => el.addEventListener("input", save));
   els.generateBtn.addEventListener("click", generate);
 
