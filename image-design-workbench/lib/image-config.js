@@ -175,7 +175,7 @@ async function listSelectableEndpoints() {
   );
   return rows.map((row, i) => ({
     id: row.id,
-    name: `节点${i + 1}` + (row.model ? `：${row.model}` : row.label ? `：${row.label}` : ""),
+    name: `节点${i + 1}`,
   }));
 }
 

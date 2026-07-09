@@ -500,16 +500,28 @@ def collect_image_candidates(node: Any, images: list[ImagePayload], urls: list[s
 
 
 def download_image(url: str, api_key: str, timeout: int) -> ImagePayload:
-    headers = {"Accept": "image/*, */*"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    req = request.Request(url, headers=headers, method="GET")
-    try:
+    # 先不带鉴权下载：很多输出图床是公开对象存储（S3/GCS），带上 Bearer 反而会被当成
+    # 非法签名请求返回 401 AuthenticationRequired。仅当确实需要鉴权（401/403）再带 Bearer 重试。
+    def _fetch(with_auth: bool) -> tuple[bytes, str]:
+        headers = {"Accept": "image/*, */*"}
+        if with_auth and api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        req = request.Request(url, headers=headers, method="GET")
         with request.urlopen(req, timeout=timeout) as response:
-            raw = response.read()
-            mime = response.headers.get_content_type()
+            return response.read(), response.headers.get_content_type()
+
+    try:
+        raw, mime = _fetch(with_auth=False)
     except error.HTTPError as exc:
-        raise ApiCallError(url, exc.code, extract_error_message(exc.read())) from exc
+        if exc.code in (401, 403) and api_key:
+            try:
+                raw, mime = _fetch(with_auth=True)
+            except error.HTTPError as exc2:
+                raise ApiCallError(url, exc2.code, extract_error_message(exc2.read())) from exc2
+            except error.URLError as exc2:
+                raise ApiCallError(url, None, str(exc2.reason)) from exc2
+        else:
+            raise ApiCallError(url, exc.code, extract_error_message(exc.read())) from exc
     except error.URLError as exc:
         raise ApiCallError(url, None, str(exc.reason)) from exc
 
