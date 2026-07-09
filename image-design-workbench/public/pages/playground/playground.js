@@ -171,7 +171,8 @@ function renderStage() {
     els.stage.innerHTML = `<div class="empty">输入提示词，点击右侧「开始生成」</div>`;
     return;
   }
-  els.stage.innerHTML = `<div class="pg-results" id="results"></div>`;
+  // 单张结果居中显示；多张仍走两列网格。
+  els.stage.innerHTML = `<div class="pg-results${results.length === 1 ? " single" : ""}" id="results"></div>`;
   const grid = document.getElementById("results");
   results.forEach((image, i) => {
     const item = document.createElement("div");

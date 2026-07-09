@@ -76,6 +76,12 @@
   align-content: start;
 }
 
+/* 单张结果：居中，且不铺满整宽 */
+.pg-results.single {
+  grid-template-columns: minmax(0, 460px);
+  justify-content: center;
+}
+
 .pg-item {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
