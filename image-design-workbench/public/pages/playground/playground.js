@@ -2,7 +2,7 @@
 // （张数 / 分辨率 / 输出比例(+自定义) / 背景 / 附加要求 / 开始生成）。文生图，每张 1 积分。
 
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost, pollTask } from "/shared/api.js";
+import { apiGet, apiPost } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 
 const RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
@@ -31,6 +31,8 @@ let loading = false;
 let hasImageConfig = false;
 let nodes = []; // 可选生图节点（脱敏：id + 展示名）
 let endpointId = ""; // 选中的节点 id；空=自动（按调度）
+let pendingCount = 0; // 本批要生成的总张数（生成中摆几个占位骨架）
+let lightboxIndex = -1; // 灯箱当前看的第几张；-1=未打开
 let pendingTask = null; // 进行中的任务 id：切走页面也持久化，回来续查把图捞回
 
 function buildImageSpec() {
@@ -81,6 +83,7 @@ function loadSaved() {
   if (saved.customH) els.customH.value = clampPx(saved.customH);
   if (Array.isArray(saved.results)) results = saved.results;
   if (typeof saved.pendingTask === "string") pendingTask = saved.pendingTask;
+  if (typeof saved.pendingCount === "number") pendingCount = saved.pendingCount;
   if (typeof saved.endpointId === "string") endpointId = saved.endpointId;
   els.background.value = background;
 }
@@ -97,6 +100,7 @@ function save() {
     customH: els.customH.value,
     results,
     pendingTask,
+    pendingCount,
     endpointId,
   });
 }
@@ -159,43 +163,139 @@ function renderState() {
   els.generateBtn.innerHTML = loading ? `<span class="spinner"></span>生成中…` : "开始生成";
   els.configHint.textContent = hasImageConfig ? "" : "尚未配置生图 API Key，请先到「配置中心」保存。";
   els.configHint.style.color = hasImageConfig ? "var(--ink-mute)" : "var(--warn)";
-  els.canvasBadge.textContent = `${results.length} 张结果`;
+  els.canvasBadge.textContent = loading
+    ? `已完成 ${results.length}/${pendingCount || count}`
+    : `${results.length} 张结果`;
 }
 
+const enc = (v) => encodeURIComponent(v == null ? "" : v);
+
+// 纵向画廊：N 张从上到下依次排列；生成中未完成的位置摆骨架+进度条（谁先好谁先点亮）。
 function renderStage() {
-  if (loading) {
-    els.stage.innerHTML = `<div class="pg-loading">正在生成…<div class="progress"></div></div>`;
-    return;
-  }
-  if (!results.length) {
+  if (!loading && !results.length) {
     els.stage.innerHTML = `<div class="empty">输入提示词，点击右侧「开始生成」</div>`;
     return;
   }
-  // 单张结果居中显示；多张仍走两列网格。
-  els.stage.innerHTML = `<div class="pg-results${results.length === 1 ? " single" : ""}" id="results"></div>`;
-  const grid = document.getElementById("results");
-  results.forEach((image, i) => {
+  const total = loading ? Math.max(pendingCount || count, results.length) : results.length;
+  els.stage.innerHTML = `<div class="pg-gallery" id="gallery"></div>`;
+  const gallery = document.getElementById("gallery");
+  for (let i = 0; i < total; i += 1) {
+    const image = results[i];
     const item = document.createElement("div");
-    item.className = "pg-item";
-    item.innerHTML = `
-      <img src="${image.url}?t=${encodeURIComponent(image.createdAt || "")}" alt="结果 ${i + 1}" loading="lazy" />
-      <div class="pg-item-bar">
-        <span class="badge ok">结果 ${i + 1}</span>
-        <button class="btn sm" type="button">下载</button>
-      </div>`;
-    item.querySelector("img").addEventListener("click", () => window.open(image.url, "_blank", "noopener"));
-    item.querySelector("button").addEventListener("click", () => { location.href = image.downloadUrl; });
-    grid.appendChild(item);
+    item.className = "pg-shot";
+    if (image) {
+      item.innerHTML = `
+        <div class="pg-shot-media">
+          <img src="${image.url}?t=${enc(image.createdAt || "")}" alt="结果 ${i + 1}" loading="lazy" />
+        </div>
+        <div class="pg-shot-bar">
+          <span class="badge ok">结果 ${i + 1}</span>
+          <button class="btn sm" type="button">下载</button>
+        </div>`;
+      const idx = i;
+      item.querySelector("img").addEventListener("click", () => openLightbox(idx));
+      item.querySelector("button").addEventListener("click", () => { location.href = image.downloadUrl; });
+    } else {
+      item.innerHTML = `
+        <div class="pg-shot-media pg-shot-skeleton">
+          <span class="spinner"></span>
+          <div class="progress"></div>
+          <span class="pg-shot-hint">生成中…</span>
+        </div>`;
+    }
+    gallery.appendChild(item);
+  }
+}
+
+// ---------- 灯箱（点击放大，↑↓/滑动切换）----------
+function openLightbox(i) {
+  if (i < 0 || i >= results.length) return;
+  lightboxIndex = i;
+  renderLightbox();
+}
+
+function closeLightbox() {
+  lightboxIndex = -1;
+  document.getElementById("pgLightbox")?.remove();
+  document.removeEventListener("keydown", onLightboxKey);
+}
+
+function lightboxNav(delta) {
+  const next = lightboxIndex + delta;
+  if (next < 0 || next >= results.length) return;
+  lightboxIndex = next;
+  renderLightbox();
+}
+
+function onLightboxKey(e) {
+  if (e.key === "Escape") closeLightbox();
+  else if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); lightboxNav(-1); }
+  else if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); lightboxNav(1); }
+}
+
+function renderLightbox() {
+  const image = results[lightboxIndex];
+  if (!image) return closeLightbox();
+  let el = document.getElementById("pgLightbox");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pgLightbox";
+    el.className = "pg-lightbox";
+    document.body.appendChild(el);
+    document.addEventListener("keydown", onLightboxKey);
+  }
+  const n = results.length;
+  el.innerHTML = `
+    <div class="pg-lb-backdrop"></div>
+    <button class="pg-lb-close" type="button" aria-label="关闭">✕</button>
+    <button class="pg-lb-nav up" type="button" aria-label="上一张"${lightboxIndex === 0 ? " disabled" : ""}>↑</button>
+    <div class="pg-lb-stage"><img class="pg-lb-img" src="${image.url}?t=${enc(image.createdAt || "")}" alt="结果 ${lightboxIndex + 1}" /></div>
+    <button class="pg-lb-nav down" type="button" aria-label="下一张"${lightboxIndex === n - 1 ? " disabled" : ""}>↓</button>
+    <div class="pg-lb-bar">
+      <span class="pg-lb-count mono">${lightboxIndex + 1} / ${n}</span>
+      <a class="btn sm" href="${image.downloadUrl}">下载</a>
+    </div>`;
+  el.querySelector(".pg-lb-backdrop").addEventListener("click", closeLightbox);
+  el.querySelector(".pg-lb-close").addEventListener("click", closeLightbox);
+  el.querySelector(".pg-lb-nav.up").addEventListener("click", () => lightboxNav(-1));
+  el.querySelector(".pg-lb-nav.down").addEventListener("click", () => lightboxNav(1));
+  // 竖向滑动切换
+  let startY = null;
+  el.querySelector(".pg-lb-stage").addEventListener("touchstart", (ev) => { startY = ev.touches[0].clientY; }, { passive: true });
+  el.querySelector(".pg-lb-stage").addEventListener("touchend", (ev) => {
+    if (startY == null) return;
+    const dy = ev.changedTouches[0].clientY - startY;
+    if (Math.abs(dy) > 40) lightboxNav(dy < 0 ? 1 : -1);
+    startY = null;
   });
 }
 
-// 轮询任务并落地结果。切走页面时轮询会中断，但 pendingTask 已持久化，回来会 resume。
+// 渐进轮询：先摆 N 个骨架，partial 里每到一张就点亮一张；done 时以最终结果为准。
 async function awaitTask(taskId) {
+  const deadline = Date.now() + 5 * 60 * 1000;
   try {
-    const done = await pollTask(taskId);
-    results = done.images || [];
-    if (typeof done.credits === "number") setCredits(done.credits);
-    setMsg(`已生成 ${results.length} 张图片`, "success");
+    while (true) {
+      const data = await apiGet(`/api/tasks/${enc(taskId)}`);
+      if (data.partial) {
+        if (typeof data.partial.total === "number" && data.partial.total > 0) pendingCount = data.partial.total;
+        const imgs = Array.isArray(data.partial.images) ? data.partial.images : [];
+        if (imgs.length > results.length) {
+          results = imgs;
+          renderState();
+          renderStage();
+          if (lightboxIndex >= 0) renderLightbox(); // 灯箱开着时同步计数
+        }
+      }
+      if (data.status === "done") {
+        results = data.result?.images || results;
+        if (typeof data.result?.credits === "number") setCredits(data.result.credits);
+        setMsg(`已生成 ${results.length} 张图片`, "success");
+        break;
+      }
+      if (data.status === "error") throw new Error(data.error || "生成失败");
+      if (Date.now() > deadline) throw new Error("生成超时，请稍后重试");
+      await new Promise((r) => setTimeout(r, 1500));
+    }
   } catch (err) {
     setMsg(err.message, "error");
   } finally {
@@ -211,6 +311,8 @@ async function generate() {
   const prompt = els.prompt.value.trim();
   if (!prompt) return setMsg("提示词不能为空", "error");
   loading = true;
+  results = [];          // 清空上一批，立刻摆 N 个占位骨架
+  pendingCount = count;
   setMsg("");
   renderState();
   renderStage();

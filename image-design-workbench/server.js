@@ -211,7 +211,15 @@ const GENERATION_TASK_TTL_MS = 15 * 60 * 1000;
 
 function createGenerationTask(userId) {
   const id = crypto.randomUUID();
-  GENERATION_TASKS.set(id, { userId, status: "running", result: null, error: null, createdAt: Date.now() });
+  GENERATION_TASKS.set(id, {
+    userId,
+    status: "running",
+    result: null,
+    error: null,
+    // 渐进上报：total=本次要生成的张数，images=已完成的（谁先好谁先进来）。供前端"谁先好谁先显示"。
+    partial: null,
+    createdAt: Date.now(),
+  });
   return id;
 }
 
@@ -221,6 +229,21 @@ function getGenerationTask(id, user) {
     return null;
   }
   return task;
+}
+
+// 渐进上报：先告知总张数，再每完成一张追加进来。
+function setGenerationTaskTotal(id, total) {
+  const task = GENERATION_TASKS.get(id);
+  if (task) {
+    task.partial = { total: Number(total) || 0, images: [] };
+  }
+}
+
+function pushGenerationTaskImage(id, image) {
+  const task = GENERATION_TASKS.get(id);
+  if (task && task.partial && image) {
+    task.partial.images.push(image);
+  }
 }
 
 function finishGenerationTask(id, result) {
@@ -1567,7 +1590,7 @@ async function backfillImageRecords() {
   }
 }
 
-async function generatePlaygroundImages(rawRequest = {}, user) {
+async function generatePlaygroundImages(rawRequest = {}, user, hooks = {}) {
   const request = normalizePlaygroundRequest(rawRequest);
   if (!SKILL_SCRIPT || !fs.existsSync(SKILL_SCRIPT)) {
     throw new Error(
@@ -1596,6 +1619,7 @@ async function generatePlaygroundImages(rawRequest = {}, user) {
     ? await imageConfig.getEnabledEndpointById(request.endpointId)
     : await imageConfig.pickEndpoint();
   const env = buildImageGeneratorEnv(process.env, apiConfig);
+  hooks.onTotal?.(request.count); // 先告知总张数，前端好摆 N 个占位
 
   // 多张 = 并发发 N 个各要 1 张的请求，再汇总。这样不依赖上游是否支持 n 参数
   // （如 Agnes 一个请求只回 1 张），选几张就稳定出几张；每个请求用不同文件名前缀避免同秒撞名。
@@ -1633,7 +1657,9 @@ async function generatePlaygroundImages(rawRequest = {}, user) {
       await fsp.unlink(keep).catch(() => {});
       throw error;
     }
-    return makeImageRecord(keep, "playground", request.prompt, sourceMainId);
+    const record = makeImageRecord(keep, "playground", request.prompt, sourceMainId);
+    hooks.onImage?.(record); // 这张完成即上报，前端"谁先好谁先显示"
+    return record;
   };
 
   const settled = await Promise.allSettled(
@@ -2831,7 +2857,13 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, 404, "任务不存在或已过期");
       return;
     }
-    sendJson(res, 200, { ok: true, status: task.status, result: task.result, error: task.error });
+    sendJson(res, 200, {
+      ok: true,
+      status: task.status,
+      result: task.result,
+      error: task.error,
+      partial: task.partial, // 渐进结果：{ total, images: [...] }，前端"谁先好谁先显示"
+    });
     return;
   }
 
@@ -3063,7 +3095,10 @@ async function handleApi(req, res, pathname, searchParams) {
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
-        const result = await generatePlaygroundImages(payload, user);
+        const result = await generatePlaygroundImages(payload, user, {
+          onTotal: (n) => setGenerationTaskTotal(taskId, n),
+          onImage: (img) => pushGenerationTaskImage(taskId, img),
+        });
         const generated = result.images.length;
         let balance;
         if (generated > 0) {
