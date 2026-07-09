@@ -1595,46 +1595,54 @@ async function generatePlaygroundImages(rawRequest = {}, user) {
   const apiConfig = request.endpointId
     ? await imageConfig.getEnabledEndpointById(request.endpointId)
     : await imageConfig.pickEndpoint();
-  const args = buildImageGeneratorArgs({
-    skillScript: SKILL_SCRIPT,
-    prompt: request.prompt,
-    endpoint,
-    outputDir,
-    filenamePrefix: IMAGE_TYPES.playground.prefix,
-    requestSize: request.imageSpec.requestSize,
-    count: request.count,
-    background: request.background,
-    system: request.system,
-    model: apiConfig.model,
-    responseFormat: responseFormatForModel(apiConfig.model),
-  });
+  const env = buildImageGeneratorEnv(process.env, apiConfig);
 
-  if (endpoint === "edits") {
-    args.push("--image", sourcePath);
-  }
-
-  const { stdout, stderr } = await runPythonProcess(args, ROOT_DIR, buildImageGeneratorEnv(process.env, apiConfig));
-  const allImagePaths = parseGeneratedImagePaths(stdout).filter((filePath) => !filePath.endsWith("-response.json"));
-  if (!allImagePaths.length) {
-    throw new Error(stderr || stdout || "生图完成，但没有找到输出图片路径");
-  }
-  // 计费兜底：用户只请求了 request.count 张，最多按这个数落盘/扣费；
-  // 上游偶发对同一张图同时回 b64_json 和 url 会多落几份重复图，多出来的直接删掉，避免多扣费。
-  const imagePaths = allImagePaths.slice(0, request.count);
-  for (const extra of allImagePaths.slice(request.count)) {
-    await fsp.unlink(extra).catch(() => {});
-  }
-
-  const images = [];
-  for (const imagePath of imagePaths) {
-    await fsp.access(imagePath, fs.constants.R_OK);
+  // 多张 = 并发发 N 个各要 1 张的请求，再汇总。这样不依赖上游是否支持 n 参数
+  // （如 Agnes 一个请求只回 1 张），选几张就稳定出几张；每个请求用不同文件名前缀避免同秒撞名。
+  const runOne = async (index) => {
+    const args = buildImageGeneratorArgs({
+      skillScript: SKILL_SCRIPT,
+      prompt: request.prompt,
+      endpoint,
+      outputDir,
+      filenamePrefix: `${IMAGE_TYPES.playground.prefix}-${index + 1}`,
+      requestSize: request.imageSpec.requestSize,
+      count: 1,
+      background: request.background,
+      system: request.system,
+      model: apiConfig.model,
+      responseFormat: responseFormatForModel(apiConfig.model),
+    });
+    if (endpoint === "edits") {
+      args.push("--image", sourcePath);
+    }
+    const { stdout, stderr } = await runPythonProcess(args, ROOT_DIR, env);
+    const paths = parseGeneratedImagePaths(stdout).filter((filePath) => !filePath.endsWith("-response.json"));
+    if (!paths.length) {
+      throw new Error(stderr || stdout || "生图完成，但没有找到输出图片路径");
+    }
+    // 每个请求只保留 1 张（个别上游同时回 b64+url 会多落重复图），多余删掉避免多扣费。
+    const keep = paths[0];
+    for (const extra of paths.slice(1)) {
+      await fsp.unlink(extra).catch(() => {});
+    }
+    await fsp.access(keep, fs.constants.R_OK);
     try {
-      await normalizeGeneratedImageFile(imagePath, request.imageSpec, IMAGE_TYPES.playground.label);
+      await normalizeGeneratedImageFile(keep, request.imageSpec, IMAGE_TYPES.playground.label);
     } catch (error) {
-      await fsp.unlink(imagePath).catch(() => {});
+      await fsp.unlink(keep).catch(() => {});
       throw error;
     }
-    images.push(makeImageRecord(imagePath, "playground", request.prompt, sourceMainId));
+    return makeImageRecord(keep, "playground", request.prompt, sourceMainId);
+  };
+
+  const settled = await Promise.allSettled(
+    Array.from({ length: request.count }, (_, index) => runOne(index)),
+  );
+  const images = settled.filter((s) => s.status === "fulfilled").map((s) => s.value);
+  // 全部失败才算失败；部分成功则返回成功的那些，按实际张数扣费。
+  if (!images.length) {
+    throw new Error(settled[0]?.reason?.message || "生图失败");
   }
 
   return { imageSet, images };
