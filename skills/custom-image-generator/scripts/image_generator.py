@@ -75,6 +75,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n", type=int, default=1, help="Requested image count")
     parser.add_argument("--size", default="", help="Optional image size, e.g. 1024x1024")
     parser.add_argument("--background", default="", help="Optional background parameter")
+    parser.add_argument(
+        "--response-format",
+        default="",
+        help="Optional response_format, e.g. b64_json（让上游直接回 base64，避免去下载需鉴权的输出图床链接）",
+    )
     parser.add_argument("--system", default="", help="Extra system-style instruction")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--save-response", action="store_true")
@@ -203,6 +208,16 @@ def make_url(api_base: str, endpoint: str) -> str:
     return normalized + mapping[endpoint]
 
 
+# 让上游直接回 base64（response_format=b64_json，部分渠道如 Agnes 还需 return_base64），
+# 避免回一个需鉴权的输出图床 URL 导致下载 401。
+def apply_response_format(payload: dict[str, Any], response_format: str) -> None:
+    if not response_format:
+        return
+    payload["response_format"] = response_format
+    if response_format == "b64_json":
+        payload["return_base64"] = True
+
+
 def build_payload(endpoint: str, prompt: str, args: argparse.Namespace) -> dict[str, Any]:
     if endpoint in {"generations", "images"}:
         payload: dict[str, Any] = {
@@ -214,8 +229,11 @@ def build_payload(endpoint: str, prompt: str, args: argparse.Namespace) -> dict[
             payload["size"] = args.size
         if args.background:
             payload["background"] = args.background
+        apply_response_format(payload, args.response_format)
         return payload
 
+    # edits 走 multipart，布尔会被编码成字符串 "True" 引起歧义；且当前问题只在文生图(generations)。
+    # 如需图生图也回 base64，另行处理 multipart 的布尔编码。
     return {
         "model": args.model,
         "prompt": prompt,

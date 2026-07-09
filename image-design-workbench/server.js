@@ -455,6 +455,12 @@ function clampInteger(value, fallback, min, max) {
   return Math.min(Math.max(parsed, min), max);
 }
 
+// Agnes 的图片接口会返回需鉴权的输出图床 URL，直接下载会 401；对这类端点改为要 base64。
+// 以模型名判断（agnes-image-*）。其他渠道（gpt-image 等）保持原行为，不受影响。
+function responseFormatForModel(model) {
+  return /agnes/i.test(model || "") ? "b64_json" : "";
+}
+
 function normalizePlaygroundRequest(rawRequest = {}) {
   const prompt = cleanPrompt(rawRequest.prompt);
   if (!prompt) {
@@ -495,6 +501,7 @@ function buildImageGeneratorArgs({
   background = "",
   system = "",
   model = "",
+  responseFormat = "",
 }) {
   const args = [
     skillScript,
@@ -515,6 +522,10 @@ function buildImageGeneratorArgs({
   // 每组端点自带的模型名；留空则不传 --model，脚本回退到全局默认（CUSTOM_IMAGE_MODEL/.env/内置）。
   if (cleanPrompt(model)) {
     args.push("--model", cleanPrompt(model));
+  }
+  // 指定 response_format（如 Agnes 需 b64_json，直接回 base64，避免下载需鉴权的输出图床链接）。
+  if (cleanPrompt(responseFormat)) {
+    args.push("--response-format", cleanPrompt(responseFormat));
   }
   if (background) {
     args.push("--background", background);
@@ -1595,6 +1606,7 @@ async function generatePlaygroundImages(rawRequest = {}, user) {
     background: request.background,
     system: request.system,
     model: apiConfig.model,
+    responseFormat: responseFormatForModel(apiConfig.model),
   });
 
   if (endpoint === "edits") {
@@ -1675,6 +1687,7 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
     filenamePrefix: config.prefix,
     requestSize: normalizedSpec.requestSize,
     model: apiConfig.model,
+    responseFormat: responseFormatForModel(apiConfig.model),
   });
 
   let sourceMainId = "";
