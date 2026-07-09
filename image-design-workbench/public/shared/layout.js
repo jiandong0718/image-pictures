@@ -253,8 +253,11 @@ export function setAvatar(url) {
   if (!el) {
     return;
   }
-  el.innerHTML = url ? `<img src="${url}" alt="" />` : el.innerHTML;
   const me = readCachedMe();
+  // 清除时（url 为空）回退到用户名首字母，与初次渲染一致。
+  el.innerHTML = url
+    ? `<img src="${url}" alt="" />`
+    : (me?.username || "?").slice(0, 1).toUpperCase();
   if (me) {
     me.avatarUrl = url;
     cacheMe(me);

@@ -227,9 +227,11 @@ function renderCanvas() {
       : "尚未上传";
   const actions = active
     ? `<a class="btn sm" href="${active.afterDownload || active.after}">下载结果</a>
-       <button class="btn sm ghost" id="reupload" type="button">换一张</button>`
+       <button class="btn sm ghost" id="reupload" type="button">换一张</button>
+       <button class="btn sm ghost" id="clearPhoto" type="button">清除</button>`
     : file
-      ? `<button class="btn sm ghost" id="reupload" type="button">换一张</button>`
+      ? `<button class="btn sm ghost" id="reupload" type="button">换一张</button>
+         <button class="btn sm ghost" id="clearPhoto" type="button">清除</button>`
       : "";
 
   const histHtml = history.length
@@ -260,6 +262,8 @@ function renderCanvas() {
   }
   const reupload = document.getElementById("reupload");
   if (reupload) reupload.addEventListener("click", () => els.fileInput.click());
+  const clearBtn = document.getElementById("clearPhoto");
+  if (clearBtn) clearBtn.addEventListener("click", clearPhoto);
 
   const range = document.getElementById("cmpRange");
   if (range) {
@@ -288,6 +292,16 @@ function renderCanvas() {
       strip.appendChild(thumb);
     });
   }
+}
+
+function clearPhoto() {
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  file = null;
+  previewUrl = "";
+  active = null; // 清掉当前对比结果；历史记录保留
+  setMsg("");
+  renderState();
+  renderCanvas();
 }
 
 function selectFile(f) {

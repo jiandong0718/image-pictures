@@ -5,6 +5,7 @@
 import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost, apiUpload, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
+import { enableImagePaste, createClearButton } from "/shared/image-paste.js";
 
 const SIZE_PRESETS = { "1k": 1024, "2k": 2048, "4k": 4096 };
 const RATIO_PRESETS = {
@@ -186,6 +187,10 @@ export function createStudio(config) {
       img.loading = "lazy";
       img.addEventListener("click", () => window.open(image.url, "_blank", "noopener"));
       preview.appendChild(img);
+      if (type === "main") {
+        preview.style.position = "relative";
+        preview.appendChild(createClearButton(clearMain, "清除主图"));
+      }
       return;
     }
     if (type !== "main" && !mainReady) {
@@ -303,6 +308,15 @@ export function createStudio(config) {
     } finally {
       setLoading("main", false);
     }
+  }
+
+  // 清除主图：衍生图依赖主图，清掉后相应按钮自动禁用；已生成的衍生图保留。
+  function clearMain() {
+    state.images.main = null;
+    saveState();
+    setMsg("main", "");
+    allTypes.forEach(renderCard);
+    renderControls();
   }
 
   async function generateDerived(type) {
@@ -461,6 +475,7 @@ export function createStudio(config) {
         await uploadMain(e.target.files?.[0]);
         e.target.value = "";
       });
+      enableImagePaste((f) => uploadMain(f)); // Ctrl/Cmd+V 粘贴主图
     }
   }
 

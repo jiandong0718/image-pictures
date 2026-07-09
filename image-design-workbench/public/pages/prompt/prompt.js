@@ -3,7 +3,7 @@
 import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiUpload } from "/shared/api.js";
 import { getDbRecord, putDbRecord } from "/shared/persistence.js";
-import { enableImagePaste } from "/shared/image-paste.js";
+import { enableImagePaste, createClearButton } from "/shared/image-paste.js";
 
 let file = null;
 let previewUrl = "";
@@ -36,11 +36,14 @@ function showPreview() {
     img.src = previewUrl;
     img.alt = "参考图";
     els.preview.appendChild(img);
+    els.preview.style.position = "relative";
     if (loading) {
       const overlay = document.createElement("div");
       overlay.className = "prompt-extracting";
       overlay.innerHTML = `<div class="prompt-extracting-inner">提取中…<div class="progress"></div></div>`;
       els.preview.appendChild(overlay);
+    } else {
+      els.preview.appendChild(createClearButton(clearFile, "清除图片"));
     }
     return;
   }
@@ -68,6 +71,20 @@ async function restoreDraft() {
   if (typeof draft.output === "string") {
     els.output.value = draft.output;
   }
+  showPreview();
+  renderState();
+}
+
+function clearFile() {
+  if (previewUrl) {
+    URL.revokeObjectURL(previewUrl);
+  }
+  file = null;
+  previewUrl = "";
+  els.output.value = "";
+  els.fileMeta.textContent = "";
+  setMsg("");
+  saveDraft();
   showPreview();
   renderState();
 }

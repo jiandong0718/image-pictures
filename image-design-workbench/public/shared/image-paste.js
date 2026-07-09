@@ -17,3 +17,18 @@ export function enableImagePaste(handler) {
   document.addEventListener("paste", onPaste);
   return () => document.removeEventListener("paste", onPaste);
 }
+
+// 生成一个覆盖在预览右上角的「✕ 清除」按钮。父容器需 position:relative（.img-clear 已定义样式）。
+export function createClearButton(onClick, title = "清除") {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "img-clear";
+  btn.title = title;
+  btn.textContent = "✕";
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onClick();
+  });
+  return btn;
+}

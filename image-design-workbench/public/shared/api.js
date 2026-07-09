@@ -19,6 +19,11 @@ export async function apiUpload(url, formData) {
   return handle(res);
 }
 
+export async function apiDelete(url) {
+  const res = await fetch(url, { method: "DELETE", headers: { Accept: "application/json" } });
+  return handle(res);
+}
+
 // 生图接口只同步返回 taskId（避免单个请求挂太久撞上 Cloudflare 100s 超时），
 // 真正的生成结果通过这里轮询 /api/tasks/:id 拿到。
 export async function pollTask(taskId, { interval = 2000, timeoutMs = 5 * 60 * 1000 } = {}) {

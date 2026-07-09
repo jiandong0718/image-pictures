@@ -1,7 +1,7 @@
 // 用户中心：头像上传 + 绑定邮箱 + 修改密码 + VIP 成长等级。
 
 import { mountLayout, setAvatar } from "/shared/layout.js";
-import { apiGet, apiPost, apiUpload, fetchMe } from "/shared/api.js";
+import { apiGet, apiPost, apiUpload, apiDelete, fetchMe } from "/shared/api.js";
 
 function setMsg(id, text, kind = "") {
   const el = document.getElementById(id);
@@ -64,6 +64,11 @@ function renderVip(vip) {
 
 function bindAvatar(me) {
   const input = document.getElementById("avatarInput");
+  const clearBtn = document.getElementById("avatarClearBtn");
+  const syncClearBtn = () => {
+    clearBtn.hidden = !me.avatarUrl;
+  };
+  syncClearBtn();
   document.getElementById("avatarBtn").addEventListener("click", () => input.click());
   input.addEventListener("change", async () => {
     const file = input.files[0];
@@ -86,7 +91,21 @@ function bindAvatar(me) {
       me.avatarUrl = url;
       renderAvatarPreview(me);
       setAvatar(url);
+      syncClearBtn();
       setMsg("avatarMsg", "头像已更新", "success");
+    } catch (err) {
+      setMsg("avatarMsg", err.message, "error");
+    }
+  });
+  clearBtn.addEventListener("click", async () => {
+    setMsg("avatarMsg", "清除中…");
+    try {
+      await apiDelete("/api/account/avatar");
+      me.avatarUrl = "";
+      renderAvatarPreview(me);
+      setAvatar("");
+      syncClearBtn();
+      setMsg("avatarMsg", "头像已清除", "success");
     } catch (err) {
       setMsg("avatarMsg", err.message, "error");
     }

@@ -184,6 +184,24 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
       return true;
     }
 
+    if (req.method === "DELETE" && pathname === "/api/account/avatar") {
+      const user = await requireUser(req, res);
+      if (!user) {
+        return true;
+      }
+      try {
+        const previous = await accounts.getAvatarPath(user.id);
+        if (previous) {
+          await fs.unlink(path.join(avatarDir, previous)).catch(() => {});
+        }
+        await accounts.setAvatarPath(user.id, null);
+        sendJson(res, 200, { ok: true });
+      } catch (error) {
+        sendError(res, error.statusCode || 400, error.message || "清除头像失败");
+      }
+      return true;
+    }
+
     if (req.method === "GET" && pathname.startsWith("/api/account/avatar/")) {
       const user = await requireUser(req, res);
       if (!user) {

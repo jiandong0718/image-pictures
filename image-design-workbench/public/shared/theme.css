@@ -932,6 +932,30 @@ h3 {
   }
 }
 
+/* 覆盖在图片预览右上角的「✕ 清除」按钮（父容器需 position:relative）。各上传位复用。 */
+.img-clear {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(6, 9, 16, 0.72);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.img-clear:hover {
+  background: rgba(200, 60, 60, 0.92);
+}
+
 .empty {
   display: flex;
   flex-direction: column;
