@@ -4,10 +4,12 @@
 import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost, apiUpload, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
+import { enableImagePaste } from "/shared/image-paste.js";
 
 const RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4"];
 const QUALITIES = ["480p", "720p", "1080p"];
 const DURATIONS = ["3s", "5s", "10s", "15s"];
+const MAX_SOURCE_IMAGES = 5; // 1 张=图生视频；2–5 张=关键帧动画
 
 const storage = createLocalState("imageStudio:video:v1");
 const els = {};
@@ -15,7 +17,7 @@ let mode = "text"; // text | image
 let ratio = "16:9";
 let quality = "720p";
 let duration = "5s";
-let sourceImage = null; // { id, url } 图生视频源图
+let sourceImages = []; // [{ id, url }] 图生视频源图（1 张普通图生，2–5 张关键帧）
 let result = null; // 当前结果视频
 let loading = false;
 let uploading = false;
@@ -42,7 +44,11 @@ function loadSaved() {
   if (DURATIONS.includes(saved.duration)) duration = saved.duration;
   if (typeof saved.prompt === "string") els.prompt.value = saved.prompt;
   if (typeof saved.negative === "string") els.negative.value = saved.negative;
-  if (saved.sourceImage && saved.sourceImage.id) sourceImage = saved.sourceImage;
+  if (Array.isArray(saved.sourceImages)) {
+    sourceImages = saved.sourceImages.filter((s) => s && s.id).slice(0, MAX_SOURCE_IMAGES);
+  } else if (saved.sourceImage && saved.sourceImage.id) {
+    sourceImages = [saved.sourceImage]; // 兼容旧存档的单图字段
+  }
   if (saved.result && saved.result.url) result = saved.result;
   if (typeof saved.pendingTask === "string") pendingTask = saved.pendingTask;
 }
@@ -55,7 +61,7 @@ function save() {
     duration,
     prompt: els.prompt.value,
     negative: els.negative.value,
-    sourceImage,
+    sourceImages,
     result,
     pendingTask,
   });
@@ -90,18 +96,29 @@ function renderMode() {
 
 function renderSource() {
   if (mode !== "image") return;
-  if (sourceImage && sourceImage.url) {
-    els.sourceInner.innerHTML = `<img class="vid-drop-preview" src="${sourceImage.url}" alt="源图" /><span class="vid-drop-hint">点击更换源图</span>`;
-  } else if (uploading) {
-    els.sourceInner.innerHTML = `<span class="spinner"></span><span class="vid-drop-hint">上传中…</span>`;
-  } else {
-    els.sourceInner.innerHTML = `<span class="vid-drop-plus">＋</span><span class="vid-drop-hint">点击上传首帧参考图（PNG / JPG / WEBP）</span>`;
+  const parts = sourceImages.map((img, i) => `
+    <div class="vid-thumb">
+      <img src="${img.url}" alt="源图 ${i + 1}" />
+      <button type="button" class="vid-thumb-remove" data-idx="${i}" title="移除">✕</button>
+      <span class="vid-thumb-idx">${i + 1}</span>
+    </div>`);
+  if (uploading) {
+    parts.push(`<div class="vid-thumb uploading"><span class="spinner"></span></div>`);
   }
+  if (sourceImages.length < MAX_SOURCE_IMAGES && !uploading) {
+    parts.push(`
+      <button type="button" class="vid-thumb add" data-add="1">
+        <span class="vid-drop-plus">＋</span>
+        <span class="vid-drop-hint">选图（可多选）</span>
+      </button>`);
+  }
+  els.sourceGrid.innerHTML = parts.join("");
+  els.sourceCount.textContent = `${sourceImages.length}/${MAX_SOURCE_IMAGES}`;
 }
 
 function renderState() {
   const hasPrompt = els.prompt.value.trim().length > 0;
-  const needSource = mode === "image" && !sourceImage;
+  const needSource = mode === "image" && !sourceImages.length;
   els.generateBtn.disabled = !hasVideoConfig || loading || uploading || !hasPrompt || needSource;
   els.generateBtn.innerHTML = loading
     ? `<span class="spinner"></span>生成中…`
@@ -110,7 +127,7 @@ function renderState() {
     els.configHint.textContent = "尚未配置生视频 API Key，请先到「配置中心」保存。";
     els.configHint.style.color = "var(--warn)";
   } else if (needSource) {
-    els.configHint.textContent = "图生视频请先上传一张源图。";
+    els.configHint.textContent = "图生视频请先上传源图（1 张即可，最多 5 张做关键帧动画）。";
     els.configHint.style.color = "var(--ink-mute)";
   } else {
     els.configHint.textContent = "视频异步生成，通常需数十秒到几分钟，请勿关闭页面。";
@@ -172,17 +189,26 @@ async function loadRecent() {
   }
 }
 
-async function uploadSource(file) {
-  if (!file) return;
+async function uploadSource(fileList) {
+  const files = Array.from(fileList || []).filter(Boolean);
+  if (!files.length) return;
+  const room = MAX_SOURCE_IMAGES - sourceImages.length;
+  if (room <= 0) {
+    setMsg(`最多 ${MAX_SOURCE_IMAGES} 张`, "error");
+    return;
+  }
+  const toUpload = files.slice(0, room);
+  setMsg(files.length > room ? `最多 ${MAX_SOURCE_IMAGES} 张，多余的已忽略` : "");
   uploading = true;
-  setMsg("");
   renderSource();
   renderState();
   try {
-    const form = new FormData();
-    form.append("image", file);
-    const data = await apiUpload("/api/videos/source", form);
-    sourceImage = data.image;
+    for (const file of toUpload) {
+      const form = new FormData();
+      form.append("image", file);
+      const data = await apiUpload("/api/videos/source", form);
+      sourceImages.push(data.image);
+    }
   } catch (err) {
     setMsg(err.message, "error");
   } finally {
@@ -191,6 +217,14 @@ async function uploadSource(file) {
     renderSource();
     renderState();
   }
+}
+
+function removeSource(idx) {
+  if (idx < 0 || idx >= sourceImages.length) return;
+  sourceImages.splice(idx, 1);
+  save();
+  renderSource();
+  renderState();
 }
 
 async function awaitTask(taskId) {
@@ -214,7 +248,7 @@ async function awaitTask(taskId) {
 async function generate() {
   const prompt = els.prompt.value.trim();
   if (!prompt) return setMsg("提示词不能为空", "error");
-  if (mode === "image" && !sourceImage) return setMsg("请先上传源图", "error");
+  if (mode === "image" && !sourceImages.length) return setMsg("请先上传源图", "error");
   loading = true;
   result = null;
   setMsg("");
@@ -231,7 +265,7 @@ async function generate() {
       negativePrompt: els.negative.value.trim(),
       seed: els.seed.value.trim(),
       steps: els.steps.value.trim(),
-      sourceImageId: mode === "image" ? sourceImage.id : "",
+      sourceImageIds: mode === "image" ? sourceImages.map((s) => s.id) : [],
     }));
   } catch (err) {
     loading = false;
@@ -253,9 +287,9 @@ async function main() {
     modeTitle: document.getElementById("modeTitle"),
     canvasBadge: document.getElementById("canvasBadge"),
     sourceBlock: document.getElementById("sourceBlock"),
-    sourceDrop: document.getElementById("sourceDrop"),
     sourceInput: document.getElementById("sourceInput"),
-    sourceInner: document.getElementById("sourceInner"),
+    sourceGrid: document.getElementById("sourceGrid"),
+    sourceCount: document.getElementById("sourceCount"),
     prompt: document.getElementById("prompt"),
     negative: document.getElementById("negative"),
     seed: document.getElementById("seed"),
@@ -283,7 +317,29 @@ async function main() {
       renderState();
     });
   });
-  els.sourceInput.addEventListener("change", (e) => uploadSource(e.target.files[0]));
+  els.sourceInput.addEventListener("change", (e) => {
+    uploadSource(e.target.files);
+    e.target.value = ""; // 清空以便重选同一文件也能触发
+  });
+  // 粘贴图片：自动切到图生视频并加为源图（满 5 张则忽略，uploadSource 内已判）。
+  enableImagePaste((f) => {
+    if (mode !== "image") {
+      mode = "image";
+      renderMode();
+      save();
+    }
+    uploadSource([f]);
+  });
+  els.sourceGrid.addEventListener("click", (e) => {
+    const rm = e.target.closest(".vid-thumb-remove");
+    if (rm) {
+      removeSource(Number(rm.dataset.idx));
+      return;
+    }
+    if (e.target.closest(".vid-thumb.add")) {
+      els.sourceInput.click();
+    }
+  });
   els.prompt.addEventListener("input", () => { save(); renderState(); });
   els.negative.addEventListener("input", save);
   [els.seed, els.steps].forEach((el) => el.addEventListener("input", save));

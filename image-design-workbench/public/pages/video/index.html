@@ -28,20 +28,11 @@
 
           <!-- 图生视频：源图上传（仅图生模式显示） -->
           <div class="vid-source" id="sourceBlock" hidden>
-            <div class="section-label">源图</div>
-            <label class="vid-drop" id="sourceDrop">
-              <input type="file" id="sourceInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
-              <div class="vid-drop-inner" id="sourceInner">
-                <span class="vid-drop-plus">＋</span>
-                <span class="vid-drop-hint">点击上传首帧参考图（PNG / JPG / WEBP）</span>
-              </div>
-            </label>
+            <div class="section-label">源图 <span class="vid-source-count" id="sourceCount"></span></div>
+            <input type="file" id="sourceInput" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
+            <div class="vid-source-grid" id="sourceGrid"></div>
+            <div class="vid-source-tip">点「＋」可一次多选（最多 5 张）。传 1 张＝图生视频；传 2 张及以上＝关键帧动画，按顺序过渡。</div>
           </div>
-
-          <label class="field vid-prompt-field">
-            <span>提示词</span>
-            <textarea class="textarea" id="prompt" rows="3" placeholder="描述画面内容与镜头运动：主体、动作、环境、光线、运镜…"></textarea>
-          </label>
 
           <div class="vid-stage" id="stage"></div>
 
@@ -54,7 +45,12 @@
         <!-- 右侧：控制面板 -->
         <div class="card vid-panel">
           <div class="vid-panel-scroll">
-            <div class="section-label">画面比例</div>
+            <label class="field vid-prompt-field">
+              <span>提示词</span>
+              <textarea class="textarea" id="prompt" rows="4" placeholder="描述画面内容与镜头运动：主体、动作、环境、光线、运镜…"></textarea>
+            </label>
+
+            <div class="section-label" style="margin-top: 18px">画面比例</div>
             <div class="vid-chips" id="ratios"></div>
 
             <div class="section-label" style="margin-top: 18px">清晰度</div>

@@ -4,24 +4,17 @@
 // 接口是异步的：POST /v1/videos 提交（拿 video_id），GET /agnesapi?video_id= 轮询。
 // 纯 HTTP 逻辑与状态解析放这里，落盘/扣费/存库由 server.js 负责。
 
-// 提交生视频任务。传 image（data URL 或 base64）即变「图生视频」。返回 videoId。
-async function submitVideo({
-  apiBase,
-  apiKey,
-  model,
-  prompt,
-  image = "",
-  width,
-  height,
-  numFrames,
-  frameRate,
-  negativePrompt = "",
-  seed,
-  steps,
-}) {
+// 组装提交体（纯函数，便于测试）。images 为 data URL / base64 数组：
+//   0 张 => 纯文生视频；1 张 => 普通图生视频（顶层 image）；
+//   2–5 张 => 关键帧动画（extra_body.mode=keyframes + extra_body.image 数组，与 Agnes 文档一致）。
+// ponytail: 关键帧同样传 data URL（与单图一致）；若 Agnes 关键帧只认公网 http URL 再改。
+function buildSubmitBody({ model, prompt, images = [], width, height, numFrames, frameRate, negativePrompt = "", seed, steps }) {
   const body = { model, prompt, width, height, num_frames: numFrames, frame_rate: frameRate };
-  if (image) {
-    body.image = image; // 传图 => 图生视频
+  const imgs = (Array.isArray(images) ? images : [images]).filter(Boolean);
+  if (imgs.length === 1) {
+    body.image = imgs[0];
+  } else if (imgs.length >= 2) {
+    body.extra_body = { mode: "keyframes", image: imgs };
   }
   if (negativePrompt) {
     body.negative_prompt = negativePrompt;
@@ -32,6 +25,12 @@ async function submitVideo({
   if (Number.isFinite(steps)) {
     body.num_inference_steps = steps;
   }
+  return body;
+}
+
+// 提交生视频任务。images 见 buildSubmitBody。返回 videoId。
+async function submitVideo({ apiBase, apiKey, ...rest }) {
+  const body = buildSubmitBody(rest);
 
   const res = await fetch(`${apiBase}/videos`, {
     method: "POST",
@@ -97,4 +96,4 @@ function pickError(data) {
   return data.error?.message || data.message || data._raw || "";
 }
 
-module.exports = { submitVideo, fetchVideoStatus };
+module.exports = { submitVideo, fetchVideoStatus, buildSubmitBody };

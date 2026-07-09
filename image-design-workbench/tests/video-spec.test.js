@@ -68,3 +68,23 @@ test("按时长计费：1 秒 1 积分，未知时长兜底 5s", () => {
   assert.equal(videoCost("10s"), 10);
   assert.equal(videoCost("15s"), 15);
 });
+
+test("buildSubmitBody：0 张纯文生、1 张普通图生、2–5 张走关键帧", () => {
+  const { buildSubmitBody } = require("../lib/video-client");
+  const base = { model: "agnes-video-v2.0", prompt: "x", width: 1280, height: 720, numFrames: 121, frameRate: 24 };
+
+  const text = buildSubmitBody({ ...base, images: [] });
+  assert.equal(text.image, undefined);
+  assert.equal(text.extra_body, undefined);
+
+  const single = buildSubmitBody({ ...base, images: ["data:image/png;base64,AAA"] });
+  assert.equal(single.image, "data:image/png;base64,AAA");
+  assert.equal(single.extra_body, undefined);
+
+  const keyframes = buildSubmitBody({ ...base, images: ["a", "b", "c"] });
+  assert.equal(keyframes.image, undefined);
+  assert.deepEqual(keyframes.extra_body, { mode: "keyframes", image: ["a", "b", "c"] });
+
+  // 空值被过滤
+  assert.deepEqual(buildSubmitBody({ ...base, images: ["a", "", null, "b"] }).extra_body.image, ["a", "b"]);
+});

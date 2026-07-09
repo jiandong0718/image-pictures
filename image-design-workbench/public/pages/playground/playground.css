@@ -28,6 +28,9 @@
   flex: 1;
   position: relative;
   display: grid;
+  /* 单列填满容器：否则 auto 轨道会收缩成内容宽并被 justify-content:start 顶到左边，
+     导致画廊整体靠左。列全宽后画廊才是全宽，内部 .pg-shot 才能靠 align-items:center 居中。 */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   overflow: auto;
   min-height: 340px;

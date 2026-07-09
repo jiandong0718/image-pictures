@@ -3,6 +3,7 @@
 import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiUpload } from "/shared/api.js";
 import { getDbRecord, putDbRecord } from "/shared/persistence.js";
+import { enableImagePaste } from "/shared/image-paste.js";
 
 let file = null;
 let previewUrl = "";
@@ -157,6 +158,7 @@ async function main() {
 
   els.selectBtn.addEventListener("click", () => els.fileInput.click());
   els.uploadZone.addEventListener("click", () => els.fileInput.click());
+  enableImagePaste(selectFile); // Ctrl/Cmd+V 直接粘贴图片
   els.fileInput.addEventListener("change", (e) => {
     selectFile(e.target.files?.[0]);
     e.target.value = "";

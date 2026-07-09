@@ -5,6 +5,7 @@
 import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost, apiUpload, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
+import { enableImagePaste } from "/shared/image-paste.js";
 
 const ICONS = {
   removeBg:
@@ -420,6 +421,7 @@ async function main() {
     }
   });
 
+  enableImagePaste(selectFile); // Ctrl/Cmd+V 直接粘贴图片
   els.fileInput.addEventListener("change", (e) => {
     selectFile(e.target.files?.[0]);
     e.target.value = "";

@@ -1534,6 +1534,73 @@ async function recordImageRecord(ownerUserId, record) {
   }
 }
 
+// 绘图聚集地上游直链下载：先无鉴权取，401/403 再带 Bearer 重试。
+// 对象存储直链带 Authorization 反而会 401（与 Python 侧 download_image 同一坑）。
+async function downloadProxyImage(url, apiKey) {
+  const attempt = async (withAuth) => {
+    const headers = { Accept: "image/*, */*" };
+    if (withAuth && apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const err = new Error(`下载图片失败 ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return Buffer.from(await res.arrayBuffer());
+  };
+  try {
+    return await attempt(false);
+  } catch (error) {
+    if ((error.status === 401 || error.status === 403) && apiKey) {
+      return await attempt(true);
+    }
+    throw error;
+  }
+}
+
+// 从上游返回里抽出图片字节。只认 b64_json 与 url 两种主流返回形态（上游均 OpenAI 兼容，够用）。
+// ponytail: 不处理更奇形的嵌套返回；真出现了再按 collect_image_candidates 那样扩展。
+async function collectProxyImageBuffers(payload, apiKey) {
+  const data = Array.isArray(payload?.data) ? payload.data : [];
+  const buffers = [];
+  for (const item of data) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    if (typeof item.b64_json === "string" && item.b64_json) {
+      buffers.push(Buffer.from(item.b64_json, "base64"));
+    } else if (typeof item.url === "string" && item.url) {
+      buffers.push(await downloadProxyImage(item.url, apiKey));
+    }
+  }
+  return buffers;
+}
+
+// 把绘图聚集地上游结果落进用户新套图并记入图库，返回图片记录数组。
+// 「不丢」的关键：即便前端断开，图也已在磁盘、扣费必对应真实可找回的图。
+async function saveProxyImagesToLibrary({ payload, user, prompt, apiKey }) {
+  const buffers = await collectProxyImageBuffers(payload, apiKey);
+  if (!buffers.length) {
+    return [];
+  }
+  const imageSet = await allocateImageSet(user.id);
+  const { ymd, hms } = videoStamp();
+  const prefix = IMAGE_TYPES.playground.prefix;
+  const records = [];
+  for (let i = 0; i < buffers.length; i++) {
+    const ext = inferUploadedImageExt(buffers[i], "") || "png";
+    const filename = `${prefix}-${ymd}-${hms}-${String(i + 1).padStart(2, "0")}.${ext}`;
+    const filePath = path.join(imageSet.outputDir, filename);
+    await fsp.writeFile(filePath, buffers[i]);
+    const record = makeImageRecord(filePath, "playground", prompt || "");
+    await recordImageRecord(user.id, record);
+    records.push(record);
+  }
+  return records;
+}
+
 // 文件名前缀 → 类型 key，用于回填历史图（文件名形如 <prefix>-YYYYMMDD-HHMMSS-NN.ext）。
 const IMAGE_PREFIX_TO_TYPE = Object.fromEntries(
   Object.entries(IMAGE_TYPES).map(([key, cfg]) => [cfg.prefix, key]),
@@ -1758,6 +1825,7 @@ const VIDEO_QUALITY_BASE = { "480p": 854, "720p": 1280, "1080p": 1920 }; // 长�
 // 帧数（均满足 8n+1，且 ≤ 接口上限 441）。15s@24fps=361 帧仍在范围内；30s 需 721 帧超限，接口不支持。
 const VIDEO_DURATIONS = { "3s": 81, "5s": 121, "10s": 241, "15s": 361 };
 const VIDEO_FPS = 24;
+const VIDEO_MAX_SOURCE_IMAGES = 5; // 图生视频：1 张=普通图生；2–5 张=关键帧动画
 
 // 选中时长 -> 秒数（取标签里的数字，如 "10s" -> 10），再乘单价得本次积分。未知时长按 5s 兜底。
 function videoDurationSeconds(duration) {
@@ -1855,7 +1923,7 @@ async function downloadVideoFile(url, destPath) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 提交 -> 轮询 -> 下载 -> 落盘 -> 记库。返回视频记录。整个流程跑在后台任务里（见 /api/videos）。
-async function generateVideo({ user, mode, prompt, ratio, quality, duration, negativePrompt, seed, steps, sourceImageId }) {
+async function generateVideo({ user, mode, prompt, ratio, quality, duration, negativePrompt, seed, steps, sourceImageIds }) {
   const normalizedPrompt = cleanPrompt(prompt);
   if (!normalizedPrompt) {
     throw new Error("视频提示词不能为空");
@@ -1864,18 +1932,25 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
   const { width, height } = computeVideoSize(ratio, quality);
   const numFrames = VIDEO_DURATIONS[duration] || VIDEO_DURATIONS["5s"];
 
-  // 确定套图目录：图生视频落在源图同套图，文生视频新分配一个。
+  // 确定套图目录：图生视频落在第一张源图同套图，文生视频新分配一个。
+  // 源图 1 张=普通图生视频；2–5 张=关键帧动画（按顺序当关键帧）。
   let imageSetId;
-  let image = "";
+  let images = [];
   if (mode === "image") {
-    if (!sourceImageId) {
-      throw new Error("图生视频需要先上传一张源图");
+    const ids = (Array.isArray(sourceImageIds) ? sourceImageIds : []).filter(Boolean);
+    if (!ids.length) {
+      throw new Error("图生视频需要先上传源图");
     }
-    imageSetId = getImageSetIdFromImageId(sourceImageId);
-    await assertOwnsImageSet(user, imageSetId);
-    const sourcePath = resolveOutputFile(sourceImageId);
-    await fsp.access(sourcePath, fs.constants.R_OK);
-    image = await readImageAsDataUrl(sourcePath);
+    if (ids.length > VIDEO_MAX_SOURCE_IMAGES) {
+      throw new Error(`图生视频最多 ${VIDEO_MAX_SOURCE_IMAGES} 张图`);
+    }
+    imageSetId = getImageSetIdFromImageId(ids[0]);
+    for (const id of ids) {
+      await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
+      const sourcePath = resolveOutputFile(id);
+      await fsp.access(sourcePath, fs.constants.R_OK);
+      images.push(await readImageAsDataUrl(sourcePath));
+    }
   } else {
     const imageSet = await allocateImageSet(user.id);
     imageSetId = imageSet.folderName;
@@ -1888,7 +1963,7 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
     apiKey: config.apiKey,
     model: config.model,
     prompt: normalizedPrompt,
-    image,
+    images,
     width,
     height,
     numFrames,
@@ -2367,18 +2442,76 @@ async function handleApi(req, res, pathname, searchParams) {
     const contentType = req.headers["content-type"] || "";
     let body;
     let requestedCount = 1;
+    let requestPrompt = "";
     try {
       body = await readRequestBuffer(req, MAX_PROXY_UPLOAD_BYTES);
       if (contentType.includes("application/json")) {
         const payload = body.length ? JSON.parse(body.toString("utf8")) : {};
         requestedCount = requestedImageCountFromJson(payload);
+        requestPrompt = typeof payload.prompt === "string" ? payload.prompt : "";
       } else if (contentType.includes("multipart/form-data")) {
-        requestedCount = requestedImageCountFromMultipart(body, contentType);
+        const fields = parseMultipartTextFields(body, contentType);
+        requestedCount = requestedImageCountFromJson(fields);
+        requestPrompt = typeof fields.prompt === "string" ? fields.prompt : "";
       }
       await accounts.assertEnoughCredits(user.id, requestedCount);
     } catch (error) {
       const statusCode = error.statusCode || (error.message?.includes("JSON") ? 400 : 402);
       sendError(res, statusCode, error.message || "绘图聚集地请求不合法");
+      return;
+    }
+
+    // 异步模式（?async=true）：立即返回 taskId，后台跑上游生图 + 落盘图库 + 扣费。
+    // 前端（vendor React 自定义服务商）轮询 /api/full-playground-proxy/tasks/:id 取结果。
+    // 这样单条请求秒回，彻底绕开 Cloudflare 100s 超时；即使前端断开，图也已落盘、扣费必对应真实可找回的图。
+    if (searchParams.get("async") === "true") {
+      const taskId = createGenerationTask(user.id);
+      sendJson(res, 200, { taskId });
+      (async () => {
+        try {
+          const upstream = await fetch(buildApiEndpoint(apiConfig.apiBase, proxyPath), {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiConfig.apiKey}`,
+              "Content-Type": contentType,
+            },
+            body,
+          });
+          const text = await upstream.text();
+          if (!upstream.ok) {
+            failGenerationTask(taskId, `绘图聚集地上游 ${upstream.status}: ${text.slice(0, 300)}`);
+            return;
+          }
+          let payload;
+          try {
+            payload = text ? JSON.parse(text) : {};
+          } catch {
+            failGenerationTask(taskId, "绘图聚集地上游返回非 JSON");
+            return;
+          }
+          const records = await saveProxyImagesToLibrary({
+            payload,
+            user,
+            prompt: requestPrompt,
+            apiKey: apiConfig.apiKey,
+          });
+          if (!records.length) {
+            failGenerationTask(taskId, "绘图聚集地上游未返回可识别图片");
+            return;
+          }
+          const credits = await accounts.consumeCredits(
+            user.id,
+            records.length,
+            `绘图聚集地 ${records.length} 张`,
+          );
+          finishGenerationTask(taskId, {
+            images: records.map((record) => ({ url: record.url })),
+            credits,
+          });
+        } catch (error) {
+          failGenerationTask(taskId, error.message);
+        }
+      })();
       return;
     }
 
@@ -2437,6 +2570,27 @@ async function handleApi(req, res, pathname, searchParams) {
       payload.workbenchCredits = (await accounts.getUserById(user.id))?.credits ?? 0;
     }
     sendJson(res, 200, payload);
+    return;
+  }
+
+  // 绘图聚集地异步任务轮询：vendor React 自定义服务商按 poll.path 拉这里。
+  // 形状对齐注入的 poll 配置：statusPath=status（running/done/error）、result.images.*.url。
+  if (req.method === "GET" && pathname.startsWith("/api/full-playground-proxy/tasks/")) {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) {
+      return;
+    }
+    const id = decodeURIComponent(pathname.replace("/api/full-playground-proxy/tasks/", ""));
+    const task = getGenerationTask(id, user);
+    if (!task) {
+      sendError(res, 404, "任务不存在或已过期");
+      return;
+    }
+    sendJson(res, 200, {
+      status: task.status,
+      error: task.error,
+      result: task.result,
+    });
     return;
   }
 
@@ -2834,7 +2988,10 @@ async function handleApi(req, res, pathname, searchParams) {
           negativePrompt: payload.negativePrompt,
           seed: payload.seed,
           steps: payload.steps,
-          sourceImageId: payload.sourceImageId,
+          // 兼容旧前端的单张 sourceImageId；新前端传 sourceImageIds 数组。
+          sourceImageIds: Array.isArray(payload.sourceImageIds)
+            ? payload.sourceImageIds
+            : (payload.sourceImageId ? [payload.sourceImageId] : []),
         });
         const balance = await accounts.consumeCredits(user.id, cost, `生成${seconds}秒视频`);
         finishGenerationTask(taskId, { video, credits: balance });

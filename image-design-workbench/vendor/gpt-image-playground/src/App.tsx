@@ -2,7 +2,8 @@ import { useEffect } from 'react'
 import { initStore } from './store'
 import { useStore } from './store'
 import { buildSettingsFromUrlParams, clearUrlSettingParams, hasUrlSettingParams } from './lib/urlSettings'
-import { createDefaultOpenAIProfile, DEFAULT_IMAGES_MODEL, mergeImportedSettings, normalizeSettings } from './lib/apiProfiles'
+import { DEFAULT_IMAGES_MODEL, mergeImportedSettings, normalizeSettings } from './lib/apiProfiles'
+import type { ApiProfile, CustomProviderDefinition } from './types'
 import { getCustomProviderConfigUrl, loadCustomProviderSettingsFromUrl } from './lib/customProviderConfigUrl'
 import { useDockerApiUrlMigrationNotice } from './hooks/useDockerApiUrlMigrationNotice'
 import Header from './components/Header'
@@ -23,6 +24,57 @@ import { useGlobalClickSuppression } from './lib/clickSuppression'
 
 let customProviderConfigUrlImportStarted = false
 const WORKBENCH_API_PROFILE_ID = 'workbench-global'
+const WORKBENCH_ASYNC_PROVIDER_ID = 'workbench-async'
+
+// 生图请求体（generations / edits 通用），与服务端 full-playground 代理转发给上游的字段一致。
+const WORKBENCH_ASYNC_BODY = {
+  model: '$profile.model',
+  prompt: '$prompt',
+  size: '$params.size',
+  quality: '$params.quality',
+  output_format: '$params.output_format',
+  moderation: '$params.moderation',
+  output_compression: '$params.output_compression',
+  n: '$params.n',
+}
+
+// 异步自定义服务商：提交拿 taskId（{taskId}），再轮询 tasks/{task_id}。
+// 契约与 server.js 的 /api/full-playground-proxy 逐字对齐——单条请求秒回，彻底绕开 Cloudflare 100s 超时。
+const WORKBENCH_ASYNC_PROVIDER: CustomProviderDefinition = {
+  id: WORKBENCH_ASYNC_PROVIDER_ID,
+  name: '工作台异步',
+  template: 'http-image',
+  submit: {
+    path: 'images/generations',
+    method: 'POST',
+    contentType: 'json',
+    query: { async: 'true' },
+    body: WORKBENCH_ASYNC_BODY,
+    taskIdPath: 'taskId',
+  },
+  editSubmit: {
+    path: 'images/edits',
+    method: 'POST',
+    contentType: 'multipart',
+    query: { async: 'true' },
+    body: WORKBENCH_ASYNC_BODY,
+    files: [
+      { field: 'image[]', source: 'inputImages', array: true },
+      { field: 'mask', source: 'mask' },
+    ],
+    taskIdPath: 'taskId',
+  },
+  poll: {
+    path: 'tasks/{task_id}',
+    method: 'GET',
+    intervalSeconds: 3,
+    statusPath: 'status',
+    successValues: ['done'],
+    failureValues: ['error'],
+    errorPath: 'error',
+    result: { imageUrlPaths: ['result.images.*.url'], b64JsonPaths: [] },
+  },
+}
 
 function isEmbeddedInWorkbench() {
   return window.parent !== window
@@ -57,18 +109,20 @@ function applyWorkbenchPlaygroundConfig(config: Awaited<ReturnType<typeof fetchW
   const state = useStore.getState()
   const settings = normalizeSettings(state.settings)
   const existing = settings.profiles.find((profile) => profile.id === WORKBENCH_API_PROFILE_ID)
-  const profile = createDefaultOpenAIProfile({
+  // provider 指向异步自定义服务商 → 走 submit + 轮询，不再单条同步请求撞 100s 超时。
+  const profile: ApiProfile = {
     id: WORKBENCH_API_PROFILE_ID,
     name: '工作台全局配置',
+    provider: WORKBENCH_ASYNC_PROVIDER_ID,
     baseUrl: config.apiBase || existing?.baseUrl || settings.baseUrl,
     apiKey: config.uploaded ? config.apiKey : '',
     model: config.model || existing?.model || DEFAULT_IMAGES_MODEL,
     timeout: existing?.timeout ?? settings.timeout,
     apiMode: 'images',
     codexCli: false,
-    apiProxy: false,
+    apiProxy: false, // 必须 false：异步任务在开代理时会被 vendor 拒绝
     streamImages: false,
-  })
+  }
 
   state.setSettings(normalizeSettings({
     ...settings,
@@ -80,6 +134,10 @@ function applyWorkbenchPlaygroundConfig(config: Awaited<ReturnType<typeof fetchW
     codexCli: profile.codexCli,
     apiProxy: profile.apiProxy,
     streamImages: profile.streamImages,
+    customProviders: [
+      WORKBENCH_ASYNC_PROVIDER,
+      ...settings.customProviders.filter((item) => item.id !== WORKBENCH_ASYNC_PROVIDER_ID),
+    ],
     profiles: [
       profile,
       ...settings.profiles.filter((item) => item.id !== WORKBENCH_API_PROFILE_ID),
