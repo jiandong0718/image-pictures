@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 const crypto = require("crypto");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 
 // 在求值任何依赖 process.env 的常量之前，先加载 .env。
 require("./lib/env").loadEnv();
@@ -77,8 +77,23 @@ const PYTHON_COMMANDS = [
   "python",
   "python3",
 ].filter(Boolean);
-const IMAGE_NORMALIZER_COMMAND =
-  process.env.IMAGE_NORMALIZER || (process.platform === "darwin" ? "sips" : "magick");
+// 归一化外部命令：显式 IMAGE_NORMALIZER 优先，否则按平台候选，启动时探测第一个真实存在的，
+// 避免线上没装 magick（如宝塔机只有 IM6 的 convert）时 spawn ENOENT 导致生图归一化失败。
+function resolveImageNormalizer() {
+  const explicit = (process.env.IMAGE_NORMALIZER || "").trim();
+  const byPlatform =
+    process.platform === "darwin" ? ["sips", "magick", "convert"] : ["magick", "convert", "sips"];
+  const candidates = [...new Set([explicit, ...byPlatform].filter(Boolean))];
+  for (const cmd of candidates) {
+    const probe = spawnSync(cmd, ["-version"], { stdio: "ignore" });
+    // 命令存在即选它（-version 即便不被该命令支持也不会 ENOENT）。
+    if (!probe.error || probe.error.code !== "ENOENT") {
+      return cmd;
+    }
+  }
+  return candidates[0] || (process.platform === "darwin" ? "sips" : "magick");
+}
+const IMAGE_NORMALIZER_COMMAND = resolveImageNormalizer();
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4174);
 const PREFERRED_IMAGE_WIDTH = 1024;
@@ -2598,6 +2613,7 @@ async function handleApi(req, res, pathname, searchParams) {
     sendJson(res, 200, {
       ok: true,
       outputDir: OUTPUT_DIR,
+      imageNormalizer: IMAGE_NORMALIZER_COMMAND,
       skillScript: SKILL_SCRIPT,
       skillScriptExists: Boolean(SKILL_SCRIPT && fs.existsSync(SKILL_SCRIPT)),
       skillScriptCandidates: SKILL_SCRIPT_CANDIDATES,
