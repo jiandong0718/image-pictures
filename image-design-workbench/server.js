@@ -606,6 +606,24 @@ function normalizeProxyPath(pathname) {
   return pathname.replace(/^\/api\/full-playground-proxy\/?/, "").replace(/^\/+/, "");
 }
 
+// 绘图聚集地代理：把请求体里前端写死的 model 覆盖成端点配置的模型（端点没配就用 .env 的
+// CUSTOM_IMAGE_MODEL），与自由生图一致。避免前端固定发 gpt-image-2、而端点渠道（如 AgnesAI）
+// 没有该模型导致 503 model_not_found。
+// ponytail: 只处理 JSON（generations）；multipart（edits）的 model 字段较难改写，保持原样，需要再补。
+function applyEndpointModel(body, contentType, endpointModel) {
+  const model = (endpointModel || process.env.CUSTOM_IMAGE_MODEL || "").trim();
+  if (!model || !String(contentType).includes("application/json")) {
+    return body;
+  }
+  try {
+    const payload = body.length ? JSON.parse(body.toString("utf8")) : {};
+    payload.model = model;
+    return Buffer.from(JSON.stringify(payload), "utf8");
+  } catch {
+    return body;
+  }
+}
+
 function hasImageValue(item) {
   if (!item || typeof item !== "object") {
     return false;
@@ -2476,6 +2494,9 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
 
+    // 用端点配置的模型覆盖前端写死的 gpt-image-2（与自由生图一致），避免渠道无该模型 503。
+    const forwardBody = applyEndpointModel(body, contentType, apiConfig.model);
+
     // 异步模式（?async=true）：立即返回 taskId，后台跑上游生图 + 落盘图库 + 扣费。
     // 前端（vendor React 自定义服务商）轮询 /api/full-playground-proxy/tasks/:id 取结果。
     // 这样单条请求秒回，彻底绕开 Cloudflare 100s 超时；即使前端断开，图也已落盘、扣费必对应真实可找回的图。
@@ -2490,7 +2511,7 @@ async function handleApi(req, res, pathname, searchParams) {
               "Authorization": `Bearer ${apiConfig.apiKey}`,
               "Content-Type": contentType,
             },
-            body,
+            body: forwardBody,
           });
           const text = await upstream.text();
           if (!upstream.ok) {
@@ -2539,7 +2560,7 @@ async function handleApi(req, res, pathname, searchParams) {
           "Authorization": `Bearer ${apiConfig.apiKey}`,
           "Content-Type": contentType,
         },
-        body,
+        body: forwardBody,
       });
       responseText = await upstreamResponse.text();
     } catch (error) {
@@ -3399,6 +3420,7 @@ module.exports = {
   GPT_IMAGE_PLAYGROUND_BASE_PATH,
   GPT_IMAGE_PLAYGROUND_DIST_DIR,
   assertImageSpecDimensions,
+  applyEndpointModel,
   buildApiEndpoint,
   buildImageGeneratorArgs,
   buildImageGeneratorEnv,

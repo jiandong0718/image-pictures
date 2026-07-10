@@ -7,6 +7,7 @@ const test = require("node:test");
 const {
   GPT_IMAGE_PLAYGROUND_BASE_PATH,
   GPT_IMAGE_PLAYGROUND_DIST_DIR,
+  applyEndpointModel,
   assertImageSpecDimensions,
   buildApiEndpoint,
   buildImageGeneratorArgs,
@@ -548,4 +549,20 @@ test("clears generated output contents while keeping the output directory", asyn
 
   assert.equal(removed, 2);
   assert.deepEqual(await fs.readdir(outputDir), []);
+});
+
+test("applyEndpointModel：JSON 请求体的 model 被端点模型覆盖，multipart 保持原样", () => {
+  const json = Buffer.from(JSON.stringify({ model: "gpt-image-2", prompt: "x" }));
+  // 端点配了模型 → 覆盖
+  const out = applyEndpointModel(json, "application/json", "agnes-image-2.1-flash");
+  assert.equal(JSON.parse(out.toString()).model, "agnes-image-2.1-flash");
+  assert.equal(JSON.parse(out.toString()).prompt, "x");
+  // 端点没配模型、也无 .env 默认 → 原样返回
+  const prevEnv = process.env.CUSTOM_IMAGE_MODEL;
+  delete process.env.CUSTOM_IMAGE_MODEL;
+  assert.equal(applyEndpointModel(json, "application/json", "").toString(), json.toString());
+  if (prevEnv !== undefined) process.env.CUSTOM_IMAGE_MODEL = prevEnv;
+  // multipart 不改
+  const mp = Buffer.from("--b\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\ngpt-image-2\r\n--b--");
+  assert.equal(applyEndpointModel(mp, "multipart/form-data; boundary=b", "agnes").toString(), mp.toString());
 });
