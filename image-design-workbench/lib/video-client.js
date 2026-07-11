@@ -68,14 +68,46 @@ async function fetchVideoStatus({ apiBase, apiKey, videoId }) {
     err.status = res.status;
     throw err;
   }
+  return parseVideoStatus(data);
+}
+
+function parseVideoStatus(data = {}) {
+  const rawStatus = String(
+    data.status || data.state || data.task_status || data.data?.status || data.data?.state || "",
+  ).toLowerCase();
+  const url =
+    data.url ||
+    data.video_url ||
+    data.output_url ||
+    data.data?.url ||
+    data.data?.video_url ||
+    data.data?.output_url ||
+    data.output?.url ||
+    data.output?.video_url ||
+    "";
+  const status = normalizeStatus(rawStatus, url);
   return {
-    status: data.status || "",
-    url: data.url || data.video_url || data.data?.url || "",
-    progress: Number(data.progress) || 0,
-    seconds: data.seconds != null ? String(data.seconds) : "",
-    size: data.size || "",
-    error: data.error || "",
+    status,
+    rawStatus,
+    url,
+    progress: Number(data.progress ?? data.data?.progress) || 0,
+    seconds: data.seconds != null ? String(data.seconds) : data.data?.seconds != null ? String(data.data.seconds) : "",
+    size: data.size || data.data?.size || "",
+    error: pickError(data),
   };
+}
+
+function normalizeStatus(status, url) {
+  if (["completed", "complete", "succeeded", "success", "done", "finished"].includes(status)) {
+    return "completed";
+  }
+  if (["failed", "fail", "error", "errored", "canceled", "cancelled"].includes(status)) {
+    return "failed";
+  }
+  if (["queued", "pending", "processing", "running", "generating", "in_progress", "created"].includes(status)) {
+    return "running";
+  }
+  return url ? "completed" : status;
 }
 
 function parseJson(text) {
@@ -96,4 +128,4 @@ function pickError(data) {
   return data.error?.message || data.message || data._raw || "";
 }
 
-module.exports = { submitVideo, fetchVideoStatus, buildSubmitBody };
+module.exports = { submitVideo, fetchVideoStatus, buildSubmitBody, parseVideoStatus };

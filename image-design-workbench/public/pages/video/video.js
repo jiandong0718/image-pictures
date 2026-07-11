@@ -67,13 +67,15 @@ function save() {
   });
 }
 
-function chipRow(container, items, current, onPick, labelFn = (x) => x) {
+function chipRow(container, items, current, onPick, labelFn = (x) => x, isDisabled = () => false) {
   container.innerHTML = "";
   items.forEach((v) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = `vid-chip${v === current ? " active" : ""}`;
     btn.textContent = labelFn(v);
+    btn.disabled = isDisabled(v);
+    if (btn.disabled) btn.title = "1080P 最长支持 10 秒";
     btn.addEventListener("click", () => onPick(v));
     container.appendChild(btn);
   });
@@ -81,8 +83,21 @@ function chipRow(container, items, current, onPick, labelFn = (x) => x) {
 
 function renderChips() {
   chipRow(els.ratios, RATIOS, ratio, (v) => { ratio = v; renderChips(); save(); });
-  chipRow(els.qualities, QUALITIES, quality, (v) => { quality = v; renderChips(); save(); }, (v) => v.toUpperCase());
-  chipRow(els.durations, DURATIONS, duration, (v) => { duration = v; renderChips(); save(); renderState(); });
+  chipRow(els.qualities, QUALITIES, quality, (v) => {
+    quality = v;
+    if (quality === "1080p" && duration === "15s") duration = "10s";
+    renderChips();
+    save();
+    renderState();
+  }, (v) => v.toUpperCase());
+  chipRow(
+    els.durations,
+    DURATIONS,
+    duration,
+    (v) => { duration = v; renderChips(); save(); renderState(); },
+    (v) => v,
+    (v) => quality === "1080p" && v === "15s",
+  );
 }
 
 function renderMode() {

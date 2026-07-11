@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   computeVideoSize,
+  getVideoFrames,
   VIDEO_DURATIONS,
   videoCost,
   videoDurationSeconds,
@@ -60,6 +61,13 @@ test("所有时长档的帧数满足 Agnes 的 8n+1 规则且不超上限 441", 
   assert.equal(VIDEO_DURATIONS["30s"], undefined); // 30s 超帧数上限，不支持
 });
 
+test("视频帧数遵守各清晰度的上游限制", () => {
+  assert.equal(getVideoFrames("15s", "720p"), 361);
+  assert.equal(getVideoFrames("10s", "1080p"), 241);
+  assert.throws(() => getVideoFrames("15s", "1080p"), /1080p 最长支持 10 秒/);
+  assert.equal(getVideoFrames("unknown", "1080p"), 121);
+});
+
 test("按时长计费：1 秒 1 积分，未知时长兜底 5s", () => {
   assert.equal(videoDurationSeconds("3s"), 3);
   assert.equal(videoDurationSeconds("15s"), 15);
@@ -87,4 +95,25 @@ test("buildSubmitBody：0 张纯文生、1 张普通图生、2–5 张走关键�
 
   // 空值被过滤
   assert.deepEqual(buildSubmitBody({ ...base, images: ["a", "", null, "b"] }).extra_body.image, ["a", "b"]);
+});
+
+test("parseVideoStatus 兼容常见上游状态名和嵌套视频地址", () => {
+  const { parseVideoStatus } = require("../lib/video-client");
+
+  assert.deepEqual(
+    parseVideoStatus({ status: "succeeded", data: { video_url: "https://cdn.example/video.mp4", seconds: 5 } }),
+    {
+      status: "completed",
+      rawStatus: "succeeded",
+      url: "https://cdn.example/video.mp4",
+      progress: 0,
+      seconds: "5",
+      size: "",
+      error: "",
+    },
+  );
+  assert.equal(parseVideoStatus({ state: "done", output: { url: "https://cdn.example/out.mp4" } }).status, "completed");
+  assert.equal(parseVideoStatus({ task_status: "processing" }).status, "running");
+  assert.equal(parseVideoStatus({ data: { url: "https://cdn.example/no-status.mp4" } }).status, "completed");
+  assert.equal(parseVideoStatus({ status: "error", message: "quota exceeded" }).error, "quota exceeded");
 });

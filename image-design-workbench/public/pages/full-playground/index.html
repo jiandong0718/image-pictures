@@ -7,10 +7,23 @@
     <link rel="stylesheet" href="/shared/theme.css" />
     <script src="/shared/theme-init.js"></script>
     <style>
+      body.full-playground-shell .content {
+        flex: 1;
+        min-height: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      body.full-playground-shell #page {
+        height: 100%;
+        min-height: 0;
+      }
       .embed-card {
         padding: 0;
         overflow: hidden;
-        height: calc(100vh - 150px);
+        height: 100%;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
       }
       .embed-card iframe {
         width: 100%;
@@ -22,7 +35,7 @@
   </head>
   <body>
     <div id="page">
-      <div class="card embed-card">
+      <div class="embed-card">
         <iframe title="绘图聚集地" src="/gpt-image-playground/" loading="lazy"></iframe>
       </div>
     </div>

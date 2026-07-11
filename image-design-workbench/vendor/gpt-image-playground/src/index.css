@@ -112,6 +112,10 @@ html.workbench-embed:not([data-workbench-theme]) body {
   background-size: 40px 40px, 40px 40px, auto, auto !important;
 }
 
+html.workbench-embed [data-home-main] > .safe-area-x {
+  max-width: none;
+}
+
 html.workbench-embed[data-workbench-theme="tech"] [data-input-card],
 html.workbench-embed:not([data-workbench-theme]) [data-input-card] {
   background:

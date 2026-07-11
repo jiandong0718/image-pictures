@@ -8,6 +8,8 @@ const {
   GPT_IMAGE_PLAYGROUND_BASE_PATH,
   GPT_IMAGE_PLAYGROUND_DIST_DIR,
   applyEndpointModel,
+  absolutizePlaygroundTaskResult,
+  getPublicRequestOrigin,
   assertImageSpecDimensions,
   buildApiEndpoint,
   buildImageGeneratorArgs,
@@ -15,6 +17,7 @@ const {
   buildPromptExtractionRequest,
   callPromptExtractionApi,
   clearOutputDirContents,
+  collectProxyImageSources,
   countImagesInApiResponse,
   getBatchDerivedTypes,
   getDerivedImageTypes,
@@ -26,6 +29,7 @@ const {
   parseGeneratedImagePaths,
   parsePromptExtractionResponse,
   requestedImageCountFromJson,
+  isRetryablePlaygroundStatus,
   readImageDimensions,
 } = require("../server");
 
@@ -295,6 +299,60 @@ test("counts full playground generated images for credit billing", () => {
     ],
   }), 2);
   assert.equal(countImagesInApiResponse(null), 0);
+});
+
+test("collects full playground image sources from nested response shapes", () => {
+  assert.deepEqual(
+    collectProxyImageSources({
+      output: [
+        { content: [{ type: "output_text", text: "x" }, { type: "output_image", image_url: "https://example.com/a.png" }] },
+        { content: [{ type: "image_generation_call", result: "YmFzZTY0LWltYWdl" }] },
+        { images: [{ data_url: "data:image/png;base64,UE5HREFUQQ==" }] },
+        { image_url: { url: "https://example.com/b.webp" } },
+      ],
+    }),
+    [
+      { type: "url", value: "https://example.com/a.png" },
+      { type: "base64", value: "YmFzZTY0LWltYWdl" },
+      { type: "base64", value: "UE5HREFUQQ==" },
+      { type: "url", value: "https://example.com/b.webp" },
+    ],
+  );
+});
+
+test("converts playground task image paths to absolute URLs", () => {
+  const result = absolutizePlaygroundTaskResult(
+    { images: [{ url: "/api/images/file/001%2Fimage.png" }], credits: 39 },
+    "https://image.chatyh.cn",
+  );
+  assert.deepEqual(result, {
+    images: [{ url: "https://image.chatyh.cn/api/images/file/001%2Fimage.png" }],
+    credits: 39,
+  });
+});
+
+test("uses Cloudflare visitor scheme for public playground image URLs", () => {
+  assert.equal(
+    getPublicRequestOrigin({
+      host: "image.chatyh.cn",
+      "x-forwarded-proto": "http",
+      "cf-visitor": '{"scheme":"https"}',
+    }),
+    "https://image.chatyh.cn",
+  );
+  assert.equal(
+    getPublicRequestOrigin({ host: "127.0.0.1:4174", "x-forwarded-proto": "http" }),
+    "http://127.0.0.1:4174",
+  );
+});
+
+test("retries only transient playground upstream statuses", () => {
+  assert.equal(isRetryablePlaygroundStatus(422), true);
+  assert.equal(isRetryablePlaygroundStatus(429), true);
+  assert.equal(isRetryablePlaygroundStatus(500), true);
+  assert.equal(isRetryablePlaygroundStatus(503), true);
+  assert.equal(isRetryablePlaygroundStatus(400), false);
+  assert.equal(isRetryablePlaygroundStatus(401), false);
 });
 
 test("normalizes full playground requested image count for credit preflight", () => {

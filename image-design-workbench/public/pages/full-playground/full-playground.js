@@ -16,6 +16,7 @@ function sendThemeToFrame() {
 
 mountLayout({ active: "full-playground", title: "绘图聚集地", crumb: "TOOLS" }).then((ctx) => {
   if (!ctx) return;
+  document.body.classList.add("full-playground-shell");
   const frame = document.querySelector(".embed-card iframe");
   frame?.addEventListener("load", sendThemeToFrame);
   sendThemeToFrame();

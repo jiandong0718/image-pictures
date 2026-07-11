@@ -363,6 +363,16 @@
   color: var(--ink);
 }
 
+.vid-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.vid-chip:disabled:hover {
+  border-color: var(--line-strong);
+  color: var(--ink-soft);
+}
+
 .vid-chip.active {
   color: var(--accent);
   border-color: var(--accent-line);

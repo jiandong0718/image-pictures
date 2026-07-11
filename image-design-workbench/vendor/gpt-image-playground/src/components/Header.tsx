@@ -23,7 +23,7 @@ function isEmbeddedInWorkbench() {
   return window.parent !== window
 }
 
-function postWorkbenchAction(type: 'image-workbench:clear-state' | 'image-workbench:reset-cache') {
+function postWorkbenchAction(type: 'image-workbench:clear-state') {
   window.parent.postMessage({ type }, window.location.origin)
 }
 
@@ -153,6 +153,8 @@ export default function Header() {
     }
   }
 
+  if (embeddedInWorkbench) return null
+
   return (
     <>
       <header data-no-drag-select className={`safe-area-top fixed top-0 left-0 right-0 z-40 bg-white/80 dark:bg-gray-950/80 backdrop-blur border-b border-gray-200 dark:border-white/[0.08] transition-transform duration-300 ease-in-out ${appMode === 'agent' && !agentMobileHeaderVisible ? '-translate-y-full sm:translate-y-0' : 'translate-y-0'}`}>
@@ -181,7 +183,7 @@ export default function Header() {
                   绘图聚集地
                 </a>
               )}
-              {hasUpdate && latestRelease && (
+              {!embeddedInWorkbench && hasUpdate && latestRelease && (
                 <a
                   href={latestRelease.url}
                   target="_blank"
@@ -253,16 +255,9 @@ export default function Header() {
               >
                 清空页面
               </button>
-              <button
-                type="button"
-                onClick={() => postWorkbenchAction('image-workbench:reset-cache')}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium text-red-500/80 hover:text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-500/10 transition-colors"
-              >
-                重置缓存
-              </button>
             </div>
           )}
-          <div className="hidden sm:flex items-center gap-1 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-100/70 dark:bg-white/[0.04] p-1 mr-4">
+          {!embeddedInWorkbench && <div className="hidden sm:flex items-center gap-1 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-100/70 dark:bg-white/[0.04] p-1 mr-4">
             <button
               type="button"
               onClick={() => setAppMode('gallery')}
@@ -277,8 +272,8 @@ export default function Header() {
             >
               Agent
             </button>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
+          </div>}
+          {!embeddedInWorkbench && <div className="flex items-center gap-1 shrink-0">
             {!isPwaInstalled && (
               <div
                 className="relative"
@@ -332,9 +327,9 @@ export default function Header() {
                 设置
               </ViewportTooltip>
             </div>
-          </div>
+          </div>}
         </div>
-        <div className={`safe-area-x sm:hidden overflow-hidden transition-all duration-300 ease-in-out ${appMode === 'gallery' && scrollDirection === 'down' ? 'max-h-0 opacity-0 pb-0' : 'max-h-20 opacity-100 pb-2'}`}>
+        {!embeddedInWorkbench && <div className={`safe-area-x sm:hidden overflow-hidden transition-all duration-300 ease-in-out ${appMode === 'gallery' && scrollDirection === 'down' ? 'max-h-0 opacity-0 pb-0' : 'max-h-20 opacity-100 pb-2'}`}>
           <div className="grid grid-cols-2 gap-1 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-100/70 dark:bg-white/[0.04] p-1 mx-2">
             <button
               type="button"
@@ -351,7 +346,7 @@ export default function Header() {
               Agent
             </button>
           </div>
-        </div>
+        </div>}
       </header>
       
       {/* Hint for sliding down */}
@@ -363,11 +358,11 @@ export default function Header() {
 
       <div className={`safe-area-top invisible pointer-events-none transition-all duration-300 ease-in-out ${appMode === 'agent' && !agentMobileHeaderVisible ? 'max-h-0 sm:max-h-[500px] opacity-0 sm:opacity-100 overflow-hidden sm:overflow-visible' : 'max-h-[500px] opacity-100'}`} aria-hidden="true">
         <div className="safe-header-inner" />
-        <div className={`safe-area-x sm:hidden overflow-hidden transition-all duration-300 ease-in-out ${appMode === 'gallery' && scrollDirection === 'down' ? 'max-h-0 pb-0' : 'max-h-20 pb-2'}`}>
+        {!embeddedInWorkbench && <div className={`safe-area-x sm:hidden overflow-hidden transition-all duration-300 ease-in-out ${appMode === 'gallery' && scrollDirection === 'down' ? 'max-h-0 pb-0' : 'max-h-20 pb-2'}`}>
           <div className="p-1">
             <div className="py-1.5 text-sm">占位</div>
           </div>
-        </div>
+        </div>}
       </div>
       {showHelp && <HelpModal appMode={appMode} isFavoriteCollectionOverview={appMode === 'gallery' && filterFavorite && !activeFavoriteCollectionId} onClose={() => setShowHelp(false)} />}
     </>

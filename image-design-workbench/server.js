@@ -606,6 +606,33 @@ function normalizeProxyPath(pathname) {
   return pathname.replace(/^\/api\/full-playground-proxy\/?/, "").replace(/^\/+/, "");
 }
 
+function absolutizePlaygroundTaskResult(result, origin) {
+  if (!result || !Array.isArray(result.images)) return result;
+  return {
+    ...result,
+    images: result.images.map((image) => {
+      if (!image || typeof image.url !== "string") return image;
+      try {
+        return { ...image, url: new URL(image.url, origin).toString() };
+      } catch {
+        return image;
+      }
+    }),
+  };
+}
+
+function getPublicRequestOrigin(headers = {}) {
+  let cloudflareScheme = "";
+  try {
+    cloudflareScheme = JSON.parse(String(headers["cf-visitor"] || "{}"))?.scheme || "";
+  } catch {
+    cloudflareScheme = "";
+  }
+  const forwardedProto = String(headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const protocol = cloudflareScheme === "https" || forwardedProto === "https" ? "https" : "http";
+  return `${protocol}://${headers.host}`;
+}
+
 // 绘图聚集地代理：把请求体里前端写死的 model 覆盖成端点配置的模型（端点没配就用 .env 的
 // CUSTOM_IMAGE_MODEL），与自由生图一致。避免前端固定发 gpt-image-2、而端点渠道（如 AgnesAI）
 // 没有该模型导致 503 model_not_found。
@@ -678,6 +705,10 @@ function countImagesInApiResponse(payload) {
 function requestedImageCountFromJson(payload) {
   const n = Number(payload?.n);
   return Number.isInteger(n) && n > 0 ? Math.min(n, 16) : 1;
+}
+
+function isRetryablePlaygroundStatus(status) {
+  return status === 422 || status === 429 || status >= 500;
 }
 
 function parseMultipartTextFields(buffer, contentType) {
@@ -1593,19 +1624,84 @@ async function downloadProxyImage(url, apiKey) {
   }
 }
 
-// 从上游返回里抽出图片字节。只认 b64_json 与 url 两种主流返回形态（上游均 OpenAI 兼容，够用）。
-// ponytail: 不处理更奇形的嵌套返回；真出现了再按 collect_image_candidates 那样扩展。
-async function collectProxyImageBuffers(payload, apiKey) {
-  const data = Array.isArray(payload?.data) ? payload.data : [];
-  const buffers = [];
-  for (const item of data) {
-    if (!item || typeof item !== "object") {
-      continue;
+function stripDataUrl(value) {
+  const text = cleanPrompt(value);
+  const match = /^data:image\/[a-z0-9.+-]+;base64,(.+)$/i.exec(text);
+  return match ? match[1] : "";
+}
+
+function collectProxyImageSources(value, sources = []) {
+  if (!value) {
+    return sources;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectProxyImageSources(item, sources);
     }
-    if (typeof item.b64_json === "string" && item.b64_json) {
-      buffers.push(Buffer.from(item.b64_json, "base64"));
-    } else if (typeof item.url === "string" && item.url) {
-      buffers.push(await downloadProxyImage(item.url, apiKey));
+    return sources;
+  }
+  if (typeof value !== "object") {
+    return sources;
+  }
+
+  const record = value;
+  const pushBase64 = (raw) => {
+    const text = cleanPrompt(raw);
+    if (!text) return;
+    sources.push({ type: "base64", value: stripDataUrl(text) || text });
+  };
+  const pushUrl = (raw) => {
+    const text = cleanPrompt(raw);
+    if (!text) return;
+    if (/^data:image\//i.test(text)) {
+      pushBase64(text);
+    } else {
+      sources.push({ type: "url", value: text });
+    }
+  };
+
+  if (typeof record.b64_json === "string") {
+    pushBase64(record.b64_json);
+  }
+  if (typeof record.data_url === "string") {
+    pushBase64(record.data_url);
+  }
+  if (typeof record.base64 === "string") {
+    pushBase64(record.base64);
+  }
+  if (typeof record.url === "string") {
+    pushUrl(record.url);
+  }
+  if (typeof record.image_url === "string") {
+    pushUrl(record.image_url);
+  } else if (record.image_url && typeof record.image_url === "object" && typeof record.image_url.url === "string") {
+    pushUrl(record.image_url.url);
+  }
+  if (typeof record.image === "string") {
+    pushUrl(record.image);
+  }
+  if (record.type === "image_generation_call" && typeof record.result === "string") {
+    pushBase64(record.result);
+  }
+
+  for (const key of ["content", "output", "images", "data"]) {
+    if (Array.isArray(record[key])) {
+      collectProxyImageSources(record[key], sources);
+    }
+  }
+  return sources;
+}
+
+// 从上游返回里抽出图片字节。与 countImagesInApiResponse 使用相同的嵌套思路，
+// 兼容 OpenAI Images、Responses output/content、Agnes b64_json/data_url 等形态。
+async function collectProxyImageBuffers(payload, apiKey) {
+  const sources = collectProxyImageSources(payload);
+  const buffers = [];
+  for (const source of sources) {
+    if (source.type === "base64") {
+      buffers.push(Buffer.from(source.value, "base64"));
+    } else if (source.type === "url") {
+      buffers.push(await downloadProxyImage(source.value, apiKey));
     }
   }
   return buffers;
@@ -1855,8 +1951,9 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
 // 比例/清晰度/时长都用预设，服务端据此算 width/height/num_frames，不信任前端几何，避免 422/500。
 const VIDEO_RATIOS = { "16:9": [16, 9], "9:16": [9, 16], "1:1": [1, 1], "4:3": [4, 3], "3:4": [3, 4] };
 const VIDEO_QUALITY_BASE = { "480p": 854, "720p": 1280, "1080p": 1920 }; // 长边像素
-// 帧数（均满足 8n+1，且 ≤ 接口上限 441）。15s@24fps=361 帧仍在范围内；30s 需 721 帧超限，接口不支持。
+// 帧数均满足 8n+1；上游按清晰度限制最大帧数，1080p 最多 241 帧。
 const VIDEO_DURATIONS = { "3s": 81, "5s": 121, "10s": 241, "15s": 361 };
+const VIDEO_MAX_FRAMES_BY_QUALITY = { "480p": 961, "720p": 481, "1080p": 241 };
 const VIDEO_FPS = 24;
 const VIDEO_MAX_SOURCE_IMAGES = 5; // 图生视频：1 张=普通图生；2–5 张=关键帧动画
 
@@ -1868,6 +1965,16 @@ function videoDurationSeconds(duration) {
 
 function videoCost(duration) {
   return videoDurationSeconds(duration) * VIDEO_CREDIT_PER_SECOND;
+}
+
+function getVideoFrames(duration, quality) {
+  const normalizedDuration = VIDEO_DURATIONS[duration] ? duration : "5s";
+  const normalizedQuality = VIDEO_MAX_FRAMES_BY_QUALITY[quality] ? quality : "720p";
+  const frames = VIDEO_DURATIONS[normalizedDuration];
+  if (frames > VIDEO_MAX_FRAMES_BY_QUALITY[normalizedQuality]) {
+    throw new Error(`${normalizedQuality} 最长支持 10 秒视频，请缩短时长或降低清晰度`);
+  }
+  return frames;
 }
 const VIDEO_SOURCE_PREFIX = "video-source";
 
@@ -1963,7 +2070,7 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
   }
   const config = await imageConfig.getRequiredVideoConfig();
   const { width, height } = computeVideoSize(ratio, quality);
-  const numFrames = VIDEO_DURATIONS[duration] || VIDEO_DURATIONS["5s"];
+  const numFrames = getVideoFrames(duration, quality);
 
   // 确定套图目录：图生视频落在第一张源图同套图，文生视频新分配一个。
   // 源图 1 张=普通图生视频；2–5 张=关键帧动画（按顺序当关键帧）。
@@ -2505,15 +2612,24 @@ async function handleApi(req, res, pathname, searchParams) {
       sendJson(res, 200, { taskId });
       (async () => {
         try {
-          const upstream = await fetch(buildApiEndpoint(apiConfig.apiBase, proxyPath), {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiConfig.apiKey}`,
-              "Content-Type": contentType,
-            },
-            body: forwardBody,
-          });
-          const text = await upstream.text();
+          let activeConfig = apiConfig;
+          let upstream;
+          let text = "";
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            const attemptBody = applyEndpointModel(body, contentType, activeConfig.model);
+            upstream = await fetch(buildApiEndpoint(activeConfig.apiBase, proxyPath), {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${activeConfig.apiKey}`,
+                "Content-Type": contentType,
+              },
+              body: attemptBody,
+            });
+            text = await upstream.text();
+            if (upstream.ok || !isRetryablePlaygroundStatus(upstream.status) || attempt === 1) break;
+            console.warn(`绘图聚集地节点返回 ${upstream.status}，切换节点重试`);
+            activeConfig = await imageConfig.pickEndpoint();
+          }
           if (!upstream.ok) {
             failGenerationTask(taskId, `绘图聚集地上游 ${upstream.status}: ${text.slice(0, 300)}`);
             return;
@@ -2529,7 +2645,7 @@ async function handleApi(req, res, pathname, searchParams) {
             payload,
             user,
             prompt: requestPrompt,
-            apiKey: apiConfig.apiKey,
+            apiKey: activeConfig.apiKey,
           });
           if (!records.length) {
             failGenerationTask(taskId, "绘图聚集地上游未返回可识别图片");
@@ -2622,10 +2738,11 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, 404, "任务不存在或已过期");
       return;
     }
+    const origin = getPublicRequestOrigin(req.headers);
     sendJson(res, 200, {
       status: task.status,
       error: task.error,
-      result: task.result,
+      result: absolutizePlaygroundTaskResult(task.result, origin),
     });
     return;
   }
@@ -3001,6 +3118,12 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     if (!cleanPrompt(payload.prompt)) {
       sendError(res, 400, "视频提示词不能为空");
+      return;
+    }
+    try {
+      getVideoFrames(payload.duration, payload.quality);
+    } catch (error) {
+      sendError(res, 400, error.message);
       return;
     }
     const cost = videoCost(payload.duration); // 按选中时长计费：秒数 × 单价
@@ -3421,10 +3544,14 @@ module.exports = {
   GPT_IMAGE_PLAYGROUND_DIST_DIR,
   assertImageSpecDimensions,
   applyEndpointModel,
+  absolutizePlaygroundTaskResult,
+  getPublicRequestOrigin,
   buildApiEndpoint,
   buildImageGeneratorArgs,
   buildImageGeneratorEnv,
+  collectProxyImageSources,
   computeVideoSize,
+  getVideoFrames,
   VIDEO_DURATIONS,
   videoCost,
   videoDurationSeconds,
@@ -3443,6 +3570,7 @@ module.exports = {
   normalizePlaygroundRequest,
   parseGeneratedImagePaths,
   requestedImageCountFromJson,
+  isRetryablePlaygroundStatus,
   normalizeGeneratedImageFile,
   parsePromptExtractionResponse,
   readImageDimensions,

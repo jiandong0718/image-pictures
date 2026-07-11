@@ -188,6 +188,7 @@ export default function App() {
   useEffect(() => {
     if (!isEmbeddedInWorkbench()) return
 
+    useStore.getState().setAppMode('gallery')
     document.documentElement.classList.add('workbench-embed')
     document.documentElement.classList.remove('theme-dark')
     applyWorkbenchTheme('tech')
