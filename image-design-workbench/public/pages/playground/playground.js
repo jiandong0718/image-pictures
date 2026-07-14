@@ -2,7 +2,7 @@
 // （张数 / 分辨率 / 输出比例(+自定义) / 背景 / 附加要求 / 开始生成）。文生图，每张 1 积分。
 
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost } from "/shared/api.js";
+import { apiGet, apiPost, downloadFile } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 
 const RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
@@ -34,6 +34,16 @@ let endpointId = ""; // 选中的节点 id；空=自动（按调度）
 let pendingCount = 0; // 本批要生成的总张数（生成中摆几个占位骨架）
 let lightboxIndex = -1; // 灯箱当前看的第几张；-1=未打开
 let pendingTask = null; // 进行中的任务 id：切走页面也持久化，回来续查把图捞回
+
+async function downloadImage(image) {
+  if (!image?.downloadUrl) return;
+  setMsg("");
+  try {
+    await downloadFile(image.downloadUrl, image.filename || "image.png");
+  } catch (err) {
+    setMsg(`下载失败：${err.message}`, "error");
+  }
+}
 
 function buildImageSpec() {
   if (currentRatio === "custom") {
@@ -194,7 +204,7 @@ function renderStage() {
         </div>`;
       const idx = i;
       item.querySelector("img").addEventListener("click", () => openLightbox(idx));
-      item.querySelector("button").addEventListener("click", () => { location.href = image.downloadUrl; });
+      item.querySelector("button").addEventListener("click", () => downloadImage(image));
     } else {
       item.innerHTML = `
         <div class="pg-shot-media pg-shot-skeleton">
@@ -253,12 +263,13 @@ function renderLightbox() {
     <button class="pg-lb-nav down" type="button" aria-label="下一张"${lightboxIndex === n - 1 ? " disabled" : ""}>↓</button>
     <div class="pg-lb-bar">
       <span class="pg-lb-count mono">${lightboxIndex + 1} / ${n}</span>
-      <a class="btn sm" href="${image.downloadUrl}">下载</a>
+      <button class="btn sm" type="button" id="pgLbDownload">下载</button>
     </div>`;
   el.querySelector(".pg-lb-backdrop").addEventListener("click", closeLightbox);
   el.querySelector(".pg-lb-close").addEventListener("click", closeLightbox);
   el.querySelector(".pg-lb-nav.up").addEventListener("click", () => lightboxNav(-1));
   el.querySelector(".pg-lb-nav.down").addEventListener("click", () => lightboxNav(1));
+  el.querySelector("#pgLbDownload").addEventListener("click", () => downloadImage(image));
   // 竖向滑动切换
   let startY = null;
   el.querySelector(".pg-lb-stage").addEventListener("touchstart", (ev) => { startY = ev.touches[0].clientY; }, { passive: true });

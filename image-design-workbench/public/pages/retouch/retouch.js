@@ -3,7 +3,7 @@
 // 链路复用现有接口：分配套图 → 上传照片 → /api/playground/images(mode:edit)。提示词/历史只存本地。
 
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost, apiUpload, pollTask } from "/shared/api.js";
+import { apiGet, apiPost, apiUpload, downloadFile, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 import { enableImagePaste } from "/shared/image-paste.js";
 
@@ -226,7 +226,7 @@ function renderCanvas() {
       ? `${(file.size / 1024 / 1024).toFixed(2)}MB · 待处理`
       : "尚未上传";
   const actions = active
-    ? `<a class="btn sm" href="${active.afterDownload || active.after}">下载结果</a>
+    ? `<button class="btn sm" id="downloadResult" type="button">下载结果</button>
        <button class="btn sm ghost" id="reupload" type="button">换一张</button>
        <button class="btn sm ghost" id="clearPhoto" type="button">清除</button>`
     : file
@@ -264,6 +264,17 @@ function renderCanvas() {
   if (reupload) reupload.addEventListener("click", () => els.fileInput.click());
   const clearBtn = document.getElementById("clearPhoto");
   if (clearBtn) clearBtn.addEventListener("click", clearPhoto);
+  const downloadBtn = document.getElementById("downloadResult");
+  if (downloadBtn) {
+    downloadBtn.addEventListener("click", async () => {
+      setMsg("");
+      try {
+        await downloadFile(active.afterDownload || active.after, "retouch-result.png");
+      } catch (err) {
+        setMsg(`下载失败：${err.message}`, "error");
+      }
+    });
+  }
 
   const range = document.getElementById("cmpRange");
   if (range) {

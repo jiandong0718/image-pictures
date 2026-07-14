@@ -2,11 +2,18 @@
 // 图片本体长期存服务器，本页只是读元数据表列出来，不依赖 localStorage。
 
 import { mountLayout } from "/shared/layout.js";
-import { apiGet } from "/shared/api.js";
+import { apiGet, downloadFile } from "/shared/api.js";
 import { renderPagination } from "/shared/pagination.js";
 
 let pageState = { page: 1, pageSize: 10 };
 let keyword = "";
+
+function setMsg(text, kind = "") {
+  const msg = document.getElementById("msg");
+  if (!msg) return;
+  msg.textContent = text || "";
+  msg.className = `msg ${kind}`;
+}
 
 function fmtTime(value) {
   const d = new Date(value);
@@ -51,9 +58,17 @@ async function load() {
             <span class="mi-time mono">${fmtTime(img.createdAt)}</span>
           </div>
           <div class="mi-prompt" title="${promptText}">${promptText}</div>
-          <a class="btn sm ghost mi-dl" href="${img.downloadUrl}">下载</a>
+          <button class="btn sm ghost mi-dl" type="button">下载</button>
         </div>`;
       card.querySelector("img").addEventListener("click", () => window.open(img.url, "_blank", "noopener"));
+      card.querySelector(".mi-dl").addEventListener("click", async () => {
+        setMsg("");
+        try {
+          await downloadFile(img.downloadUrl, img.filename || "image.png");
+        } catch (err) {
+          setMsg(`下载失败：${err.message}`, "error");
+        }
+      });
       grid.appendChild(card);
     });
   }

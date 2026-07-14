@@ -3,7 +3,7 @@
 // 套图分配、主图生成/上传、衍生图单张/批量生成、图板渲染、积分余额联动。
 
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost, apiUpload, pollTask } from "/shared/api.js";
+import { apiGet, apiPost, apiUpload, downloadFile, downloadJsonFile, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 import { enableImagePaste, createClearButton } from "/shared/image-paste.js";
 
@@ -396,19 +396,28 @@ export function createStudio(config) {
   async function downloadAll() {
     const ids = allTypes.map((t) => state.images[t]?.id).filter(Boolean);
     if (!ids.length) return;
-    const res = await fetch("/api/images/download-all", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, imageSetId: state.imageSet?.id || "" }),
-    });
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = state.imageSet?.folderName ? `product-${state.imageSet.folderName}.zip` : "product.zip";
-    link.click();
-    URL.revokeObjectURL(url);
+    const msgType = allTypes.find((t) => state.images[t]) || "main";
+    setMsg(msgType, "");
+    try {
+      await downloadJsonFile(
+        "/api/images/download-all",
+        { ids, imageSetId: state.imageSet?.id || "" },
+        state.imageSet?.folderName ? `product-${state.imageSet.folderName}.zip` : "product.zip",
+      );
+    } catch (err) {
+      setMsg(msgType, `套图下载失败：${err.message}`, "error");
+    }
+  }
+
+  async function downloadImage(type) {
+    const image = state.images[type];
+    if (!image?.downloadUrl) return;
+    setMsg(type, "");
+    try {
+      await downloadFile(image.downloadUrl, image.filename || `${type}.png`);
+    } catch (err) {
+      setMsg(type, `下载失败：${err.message}`, "error");
+    }
   }
 
   function cardHtml(type) {
@@ -455,10 +464,7 @@ export function createStudio(config) {
       });
     });
     board.querySelectorAll('[data-action="download"]').forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const image = state.images[btn.dataset.type];
-        if (image) location.href = image.downloadUrl;
-      });
+      btn.addEventListener("click", () => downloadImage(btn.dataset.type));
     });
     board.querySelectorAll("textarea").forEach((ta) => {
       ta.addEventListener("input", () => {

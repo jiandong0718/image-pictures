@@ -2,7 +2,7 @@
 // 文生视频 + 图生视频，接 Agnes 异步接口：提交拿 taskId，前端轮询 /api/tasks/:id 取 mp4。每条固定扣积分。
 
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost, apiUpload, pollTask } from "/shared/api.js";
+import { apiGet, apiPost, apiUpload, downloadFile, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 import { enableImagePaste } from "/shared/image-paste.js";
 
@@ -166,9 +166,17 @@ function renderStage() {
       <video src="${result.url}" controls playsinline preload="metadata"></video>
       <div class="vid-result-bar">
         <span class="badge ok">${meta || "视频"}</span>
-        <a class="btn sm" href="${result.downloadUrl}">下载 MP4</a>
+        <button class="btn sm" id="downloadVideo" type="button">下载 MP4</button>
       </div>
     </div>`;
+  document.getElementById("downloadVideo")?.addEventListener("click", async () => {
+    setMsg("");
+    try {
+      await downloadFile(result.downloadUrl, "video.mp4");
+    } catch (err) {
+      setMsg(`下载失败：${err.message}`, "error");
+    }
+  });
 }
 
 function renderRecent(items) {
