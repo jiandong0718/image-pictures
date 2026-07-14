@@ -183,7 +183,22 @@ const enc = (v) => encodeURIComponent(v == null ? "" : v);
 // 纵向画廊：N 张从上到下依次排列；生成中未完成的位置摆骨架+进度条（谁先好谁先点亮）。
 function renderStage() {
   if (!loading && !results.length) {
-    els.stage.innerHTML = `<div class="empty">输入提示词，点击右侧「开始生成」</div>`;
+    const ideas = ["极简产品摄影，纯色背景，柔和影棚光", "高级质感材质特写，微距，细节锐利", "自然光生活场景，氛围感，浅景深", "俯拍平铺构图，大量留白，杂志风"];
+    els.stage.innerHTML = `
+      <div class="stage-empty">
+        <div class="stage-empty-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.4L18 9l-4.2 1.6L12 15l-1.8-4.4L6 9l4.2-1.6z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/></svg></div>
+        <div class="stage-empty-title">描述你想要的画面，开始生成</div>
+        <div class="stage-empty-sub">在上方输入提示词，或点选一个灵感快速开始</div>
+        <div class="stage-empty-ideas">${ideas.map((s) => `<button class="stage-idea" type="button" data-idea="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join("")}</div>
+      </div>`;
+    els.stage.querySelectorAll("[data-idea]").forEach((b) => {
+      b.addEventListener("click", () => {
+        els.prompt.value = b.dataset.idea;
+        els.prompt.dispatchEvent(new Event("input", { bubbles: true }));
+        els.prompt.focus();
+        renderState();
+      });
+    });
     return;
   }
   const total = loading ? Math.max(pendingCount || count, results.length) : results.length;

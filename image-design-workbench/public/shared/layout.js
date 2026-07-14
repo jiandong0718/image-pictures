@@ -1,7 +1,26 @@
+
 // 共享布局：渲染侧边栏 + 顶栏（含当前用户、积分余额、登出）。
 // 各页面只负责自己的内容区；导航结构集中在这里，保证多页一致。
 
 import { fetchMe, logout } from "./api.js";
+
+// 导航图标（线性 SVG，颜色继承 currentColor，自动跟随各主题 --accent）。
+const ICONS = {
+  "playground": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3l1.8 4.4L18 9l-4.2 1.6L12 15l-1.8-4.4L6 9l4.2-1.6z\"/><path d=\"M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z\"/></svg>",
+  "video": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 7a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z\"/><path d=\"M22 8.5 16 12l6 3.5z\"/></svg>",
+  "retouch": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 21 20 7\"/><path d=\"M15 5l4 4\"/><path d=\"M9.5 4.2l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5L7.4 6.3l1.5-.6z\"/></svg>",
+  "full-playground": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 3h7v7H3z\"/><path d=\"M14 3h7v7h-7z\"/><path d=\"M14 14h7v7h-7z\"/><path d=\"M3 14h7v7H3z\"/></svg>",
+  "prompt": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 6h16\"/><path d=\"M4 12h9\"/><path d=\"M4 18h6\"/><path d=\"M15 16l2 2 4-4\"/></svg>",
+  "studio-hat": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2 2 7l10 5 10-5z\"/><path d=\"M2 12l10 5 10-5\"/><path d=\"M2 17l10 5 10-5\"/></svg>",
+  "studio-bag": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 21v-6\"/><path d=\"M4 10V3\"/><path d=\"M12 21v-8\"/><path d=\"M12 9V3\"/><path d=\"M20 21v-4\"/><path d=\"M20 13V3\"/><path d=\"M1 15h6\"/><path d=\"M9 9h6\"/><path d=\"M17 17h6\"/></svg>",
+  "studio-3d": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 8 12 3 3 8v8l9 5 9-5z\"/><path d=\"M3 8l9 5 9-5\"/><path d=\"M12 13v8\"/></svg>",
+  "account": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z\"/><path d=\"M12 8v8\"/><path d=\"M14.5 9.6C14 8.6 13 8.2 12 8.2s-2 .6-2 1.6c0 2.3 4 1.4 4 3.6 0 1-1 1.6-2 1.6s-2-.4-2.5-1.4\"/></svg>",
+  "my-images": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 4h14v12H3z\"/><path d=\"M3 12l4-4 3 3 4-4 3 3\"/><path d=\"M21 8v12H7\"/></svg>",
+  "user-center": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z\"/><path d=\"M4.5 21c0-4 3.4-6 7.5-6s7.5 2 7.5 6\"/></svg>",
+  "contact": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 6h20v12H2z\"/><path d=\"M2 10h20\"/><path d=\"M6 15h4\"/></svg>",
+  "config": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z\"/><path d=\"M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.07-.32.1-.66.1-1z\"/></svg>",
+  "admin": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z\"/><path d=\"M9 12l2 2 4-4\"/></svg>",
+};
 
 const NAV = [
   { group: "工具" },
@@ -154,7 +173,7 @@ function renderShell(me, { active, title, crumb }) {
         return `<p class="nav-group">${item.group}</p>`;
       }
       const isActive = item.key === active;
-      return `<a class="nav-link${isActive ? " active" : ""}" href="${item.href}"><span class="dot"></span>${item.label}</a>`;
+      return `<a class="nav-link${isActive ? " active" : ""}" href="${item.href}">${ICONS[item.key] || ""}<span>${item.label}</span></a>`;
     })
     .join("");
 
@@ -173,8 +192,10 @@ function renderShell(me, { active, title, crumb }) {
       <div class="nav-spacer"></div>
       <div class="nav-foot">1 积分 = 1 元 = 1 张图</div>
     </aside>
+    <div class="nav-overlay" id="navOverlay"></div>
     <div class="main">
       <header class="topbar">
+        <button class="nav-toggle" id="navToggle" type="button" aria-label="菜单"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></button>
         <div class="topbar-title">
           <span class="crumb">${crumb || ""}</span>
           <h1>${title || ""}</h1>
@@ -218,6 +239,14 @@ function renderShell(me, { active, title, crumb }) {
   shell.querySelector("#layoutLogout").addEventListener("click", () => logout());
   const themeBtn = shell.querySelector("#layoutTheme");
   themeBtn.addEventListener("click", () => toggleTheme(themeBtn));
+
+  // 移动端抽屉导航：汉堡开合 + 遮罩/选中项点击后收起。
+  const navToggle = shell.querySelector("#navToggle");
+  const navOverlay = shell.querySelector("#navOverlay");
+  const closeNav = () => shell.classList.remove("nav-open");
+  navToggle?.addEventListener("click", () => shell.classList.toggle("nav-open"));
+  navOverlay?.addEventListener("click", closeNav);
+  shell.querySelectorAll(".nav-link").forEach((a) => a.addEventListener("click", closeNav));
 
   // 用户菜单：鼠标悬停展示/收起（纯 CSS :hover，见 theme.css .user-menu-wrap），不用点击展开。
   window.addEventListener("message", (event) => {

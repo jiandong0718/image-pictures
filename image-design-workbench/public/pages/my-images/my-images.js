@@ -30,7 +30,16 @@ function escapeHtml(text) {
 
 async function load() {
   const grid = document.getElementById("grid");
-  grid.innerHTML = `<div class="empty">加载中…</div>`;
+  const skN = Math.min(pageState.pageSize || 8, 10);
+  grid.innerHTML = Array.from({ length: skN }, () => `
+    <div class="mi-item">
+      <div class="mi-thumb skeleton"></div>
+      <div class="mi-meta">
+        <div class="mi-meta-top"><span class="sk-line skeleton" style="width:38%"></span><span class="sk-line skeleton" style="width:28%"></span></div>
+        <span class="sk-line skeleton" style="width:92%"></span>
+        <span class="sk-line skeleton" style="width:58%"></span>
+      </div>
+    </div>`).join("");
 
   const params = new URLSearchParams({
     page: String(pageState.page),

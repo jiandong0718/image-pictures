@@ -1,7 +1,7 @@
 /* ============ AI 生视频：赛博画布布局（中间画布 + 右侧面板），与自由生图同款视觉语言 ============ */
 .vid-studio {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 26vw, 344px);
   gap: 20px;
   align-items: stretch;
 }
@@ -191,12 +191,7 @@
 
 .vid-stage::before,
 .vid-stage::after {
-  content: "";
-  position: absolute;
-  width: 22px;
-  height: 22px;
-  pointer-events: none;
-  opacity: 0.5;
+  content: none;
 }
 .vid-stage::before {
   top: 10px;
@@ -250,7 +245,7 @@
 
 .vid-recent-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 10px;
   margin-top: 10px;
 }
@@ -266,8 +261,8 @@
 }
 
 .vid-recent-item:hover {
-  border-color: var(--accent-line);
-  box-shadow: 0 0 14px rgba(56, 224, 208, 0.18);
+  border-color: var(--line-strong);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
 }
 
 .vid-recent-item video {
@@ -315,10 +310,10 @@
 }
 
 .vid-panel-foot .btn.primary {
-  box-shadow: 0 0 22px rgba(56, 224, 208, 0.28);
+  box-shadow: 0 8px 24px rgba(155, 140, 255, 0.22);
 }
 .vid-panel-foot .btn.primary:hover:not(:disabled) {
-  box-shadow: 0 0 28px rgba(56, 224, 208, 0.42);
+  box-shadow: 0 10px 28px rgba(155, 140, 255, 0.32);
 }
 
 .vid-note {
@@ -345,8 +340,8 @@
 }
 
 .vid-chip {
-  padding: 7px 14px;
-  border-radius: 8px;
+  padding: 7px 15px;
+  border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: rgba(var(--tint), 0.03);
   color: var(--ink-soft);
@@ -377,7 +372,7 @@
   color: var(--accent);
   border-color: var(--accent-line);
   background: var(--accent-soft);
-  box-shadow: 0 0 14px var(--accent-soft), inset 0 0 0 1px var(--accent-line);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
 }
 
 /* 折叠的高级参数 */
@@ -418,7 +413,7 @@
   margin-top: 12px;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1024px) {
   .vid-studio {
     grid-template-columns: 1fr;
   }

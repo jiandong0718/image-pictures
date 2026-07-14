@@ -176,7 +176,7 @@ export function createStudio(config) {
     const image = state.images[type];
     const mainReady = Boolean(state.images.main);
     if (state.loading[type]) {
-      preview.innerHTML = `<div class="empty"><span class="spinner"></span>${typeLabels[type] || "图片"}生成中…</div>`;
+      preview.innerHTML = `<div class="studio-skeleton skeleton"><span class="spinner"></span><span>${typeLabels[type] || "图片"}生成中…</span></div>`;
       return;
     }
     if (image) {

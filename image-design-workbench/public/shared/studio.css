@@ -130,11 +130,11 @@
 
 .studio-card.main {
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 1px var(--accent-line), 0 16px 40px rgba(56, 224, 208, 0.08);
+  box-shadow: 0 0 0 1px var(--accent-line), 0 16px 40px rgba(155, 140, 255, 0.08);
 }
 
 :root[data-theme="xianxia"] .studio-card.main {
-  box-shadow: 0 0 0 1px var(--accent-line), 0 16px 40px rgba(31, 158, 116, 0.14);
+  box-shadow: 0 0 0 1px var(--accent-line), 0 16px 40px rgba(109, 84, 232, 0.14);
 }
 
 .studio-card-head {
