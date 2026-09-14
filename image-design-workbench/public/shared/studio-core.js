@@ -40,7 +40,7 @@ export function createStudio(config) {
   const allTypes = ["main", ...derivedTypes];
   const storage = createLocalState(`imageStudio:studio:${mode}:v1`);
   // 衍生数较多时用「主视图大图 + 延展网格」布局；少时保持均匀网格。
-  const heroLayout = derivedTypes.length >= 3;
+  const heroLayout = config.heroLayout !== false && derivedTypes.length >= 3;
 
   const state = {
     imageSet: null,
@@ -513,7 +513,8 @@ export function createStudio(config) {
   }
 
   async function start() {
-    const ctx = await mountLayout({ active: mode === "hat" ? "studio-hat" : mode === "bag" ? "studio-bag" : "studio-3d", title, crumb });
+    const active = mode === "hat" ? "studio-hat" : mode === "bag" ? "studio-bag" : mode === "print" ? "studio-print" : "studio-3d";
+    const ctx = await mountLayout({ active, title, crumb });
     if (!ctx) return;
 
     applySavedState();

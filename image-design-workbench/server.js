@@ -2270,6 +2270,7 @@ const PAGE_ROUTES = {
   "/config": { dir: "config", auth: "admin" },
   "/studio/hat": { dir: "studio-hat", auth: "user" },
   "/studio/bag": { dir: "studio-bag", auth: "user" },
+  "/studio/print": { dir: "studio-print", auth: "user" },
   "/studio/3d": { dir: "studio-3d", auth: "user" },
   "/prompt": { dir: "prompt", auth: "user" },
   "/playground": { dir: "playground", auth: "user" },
