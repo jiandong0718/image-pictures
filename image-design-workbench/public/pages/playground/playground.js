@@ -242,7 +242,11 @@ async function uploadReference(file) {
 
 function handleReferencePaste(event) {
   if (mode !== "edit") return;
-  const file = Array.from(event.clipboardData?.files || []).find((item) => item.type.startsWith("image/"));
+  const clipboard = event.clipboardData;
+  const file = Array.from(clipboard?.files || []).find((item) => item.type.startsWith("image/"))
+    || Array.from(clipboard?.items || [])
+      .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+      ?.getAsFile();
   if (!file) return;
   event.preventDefault();
   uploadReference(file);
