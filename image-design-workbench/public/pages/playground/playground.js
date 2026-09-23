@@ -2,7 +2,7 @@
 // （张数 / 分辨率 / 输出比例(+自定义) / 背景 / 附加要求 / 开始生成）。文生图，每张 1 积分。
 
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost, downloadFile } from "/shared/api.js";
+import { apiGet, apiPost, apiUpload, downloadFile } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 
 const RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
@@ -31,6 +31,9 @@ let loading = false;
 let hasImageConfig = false;
 let nodes = []; // 可选生图节点（脱敏：id + 展示名）
 let endpointId = ""; // 选中的节点 id；空=自动（按调度）
+let mode = "generate";
+let referenceImage = null;
+let referenceImageSetId = "";
 let pendingCount = 0; // 本批要生成的总张数（生成中摆几个占位骨架）
 let lightboxIndex = -1; // 灯箱当前看的第几张；-1=未打开
 let pendingTask = null; // 进行中的任务 id：切走页面也持久化，回来续查把图捞回
@@ -95,6 +98,9 @@ function loadSaved() {
   if (typeof saved.pendingTask === "string") pendingTask = saved.pendingTask;
   if (typeof saved.pendingCount === "number") pendingCount = saved.pendingCount;
   if (typeof saved.endpointId === "string") endpointId = saved.endpointId;
+  if (saved.mode === "edit" || saved.mode === "generate") mode = saved.mode;
+  if (saved.referenceImage && typeof saved.referenceImage === "object") referenceImage = saved.referenceImage;
+  if (typeof saved.referenceImageSetId === "string") referenceImageSetId = saved.referenceImageSetId;
   els.background.value = background;
 }
 
@@ -112,6 +118,9 @@ function save() {
     pendingTask,
     pendingCount,
     endpointId,
+    mode,
+    referenceImage,
+    referenceImageSetId,
   });
 }
 
@@ -169,13 +178,66 @@ function escapeHtml(text) {
 
 function renderState() {
   const hasPrompt = els.prompt.value.trim().length > 0;
-  els.generateBtn.disabled = !hasImageConfig || loading || !hasPrompt;
+  els.generateBtn.disabled = !hasImageConfig || loading || !hasPrompt || (mode === "edit" && !referenceImage);
   els.generateBtn.innerHTML = loading ? `<span class="spinner"></span>生成中…` : "开始生成";
   els.configHint.textContent = hasImageConfig ? "" : "尚未配置生图 API Key，请先到「配置中心」保存。";
   els.configHint.style.color = hasImageConfig ? "var(--ink-mute)" : "var(--warn)";
   els.canvasBadge.textContent = loading
     ? `已完成 ${results.length}/${pendingCount || count}`
     : `${results.length} 张结果`;
+}
+
+function renderMode() {
+  const isEdit = mode === "edit";
+  els.modeTitle.textContent = isEdit ? "图生图" : "文生图";
+  els.textMode.classList.toggle("active", !isEdit);
+  els.imageMode.classList.toggle("active", isEdit);
+  els.textMode.setAttribute("aria-selected", String(!isEdit));
+  els.imageMode.setAttribute("aria-selected", String(isEdit));
+  els.referenceBox.hidden = !isEdit;
+  renderReference();
+  renderState();
+}
+
+function renderReference() {
+  if (mode !== "edit") return;
+  if (!referenceImage) {
+    els.referenceContent.innerHTML = '<button class="btn" id="chooseReference" type="button">上传参考图</button>';
+    els.referenceContent.querySelector("button").addEventListener("click", () => els.referenceInput.click());
+    return;
+  }
+  els.referenceContent.innerHTML = `<div class="pg-reference-preview"><img src="${referenceImage.url}" alt="参考图" /><button class="btn sm pg-reference-remove" id="removeReference" type="button">移除</button></div>`;
+  els.referenceContent.querySelector("button").addEventListener("click", () => {
+    referenceImage = null;
+    save();
+    renderReference();
+    renderState();
+  });
+}
+
+async function uploadReference(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) return setMsg("请选择图片文件", "error");
+  if (file.size > 20 * 1024 * 1024) return setMsg("图片不能超过 20MB", "error");
+  setMsg("正在上传参考图…");
+  try {
+    if (!referenceImageSetId) {
+      const data = await apiPost("/api/image-sets", {});
+      referenceImageSetId = data.imageSet.id;
+    }
+    const spec = buildImageSpec();
+    const params = new URLSearchParams({ imageSetId: referenceImageSetId, imageSpecSizeMode: spec.sizeMode, imageSpecSizePreset: spec.sizePreset, imageSpecCustomSize: String(spec.customSize), imageSpecRatioPreset: spec.ratioPreset, imageSpecCustomRatioWidth: String(spec.customRatioWidth), imageSpecCustomRatioHeight: String(spec.customRatioHeight) });
+    const form = new FormData();
+    form.append("image", file);
+    const data = await apiUpload(`/api/images/main/upload?${params}`, form);
+    referenceImage = data.image;
+    save();
+    setMsg("参考图已上传", "success");
+    renderReference();
+    renderState();
+  } catch (err) {
+    setMsg(err.message, "error");
+  }
 }
 
 const enc = (v) => encodeURIComponent(v == null ? "" : v);
@@ -345,13 +407,14 @@ async function generate() {
   let taskId;
   try {
     ({ taskId } = await apiPost("/api/playground/images", {
-      mode: "generate",
+      mode,
       prompt,
       count,
       background: els.background.value,
       system: els.system.value.trim(),
       imageSpec: buildImageSpec(),
       endpointId,
+      referenceImageId: referenceImage?.id || "",
     }));
   } catch (err) {
     loading = false;
@@ -370,6 +433,12 @@ async function main() {
   if (!ctx) return;
   Object.assign(els, {
     prompt: document.getElementById("prompt"),
+    modeTitle: document.getElementById("modeTitle"),
+    textMode: document.getElementById("textMode"),
+    imageMode: document.getElementById("imageMode"),
+    referenceBox: document.getElementById("referenceBox"),
+    referenceContent: document.getElementById("referenceContent"),
+    referenceInput: document.getElementById("referenceInput"),
     system: document.getElementById("system"),
     counts: document.getElementById("counts"),
     resChips: document.getElementById("resChips"),
@@ -388,6 +457,10 @@ async function main() {
   });
 
   loadSaved();
+  els.textMode.addEventListener("click", () => { mode = "generate"; renderMode(); save(); });
+  els.imageMode.addEventListener("click", () => { mode = "edit"; renderMode(); save(); });
+  els.referenceInput.addEventListener("change", (event) => { uploadReference(event.target.files?.[0]); event.target.value = ""; });
+  renderMode();
   renderCounts();
   renderRes();
   renderRatios();

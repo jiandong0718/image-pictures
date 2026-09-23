@@ -6,7 +6,7 @@
     <title>自由生图 · AI 图像设计工作台</title>
     <link rel="stylesheet" href="/shared/theme.css" />
     <script src="/shared/theme-init.js"></script>
-    <link rel="stylesheet" href="/pages/playground/playground.css" />
+    <link rel="stylesheet" href="/pages/playground/playground.css?v=img2img2" />
   </head>
   <body>
     <div id="page">
@@ -16,9 +16,18 @@
           <div class="pg-canvas-head">
             <div>
               <div class="section-label">自由生图</div>
-              <div class="card-title">文生图</div>
+              <div class="card-title" id="modeTitle">文生图</div>
             </div>
             <span class="badge" id="canvasBadge">0 张结果</span>
+          </div>
+          <div class="pg-mode-tabs" role="tablist" aria-label="生图模式">
+            <button class="pg-mode-tab active" id="textMode" type="button" role="tab" aria-selected="true">文生图</button>
+            <button class="pg-mode-tab" id="imageMode" type="button" role="tab" aria-selected="false">图生图</button>
+          </div>
+          <div class="pg-reference" id="referenceBox" hidden>
+            <div class="pg-reference-head"><span class="section-label">参考图</span><span class="pg-reference-hint">上传一张图片作为生成基础</span></div>
+            <div class="pg-reference-content" id="referenceContent"></div>
+            <input id="referenceInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
           </div>
           <label class="field pg-prompt-field">
             <span>提示词</span>
@@ -80,6 +89,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/pages/playground/playground.js"></script>
+    <script type="module" src="/pages/playground/playground.js?v=img2img"></script>
   </body>
 </html>
