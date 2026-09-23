@@ -1416,8 +1416,12 @@ function resolveImageSetDir(imageSetId) {
 }
 
 function makeImageId(filePath) {
-  const root = path.resolve(OUTPUT_DIR);
-  const relative = path.relative(root, filePath);
+  // 生图脚本会对 output-dir 调用 Path.resolve()，而线上 generated-images
+  // 通常是软链接；因此文件路径可能是软链接解析后的真实路径，不能直接
+  // 和 Node 进程里的软链接路径比较。
+  const root = fs.realpathSync.native(OUTPUT_DIR);
+  const resolvedFile = fs.realpathSync.native(filePath);
+  const relative = path.relative(root, resolvedFile);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error("图片输出路径不正确");
   }

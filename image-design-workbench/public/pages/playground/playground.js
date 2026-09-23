@@ -240,6 +240,14 @@ async function uploadReference(file) {
   }
 }
 
+function handleReferencePaste(event) {
+  if (mode !== "edit") return;
+  const file = Array.from(event.clipboardData?.files || []).find((item) => item.type.startsWith("image/"));
+  if (!file) return;
+  event.preventDefault();
+  uploadReference(file);
+}
+
 const enc = (v) => encodeURIComponent(v == null ? "" : v);
 
 // 纵向画廊：N 张从上到下依次排列；生成中未完成的位置摆骨架+进度条（谁先好谁先点亮）。
@@ -460,6 +468,7 @@ async function main() {
   els.textMode.addEventListener("click", () => { mode = "generate"; renderMode(); save(); });
   els.imageMode.addEventListener("click", () => { mode = "edit"; renderMode(); save(); });
   els.referenceInput.addEventListener("change", (event) => { uploadReference(event.target.files?.[0]); event.target.value = ""; });
+  document.addEventListener("paste", handleReferencePaste);
   renderMode();
   renderCounts();
   renderRes();
