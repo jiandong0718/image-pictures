@@ -38,10 +38,18 @@ function renderEndpoints(endpoints) {
       <div class="endpoint-item${enabled ? "" : " disabled"}">
         <div class="endpoint-meta">
           <div class="endpoint-url">${esc(ep.apiBase)}${enabled ? "" : ' <span class="endpoint-tag">已停用</span>'}</div>
-          <div class="endpoint-sub">${ep.label ? esc(ep.label) + " · " : ""}模型 ${ep.model ? esc(ep.model) : "默认"} · Key ${esc(ep.keyMasked)}</div>
+          <div class="endpoint-sub">${ep.label ? esc(ep.label) + " · " : ""}模型 ${esc((ep.models || [ep.model]).filter(Boolean).join(" / ") || "默认")} · Key ${esc(ep.keyMasked)}</div>
         </div>
+        <button type="button" class="btn sm" data-edit-models="${esc(ep.id)}">配置模型</button>
         <button type="button" class="btn sm" data-toggle="${esc(ep.id)}" data-enabled="${enabled ? "1" : "0"}">${enabled ? "停用" : "启用"}</button>
         <button type="button" class="btn danger sm" data-del="${esc(ep.id)}">删除</button>
+        <div class="endpoint-model-editor" hidden>
+          <label class="field"><span>可用模型，逗号分隔；首项为默认模型</span>
+            <input class="input" type="text" value="${esc((ep.models || [ep.model]).filter(Boolean).join(", "))}" />
+          </label>
+          <button type="button" class="btn sm" data-save-models="${esc(ep.id)}">保存模型</button>
+          <button type="button" class="btn sm" data-cancel-models>取消</button>
+        </div>
       </div>`;
     })
     .join("");
@@ -51,6 +59,30 @@ function renderEndpoints(endpoints) {
   els.endpointList.querySelectorAll("[data-toggle]").forEach((btn) => {
     btn.addEventListener("click", () => toggleEndpoint(btn.dataset.toggle, btn.dataset.enabled !== "1"));
   });
+  els.endpointList.querySelectorAll("[data-edit-models]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const editor = btn.closest(".endpoint-item").querySelector(".endpoint-model-editor");
+      editor.hidden = false;
+      editor.querySelector("input").focus();
+    });
+  });
+  els.endpointList.querySelectorAll("[data-cancel-models]").forEach((btn) => {
+    btn.addEventListener("click", () => { btn.closest(".endpoint-model-editor").hidden = true; });
+  });
+  els.endpointList.querySelectorAll("[data-save-models]").forEach((btn) => {
+    btn.addEventListener("click", () => saveEndpointModels(btn.dataset.saveModels, btn.closest(".endpoint-model-editor").querySelector("input").value));
+  });
+}
+
+async function saveEndpointModels(id, models) {
+  setMsg(els.imageMsg, "保存模型中…");
+  try {
+    const data = await apiPost("/api/image-config", { action: "models", id, models });
+    renderEndpoints(data.endpoints);
+    setMsg(els.imageMsg, "可用模型已更新", "success");
+  } catch (err) {
+    setMsg(els.imageMsg, err.message, "error");
+  }
 }
 
 async function loadStatus() {
@@ -97,7 +129,7 @@ async function addEndpoint(e) {
   const apiBase = els.apiUrl.value.trim();
   const apiKey = els.apiKey.value.trim();
   const label = els.apiLabel.value.trim();
-  const model = els.apiModel.value.trim();
+  const models = els.apiModel.value.trim();
   if (!apiBase) {
     setMsg(els.imageMsg, "API URL 不能为空", "error");
     return;
@@ -106,10 +138,14 @@ async function addEndpoint(e) {
     setMsg(els.imageMsg, "API Key 不能为空", "error");
     return;
   }
+  if (!models) {
+    setMsg(els.imageMsg, "请填写至少一个可用生图模型", "error");
+    return;
+  }
   els.saveImage.disabled = true;
   setMsg(els.imageMsg, "添加中…");
   try {
-    const data = await apiPost("/api/image-config", { action: "add", apiBase, apiKey, label, model });
+    const data = await apiPost("/api/image-config", { action: "add", apiBase, apiKey, label, models });
     renderEndpoints(data.endpoints);
     els.apiUrl.value = "";
     els.apiKey.value = "";

@@ -10,11 +10,38 @@ const { getPool } = require("./db");
 const SCHEDULE_ROUND_ROBIN = "round_robin";
 const SCHEDULE_RANDOM = "random";
 const DEFAULT_PROMPT_MODEL = "gpt-4o-mini";
+const FALLBACK_IMAGE_MODEL = "gpt-image-2";
 
 // ---------- 纯逻辑（无 DB，可单测）----------
 
 function clean(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeModelName(value) {
+  const model = clean(value);
+  if (model && (model.length > 100 || !/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/.test(model))) {
+    throw new Error("模型名格式不正确，或超过 100 字符");
+  }
+  return model;
+}
+
+function normalizeModelList(value) {
+  const entries = Array.isArray(value) ? value : clean(value).split(/[,，\n]+/);
+  const models = [...new Set(entries.map(normalizeModelName).filter(Boolean))];
+  if (models.length > 20) throw new Error("每个生图端点最多配置 20 个模型");
+  return models;
+}
+
+function endpointModels(row = {}) {
+  try {
+    const saved = row.supported_models ? JSON.parse(row.supported_models) : null;
+    const models = normalizeModelList(saved || row.model || "");
+    if (models.length) return models;
+  } catch {
+    // 旧库中不合法的模型列表回退到原单模型配置。
+  }
+  return [clean(row.model) || clean(process.env.CUSTOM_IMAGE_MODEL) || FALLBACK_IMAGE_MODEL];
 }
 
 function normalizeApiBase(value, label = "生图 API URL") {
@@ -42,8 +69,12 @@ function normalizeEndpointInput(raw = {}) {
     throw new Error("生图 API Key 不能为空");
   }
   const label = clean(raw.label).slice(0, 100);
-  const model = clean(raw.model).slice(0, 100); // 该组端点用的模型名，留空则走全局默认
-  return { apiBase, apiKey, label, model };
+  const legacyModel = normalizeModelName(raw.model);
+  const models = normalizeModelList(raw.models ?? raw.supportedModels ?? legacyModel);
+  if (legacyModel && !models.includes(legacyModel)) models.unshift(legacyModel);
+  if (models.length > 20) throw new Error("每个生图端点最多配置 20 个模型");
+  const model = models[0] || ""; // 首项为自动调度时的默认模型
+  return { apiBase, apiKey, label, model, models };
 }
 
 // key 只在配置中心展示脱敏形式，不回传明文。
@@ -63,16 +94,18 @@ function normalizeSchedule(value) {
 }
 
 // 从一组端点里按调度策略选一个。纯函数：counter 由调用方持有，返回下一个 counter。
-function selectEndpoint(rows, { schedule = SCHEDULE_ROUND_ROBIN, counter = 0, random = Math.random } = {}) {
+function selectEndpoint(rows, { schedule = SCHEDULE_ROUND_ROBIN, counter = 0, random = Math.random, model = "" } = {}) {
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error("请先在配置中心添加生图 API 端点");
   }
+  const eligible = model ? rows.filter((row) => endpointModels(row).includes(model)) : rows;
+  if (!eligible.length) throw new Error(`当前没有支持 ${model} 的生图端点`);
   if (schedule === SCHEDULE_RANDOM) {
-    const idx = Math.floor(random() * rows.length) % rows.length;
-    return { row: rows[idx], nextCounter: counter };
+    const idx = Math.floor(random() * eligible.length) % eligible.length;
+    return { row: eligible[idx], nextCounter: counter };
   }
-  const idx = counter % rows.length;
-  return { row: rows[idx], nextCounter: (counter + 1) % 1e9 };
+  const idx = counter % eligible.length;
+  return { row: eligible[idx], nextCounter: (counter + 1) % 1e9 };
 }
 
 // ---------- DB 层 ----------
@@ -97,6 +130,7 @@ async function createTables() {
       api_key VARCHAR(500) NOT NULL,
       label VARCHAR(100) NOT NULL DEFAULT '',
       model VARCHAR(100) NOT NULL DEFAULT '',
+      supported_models TEXT NULL,
       enabled TINYINT(1) NOT NULL DEFAULT 1,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id)
@@ -104,7 +138,8 @@ async function createTables() {
   `);
   // 已有部署的老表补齐新列（model 每组端点自带的模型名；enabled 兼容更早版本）。
   await ensureColumn("image_endpoints", "model VARCHAR(100) NOT NULL DEFAULT '' AFTER label");
-  await ensureColumn("image_endpoints", "enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER model");
+  await ensureColumn("image_endpoints", "supported_models TEXT NULL AFTER model");
+  await ensureColumn("image_endpoints", "enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER supported_models");
   await db.query(`
     CREATE TABLE IF NOT EXISTS app_settings (
       k VARCHAR(64) NOT NULL,
@@ -128,7 +163,7 @@ async function setSetting(key, value) {
 
 async function listEndpoints() {
   const [rows] = await getPool().query(
-    "SELECT id, api_base, api_key, label, model, enabled, created_at FROM image_endpoints WHERE enabled = 1 ORDER BY id ASC",
+    "SELECT id, api_base, api_key, label, model, supported_models, enabled, created_at FROM image_endpoints WHERE enabled = 1 ORDER BY id ASC",
   );
   return rows;
 }
@@ -136,7 +171,7 @@ async function listEndpoints() {
 // 配置中心展示用：列出全部端点（含已停用的，供 admin 重新启用），key 脱敏。
 async function listEndpointsForDisplay() {
   const [rows] = await getPool().query(
-    "SELECT id, api_base, api_key, label, model, enabled, created_at FROM image_endpoints ORDER BY id ASC",
+    "SELECT id, api_base, api_key, label, model, supported_models, enabled, created_at FROM image_endpoints ORDER BY id ASC",
   );
   return rows.map((row) => ({
     id: row.id,
@@ -144,6 +179,7 @@ async function listEndpointsForDisplay() {
     keyMasked: maskKey(row.api_key),
     label: row.label || "",
     model: row.model || "",
+    models: endpointModels(row),
     enabled: Boolean(row.enabled),
     createdAt: row.created_at,
   }));
@@ -157,35 +193,48 @@ async function setEndpointEnabled(id, enabled) {
 }
 
 // 自由生图「指定节点」用：按 id 取一个启用的端点。找不到/已停用则报错。
-async function getEnabledEndpointById(id) {
+async function getEnabledEndpointById(id, requestedModel = "") {
   const [rows] = await getPool().query(
-    "SELECT api_base, api_key, model FROM image_endpoints WHERE id = ? AND enabled = 1 LIMIT 1",
+    "SELECT api_base, api_key, model, supported_models FROM image_endpoints WHERE id = ? AND enabled = 1 LIMIT 1",
     [Number(id)],
   );
   if (!rows.length) {
     throw new Error("所选生图节点不存在或已停用");
   }
-  return { apiBase: rows[0].api_base, apiKey: rows[0].api_key, model: rows[0].model || "" };
+  const model = normalizeModelName(requestedModel);
+  if (model && !endpointModels(rows[0]).includes(model)) throw new Error(`所选生图节点不支持 ${model}`);
+  return { apiBase: rows[0].api_base, apiKey: rows[0].api_key, model: model || rows[0].model || "" };
 }
 
 // 给普通用户选节点用的脱敏列表（只给 id + 展示名，不含 url/key），仅启用的，按 id 排「节点N」。
 async function listSelectableEndpoints() {
   const [rows] = await getPool().query(
-    "SELECT id, label, model FROM image_endpoints WHERE enabled = 1 ORDER BY id ASC",
+    "SELECT id, label, model, supported_models FROM image_endpoints WHERE enabled = 1 ORDER BY id ASC",
   );
   return rows.map((row, i) => ({
     id: row.id,
     name: `节点${i + 1}`,
+    models: endpointModels(row),
   }));
 }
 
 async function addEndpoint(raw) {
-  const { apiBase, apiKey, label, model } = normalizeEndpointInput(raw);
+  const { apiBase, apiKey, label, model, models } = normalizeEndpointInput(raw);
   const [result] = await getPool().query(
-    "INSERT INTO image_endpoints (api_base, api_key, label, model) VALUES (?, ?, ?, ?)",
-    [apiBase, apiKey, label, model],
+    "INSERT INTO image_endpoints (api_base, api_key, label, model, supported_models) VALUES (?, ?, ?, ?, ?)",
+    [apiBase, apiKey, label, model, JSON.stringify(models)],
   );
   return result.insertId;
+}
+
+async function updateEndpointModels(id, value) {
+  const models = normalizeModelList(value);
+  if (!models.length) throw new Error("请至少配置一个生图模型");
+  const [result] = await getPool().query(
+    "UPDATE image_endpoints SET model = ?, supported_models = ? WHERE id = ?",
+    [models[0], JSON.stringify(models), Number(id)],
+  );
+  if (!result.affectedRows) throw new Error("生图端点不存在");
 }
 
 async function deleteEndpoint(id) {
@@ -217,12 +266,18 @@ async function setSchedule(value) {
 let roundRobinCounter = 0;
 
 // 画图时取一组端点：按调度策略轮询/随机。
-async function pickEndpoint() {
+async function pickEndpoint(requestedModel = "") {
   const rows = await listEndpoints();
   const schedule = await getSchedule();
-  const { row, nextCounter } = selectEndpoint(rows, { schedule, counter: roundRobinCounter });
+  const model = normalizeModelName(requestedModel);
+  const { row, nextCounter } = selectEndpoint(rows, { schedule, counter: roundRobinCounter, model });
   roundRobinCounter = nextCounter;
-  return { apiBase: row.api_base, apiKey: row.api_key, model: row.model || "" };
+  return { apiBase: row.api_base, apiKey: row.api_key, model: model || row.model || "" };
+}
+
+async function getDefaultImageModel() {
+  const rows = await listEndpoints();
+  return rows.length ? endpointModels(rows[0])[0] : clean(process.env.CUSTOM_IMAGE_MODEL) || FALLBACK_IMAGE_MODEL;
 }
 
 // ---------- 提示词（视觉理解）配置：单组，存 app_settings ----------
@@ -366,6 +421,9 @@ module.exports = {
   // 纯逻辑
   normalizeApiBase,
   normalizeEndpointInput,
+  normalizeModelName,
+  normalizeModelList,
+  endpointModels,
   maskKey,
   normalizeSchedule,
   selectEndpoint,
@@ -375,6 +433,7 @@ module.exports = {
   listEndpoints,
   listEndpointsForDisplay,
   addEndpoint,
+  updateEndpointModels,
   deleteEndpoint,
   setEndpointEnabled,
   getEnabledEndpointById,
@@ -384,6 +443,7 @@ module.exports = {
   getSchedule,
   setSchedule,
   pickEndpoint,
+  getDefaultImageModel,
   getPromptConfig,
   getPromptConfigSummary,
   setPromptConfig,

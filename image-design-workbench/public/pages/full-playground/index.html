@@ -14,13 +14,26 @@
         overflow: hidden;
       }
       body.full-playground-shell #page {
+        display: flex;
+        flex-direction: column;
         height: 100%;
         min-height: 0;
       }
+      .model-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      .model-toolbar[hidden] { display: none; }
+      .model-toolbar label { color: var(--ink-mute); font-size: 12px; font-weight: 600; }
+      .model-toolbar select { min-width: 190px; max-width: 100%; }
       .embed-card {
         padding: 0;
         overflow: hidden;
-        height: 100%;
+        flex: 1;
+        min-height: 0;
         border: 0;
         border-radius: 0;
         background: transparent;
@@ -35,10 +48,14 @@
   </head>
   <body>
     <div id="page">
+      <div class="model-toolbar" id="modelToolbar" hidden>
+        <label for="workbenchModel">本次生图模型</label>
+        <select class="select" id="workbenchModel"></select>
+      </div>
       <div class="embed-card">
         <iframe title="绘图聚集地" src="/gpt-image-playground/" loading="lazy"></iframe>
       </div>
     </div>
-    <script type="module" src="/pages/full-playground/full-playground.js"></script>
+    <script type="module" src="/pages/full-playground/full-playground.js?v=model-routing-1"></script>
   </body>
 </html>

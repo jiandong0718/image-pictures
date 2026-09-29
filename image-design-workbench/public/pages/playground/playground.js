@@ -31,6 +31,8 @@ let results = [];
 let loading = false;
 let hasImageConfig = false;
 let nodes = []; // 可选生图节点（脱敏：id + 展示名）
+let models = []; // 管理员为启用节点配置的生图模型
+let model = ""; // 空=沿用节点默认模型
 let endpointId = ""; // 选中的节点 id；空=自动（按调度）
 let mode = "generate";
 let referenceImage = null;
@@ -99,6 +101,7 @@ function loadSaved() {
   if (typeof saved.pendingTask === "string") pendingTask = saved.pendingTask;
   if (typeof saved.pendingCount === "number") pendingCount = saved.pendingCount;
   if (typeof saved.endpointId === "string") endpointId = saved.endpointId;
+  if (typeof saved.model === "string") model = saved.model;
   if (saved.mode === "edit" || saved.mode === "generate") mode = saved.mode;
   if (saved.referenceImage && typeof saved.referenceImage === "object") referenceImage = saved.referenceImage;
   if (typeof saved.referenceImageSetId === "string") referenceImageSetId = saved.referenceImageSetId;
@@ -119,6 +122,7 @@ function save() {
     pendingTask,
     pendingCount,
     endpointId,
+    model,
     mode,
     referenceImage,
     referenceImageSetId,
@@ -157,15 +161,28 @@ function renderRatios() {
   els.customSize.hidden = currentRatio !== "custom";
 }
 
-// 生图节点选择（下拉，放背景下面）：仅本页有。≥2 个节点才显示（1 个时没得选）。空=随机(按调度)。
+function renderModels() {
+  els.modelField.hidden = !models.length;
+  if (!models.length) return;
+  els.modelSelect.innerHTML = '<option value="">自动（节点默认模型）</option>' +
+    models.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+  els.modelSelect.value = model;
+}
+
+// 已选模型时只列出支持它的节点；空节点由服务端按调度策略自动匹配。
 function renderNodes() {
-  if (!nodes.length || nodes.length < 2) {
+  const available = model ? nodes.filter((node) => node.models?.includes(model)) : nodes;
+  if (endpointId && !available.some((node) => String(node.id) === endpointId)) {
+    endpointId = "";
+    save();
+  }
+  if (available.length < 2) {
     els.nodeField.hidden = true;
     return;
   }
   els.nodeField.hidden = false;
-  const opts = [`<option value="">随机</option>`].concat(
-    nodes.map((n) => `<option value="${String(n.id)}">${escapeHtml(n.name)}</option>`),
+  const opts = [`<option value="">自动匹配</option>`].concat(
+    available.map((n) => `<option value="${String(n.id)}">${escapeHtml(n.name)}</option>`),
   );
   els.nodeSelect.innerHTML = opts.join("");
   els.nodeSelect.value = endpointId;
@@ -426,6 +443,7 @@ async function generate() {
       background: els.background.value,
       system: els.system.value.trim(),
       imageSpec: buildImageSpec(),
+      model,
       endpointId,
       referenceImageId: referenceImage?.id || "",
     }));
@@ -467,6 +485,8 @@ async function main() {
     canvasBadge: document.getElementById("canvasBadge"),
     nodeField: document.getElementById("nodeField"),
     nodeSelect: document.getElementById("nodeSelect"),
+    modelField: document.getElementById("modelField"),
+    modelSelect: document.getElementById("modelSelect"),
   });
 
   loadSaved();
@@ -489,6 +509,7 @@ async function main() {
   els.system.addEventListener("input", save);
   els.background.addEventListener("change", save);
   els.nodeSelect.addEventListener("change", () => { endpointId = els.nodeSelect.value; save(); });
+  els.modelSelect.addEventListener("change", () => { model = els.modelSelect.value; renderNodes(); save(); });
   [els.customW, els.customH].forEach((el) => el.addEventListener("input", save));
   els.generateBtn.addEventListener("click", generate);
 
@@ -496,6 +517,11 @@ async function main() {
     const cfg = await apiGet("/api/image-config");
     hasImageConfig = Boolean(cfg.config?.uploaded);
     nodes = Array.isArray(cfg.nodes) ? cfg.nodes : [];
+    models = Array.isArray(cfg.models) ? cfg.models : [];
+    if (model && !models.includes(model)) {
+      model = "";
+      save();
+    }
     // 选中的节点若已被删/停用，回退到自动。
     if (endpointId && !nodes.some((n) => String(n.id) === endpointId)) {
       endpointId = "";
@@ -504,6 +530,7 @@ async function main() {
   } catch {
     hasImageConfig = false;
   }
+  renderModels();
   renderNodes();
   renderState();
   renderStage();

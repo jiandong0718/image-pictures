@@ -474,7 +474,7 @@ async function getRuntimePlaygroundConfig() {
     uploaded: (await imageConfig.countEndpoints()) > 0,
     apiBase: "/api/full-playground-proxy",
     apiKey: "workbench-proxy",
-    model: "gpt-image-2",
+    model: await imageConfig.getDefaultImageModel(),
   };
 }
 
@@ -526,6 +526,7 @@ function normalizePlaygroundRequest(rawRequest = {}) {
     referenceImageId: cleanPrompt(rawRequest.referenceImageId),
     // 自由生图可指定某个生图节点；留空则按调度策略自动选。仅本页有此选项。
     endpointId: cleanPrompt(rawRequest.endpointId),
+    model: imageConfig.normalizeModelName(rawRequest.model),
   };
 }
 
@@ -634,10 +635,8 @@ function getPublicRequestOrigin(headers = {}) {
   return `${protocol}://${headers.host}`;
 }
 
-// 绘图聚集地代理：把请求体里前端写死的 model 覆盖成端点配置的模型（端点没配就用 .env 的
-// CUSTOM_IMAGE_MODEL），与自由生图一致。避免前端固定发 gpt-image-2、而端点渠道（如 AgnesAI）
-// 没有该模型导致 503 model_not_found。
-// ponytail: 只处理 JSON（generations）；multipart（edits）的 model 字段较难改写，保持原样，需要再补。
+// 绘图聚集地代理：JSON 请求体使用本次已匹配的模型。multipart 编辑请求由前端携带
+// 同一个模型字段，服务端校验后按该模型选端点，保持文件体原样转发。
 function applyEndpointModel(body, contentType, endpointModel) {
   const model = (endpointModel || process.env.CUSTOM_IMAGE_MODEL || "").trim();
   if (!model || !String(contentType).includes("application/json")) {
@@ -1814,12 +1813,12 @@ async function generatePlaygroundImages(rawRequest = {}, user, hooks = {}) {
     sourceMainId = makeImageId(sourcePath);
   }
 
-  const imageSet = await allocateImageSet(user.id);
-  const outputDir = imageSet.outputDir;
   // 指定了节点就用该节点，否则按调度策略自动选。
   const apiConfig = request.endpointId
-    ? await imageConfig.getEnabledEndpointById(request.endpointId)
-    : await imageConfig.pickEndpoint();
+    ? await imageConfig.getEnabledEndpointById(request.endpointId, request.model)
+    : await imageConfig.pickEndpoint(request.model);
+  const imageSet = await allocateImageSet(user.id);
+  const outputDir = imageSet.outputDir;
   const env = buildImageGeneratorEnv(process.env, apiConfig);
   hooks.onTotal?.(request.count); // 先告知总张数，前端好摆 N 个占位
 
@@ -2607,14 +2606,6 @@ async function handleApi(req, res, pathname, searchParams) {
     if (!user) {
       return;
     }
-    let apiConfig;
-    try {
-      apiConfig = await imageConfig.pickEndpoint();
-    } catch (error) {
-      sendError(res, 400, error.message);
-      return;
-    }
-
     const proxyPath = normalizeProxyPath(pathname);
     if (!["images/generations", "images/edits"].includes(proxyPath)) {
       sendError(res, 404, "绘图聚集地代理接口不存在");
@@ -2625,16 +2616,19 @@ async function handleApi(req, res, pathname, searchParams) {
     let body;
     let requestedCount = 1;
     let requestPrompt = "";
+    let requestedModel = "";
     try {
       body = await readRequestBuffer(req, MAX_PROXY_UPLOAD_BYTES);
       if (contentType.includes("application/json")) {
         const payload = body.length ? JSON.parse(body.toString("utf8")) : {};
         requestedCount = requestedImageCountFromJson(payload);
         requestPrompt = typeof payload.prompt === "string" ? payload.prompt : "";
+        requestedModel = imageConfig.normalizeModelName(payload.model);
       } else if (contentType.includes("multipart/form-data")) {
         const fields = parseMultipartTextFields(body, contentType);
         requestedCount = requestedImageCountFromJson(fields);
         requestPrompt = typeof fields.prompt === "string" ? fields.prompt : "";
+        requestedModel = imageConfig.normalizeModelName(fields.model);
       }
       await accounts.assertEnoughCredits(user.id, requestedCount);
     } catch (error) {
@@ -2643,7 +2637,15 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
 
-    // 用端点配置的模型覆盖前端写死的 gpt-image-2（与自由生图一致），避免渠道无该模型 503。
+    let apiConfig;
+    try {
+      apiConfig = await imageConfig.pickEndpoint(requestedModel);
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+
+    // JSON 请求体中的模型与路由结果保持一致；multipart 原样转发其已校验的模型字段。
     const forwardBody = applyEndpointModel(body, contentType, apiConfig.model);
 
     // 异步模式（?async=true）：立即返回 taskId，后台跑上游生图 + 落盘图库 + 扣费。
@@ -2670,7 +2672,7 @@ async function handleApi(req, res, pathname, searchParams) {
             text = await upstream.text();
             if (upstream.ok || !isRetryablePlaygroundStatus(upstream.status) || attempt === 1) break;
             console.warn(`绘图聚集地节点返回 ${upstream.status}，切换节点重试`);
-            activeConfig = await imageConfig.pickEndpoint();
+            activeConfig = await imageConfig.pickEndpoint(requestedModel);
           }
           if (!upstream.ok) {
             failGenerationTask(taskId, `绘图聚集地上游 ${upstream.status}: ${text.slice(0, 300)}`);
@@ -2814,7 +2816,8 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     const uploaded = (await imageConfig.countEndpoints()) > 0;
     // nodes：脱敏的可选节点列表（供自由生图指定节点，普通用户也能拿，不含 url/key）。
-    const payload = { ok: true, config: { uploaded }, nodes: await imageConfig.listSelectableEndpoints() };
+    const nodes = await imageConfig.listSelectableEndpoints();
+    const payload = { ok: true, config: { uploaded }, nodes, models: [...new Set(nodes.flatMap((node) => node.models))] };
     if (user.role === "admin") {
       payload.endpoints = await imageConfig.listEndpointsForDisplay();
       payload.schedule = await imageConfig.getSchedule();
@@ -2842,6 +2845,8 @@ async function handleApi(req, res, pathname, searchParams) {
     try {
       if (action === "delete") {
         await imageConfig.deleteEndpoint(payload.id);
+      } else if (action === "models") {
+        await imageConfig.updateEndpointModels(payload.id, payload.models);
       } else if (action === "toggle") {
         await imageConfig.setEndpointEnabled(payload.id, Boolean(payload.enabled));
       } else if (action === "schedule") {

@@ -194,9 +194,12 @@ export default function App() {
     applyWorkbenchTheme('tech')
 
     let disposed = false
+    let selectedWorkbenchModel = ''
     const syncConfig = async () => {
       const config = await fetchWorkbenchPlaygroundConfig()
-      if (!disposed) applyWorkbenchPlaygroundConfig(config)
+      if (!disposed) applyWorkbenchPlaygroundConfig(config && selectedWorkbenchModel
+        ? { ...config, model: selectedWorkbenchModel }
+        : config)
     }
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.source !== window.parent) return
@@ -204,6 +207,9 @@ export default function App() {
         void syncConfig()
       } else if (event.data?.type === 'image-workbench:theme-changed') {
         applyWorkbenchTheme(event.data.theme)
+      } else if (event.data?.type === 'image-workbench:model-changed' && typeof event.data.model === 'string') {
+        selectedWorkbenchModel = event.data.model.trim()
+        void syncConfig()
       }
     }
 

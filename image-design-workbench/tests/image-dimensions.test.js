@@ -37,6 +37,8 @@ const {
 const {
   normalizeApiBase,
   normalizeEndpointInput,
+  normalizeModelList,
+  endpointModels,
   maskKey,
   normalizeSchedule,
   selectEndpoint,
@@ -246,6 +248,7 @@ test("normalizes playground requests with bounded count and image spec", () => {
       },
       referenceImageId: "",
       endpointId: "",
+      model: "",
     },
   );
   assert.deepEqual(
@@ -278,9 +281,11 @@ test("normalizes playground requests with bounded count and image spec", () => {
       },
       referenceImageId: "001/main-test.png",
       endpointId: "",
+      model: "",
     },
   );
   assert.throws(() => normalizePlaygroundRequest({ prompt: "" }), /自由生图提示词不能为空/);
+  assert.equal(normalizePlaygroundRequest({ prompt: "画一张图", model: "gpt-image-2.5" }).model, "gpt-image-2.5");
 });
 
 test("counts full playground generated images for credit billing", () => {
@@ -415,11 +420,19 @@ test("parses multiple generated image paths from generator output", () => {
 
 test("normalizes a generation endpoint (url + key) and rejects bad input", () => {
   const ep = normalizeEndpointInput({ apiBase: " https://api.one/v1/ ", apiKey: " key-1 ", label: " 主号 " });
-  assert.deepEqual(ep, { apiBase: "https://api.one/v1", apiKey: "key-1", label: "主号", model: "" });
+  assert.deepEqual(ep, { apiBase: "https://api.one/v1", apiKey: "key-1", label: "主号", model: "", models: [] });
 
   // 每组端点可带自己的模型名（供 Agnes 等模型名不同的渠道共用同一套配置）。
   const withModel = normalizeEndpointInput({ apiBase: "https://api.one/v1", apiKey: "k", model: " agnes-image-2.1-flash " });
   assert.equal(withModel.model, "agnes-image-2.1-flash");
+  assert.deepEqual(withModel.models, ["agnes-image-2.1-flash"]);
+
+  const multiple = normalizeEndpointInput({ apiBase: "https://api.one/v1", apiKey: "k", models: "gpt-image-2, gpt-image-2.5，gpt-image-2" });
+  assert.equal(multiple.model, "gpt-image-2");
+  assert.deepEqual(multiple.models, ["gpt-image-2", "gpt-image-2.5"]);
+  assert.deepEqual(endpointModels({ model: "gpt-image-2", supported_models: JSON.stringify(multiple.models) }), multiple.models);
+  assert.deepEqual(normalizeModelList("gpt-image-2.5-flare\ngpt-image-2.5-sunburst"), ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
+  assert.throws(() => normalizeModelList("gpt-image-2, bad model"), /模型名/);
 
   assert.throws(() => normalizeEndpointInput({ apiBase: "", apiKey: "k" }), /生图 API URL不能为空/);
   assert.throws(() => normalizeEndpointInput({ apiBase: "not-a-url", apiKey: "k" }), /生图 API URL格式不正确/);
@@ -444,6 +457,18 @@ test("selectEndpoint round-robins across endpoints and wraps", () => {
   }
   assert.deepEqual(seen, [1, 2, 3, 1]);
   assert.throws(() => selectEndpoint([], { schedule: "round_robin" }), /请先在配置中心添加生图 API 端点/);
+});
+
+test("selected model routes only to capable image endpoints", () => {
+  const rows = [
+    { id: 1, model: "gpt-image-2", supported_models: '["gpt-image-2","gpt-image-2.5"]' },
+    { id: 2, model: "gpt-image-2" },
+    { id: 3, model: "gpt-image-2.5" },
+  ];
+  const first = selectEndpoint(rows, { model: "gpt-image-2.5", counter: 0 });
+  const second = selectEndpoint(rows, { model: "gpt-image-2.5", counter: first.nextCounter });
+  assert.deepEqual([first.row.id, second.row.id], [1, 3]);
+  assert.throws(() => selectEndpoint(rows, { model: "unknown" }), /没有支持/);
 });
 
 test("selectEndpoint random picks within range and keeps counter", () => {
