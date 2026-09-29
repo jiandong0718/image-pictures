@@ -13,7 +13,7 @@
         document.documentElement.dataset.theme = "tech";
       }
     </script>
-    <link rel="stylesheet" href="/pages/home/home.css?v=full-image-2" />
+    <link rel="stylesheet" href="/pages/home/home.css?v=video-promo-2" />
   </head>
   <body>
     <header class="site-header">
@@ -107,13 +107,31 @@
           </form>
         </div>
         <p class="works-status" id="worksStatus" role="status"></p>
+        <aside class="video-promo" id="videoPromo" aria-labelledby="videoPromoTitle" hidden>
+          <div class="video-promo-copy">
+            <span class="section-kicker" data-i18n="videoPromoEyebrow">VIDEO STUDIO / 视频创作</span>
+            <h3 id="videoPromoTitle" data-i18n="videoPromoHeading">让灵感，动起来。</h3>
+            <p data-i18n="videoPromoDescription">用文字或图片开启一段动态创作，也可以用多张关键帧串起画面。</p>
+            <div class="video-promo-features" aria-label="视频创作方式" data-i18n-aria="videoPromoFeaturesLabel">
+              <span data-i18n="videoPromoText">文生视频</span>
+              <span data-i18n="videoPromoImage">图生视频</span>
+              <span data-i18n="videoPromoFrames">关键帧衔接</span>
+            </div>
+            <a class="video-promo-link" href="/video"><span data-i18n="videoPromoLink">进入视频工作台</span><span aria-hidden="true">↗</span></a>
+            <p class="video-promo-note" data-i18n="videoPromoNote">预览由本页静态图片剪辑，仅展示动态呈现方式，并非 AI 生成的视频作品。</p>
+          </div>
+          <div class="video-promo-stage">
+            <video id="videoPromoClip" src="/assets/video-teaser-from-stills.mp4" poster="/assets/video-teaser-poster.jpg" muted loop playsinline controls preload="metadata" aria-label="静态图片剪辑演示" data-i18n-aria="videoPromoVideoLabel"></video>
+            <span class="video-promo-stage-label" data-i18n="videoPromoStageLabel">00:10 / 图片剪辑演示</span>
+          </div>
+        </aside>
         <div class="works-grid" id="worksGrid" aria-live="polite"></div>
         <button class="load-more" id="loadMore" type="button" hidden>加载更多作品 <span aria-hidden="true">↓</span></button>
       </section>
 
       <section class="closing-banner" aria-label="开始创作">
-        <div><span>MAKE THE NEXT ONE YOURS</span><h2 data-i18n="closingHeading">看到喜欢的，就动手做出来。</h2></div>
-        <a href="/playground" data-i18n="closingLink">进入创作工作台 ↗</a>
+        <div><span>MAKE THE NEXT ONE YOURS</span><h2 id="closingHeading" data-i18n="closingHeading">看到喜欢的，就动手做出来。</h2></div>
+        <a id="closingLink" href="/playground" data-i18n="closingLink">进入创作工作台 ↗</a>
       </section>
     </main>
 
@@ -156,6 +174,6 @@
       </div>
     </dialog>
 
-    <script type="module" src="/pages/home/home.js?v=travel-landscapes-1"></script>
+    <script type="module" src="/pages/home/home.js?v=video-promo-2"></script>
   </body>
 </html>

@@ -12,6 +12,10 @@ const EN = {
   startCreating: "Start creating", browseWorks: "Explore works", tileFashion: "FASHION / Crimson couture", tileBeauty: "BEAUTY / Chrome portrait", tileNoir: "NOIR / Rainy city", tileTravel: "TRAVEL / Yangshuo at night · photo",
   galleryEyebrow: "THE OPEN GALLERY / SHARED WORK", galleryHeading: "A starting point for your next image.", galleryDescription: "Creators choose which images and videos to share here. Every work can spark a new idea.",
   allWorks: "All works", images: "Images", videos: "Videos", searchLabel: "Search titles or prompts", searchPlaceholder: "Search titles or prompts", searchButton: "Search works",
+  videoPromoEyebrow: "VIDEO STUDIO / CREATE IN MOTION", videoPromoHeading: "Set your ideas in motion.", videoPromoDescription: "Start with a description or an image, then connect scenes with multiple keyframes.",
+  videoPromoFeaturesLabel: "Video creation methods", videoPromoText: "Text to video", videoPromoImage: "Image to video", videoPromoFrames: "Keyframe sequence", videoPromoLink: "Open video studio", videoPromoNote: "This preview is edited from still images on this page. It demonstrates motion and is not an AI-generated video work.",
+  videoPromoVideoLabel: "Preview edited from still images", videoPromoStageLabel: "00:10 / STILL IMAGE EDIT", videoPromoCount: "Video creation preview", videoPromoStatus: "No shared videos yet. Explore the video studio while the gallery grows.",
+  closingVideoHeading: "Your next scene starts here.", closingVideoLink: "Enter the video studio ↗",
   closingHeading: "See something you love? Make your own.", closingLink: "Enter the studio ↗", footer: "Create · Explore · Create again", closeDetail: "Close work details", viewSource: "View original photograph ↗", copy: "Copy",
   notifications: "Product updates", themeButton: "Choose a theme", languageButton: "Choose a language", menuButton: "Open menu", markRead: "Mark as read", markUnread: "Mark as unread",
   sampleBadge: "IDEA", photoBadge: "REAL PHOTO", genericLabel: "Creative work", viewWork: "View", sampleCount: "creative directions", publicCount: "shared works", examplesStatus: "The public gallery is growing. Start with these ideas.",
@@ -28,6 +32,8 @@ const EN = {
 const ZH = {
   openStudio: "进入工作台", notifications: "版本更新通知", themeButton: "选择主题", languageButton: "切换语言", menuButton: "打开菜单", markRead: "标为已读", markUnread: "标为未读",
   sampleBadge: "灵感示例", photoBadge: "实拍参考", genericLabel: "创作作品", viewWork: "查看", examplesStatus: "公开作品正在生长；先从这些示例中找到灵感。",
+  videoPromoCount: "视频创作预览", videoPromoStatus: "公开视频还在征集中，先了解视频创作方式。",
+  closingVideoHeading: "下一段画面，从这里开始。", closingVideoLink: "进入视频工作台 ↗",
   emptyHeading: "还没有找到这类作品", emptyDescription: "换个关键词，或来发布一件你的作品。", emptyLink: "去我的图库 ↗", loading: "正在加载公开作品…", loadError: "公开作品暂时无法加载。", promptFallback: "打开作品，寻找下一次创作的灵感。",
   demoDetail: "CREATIVE DIRECTION / 灵感示例", realDetail: "REAL PHOTO / 实拍参考", publicVideo: "PUBLIC WORK / 视频", publicImage: "PUBLIC WORK / 图片", demoDate: "从一个方向，开始自己的创作。", publishedOn: "发布于", photoCredit: "摄影：Willian Justen de Vasconcellos · Unsplash",
   promptMissing: "创作者未留下提示词。", photoPromptHeading: "借鉴构图的提示词", demoPromptHeading: "参考提示词", promptHeading: "创作提示词", createImage: "用提示词创作图片 ↗", createVideo: "用提示词创作视频 ↗", copied: "提示词已复制", copyFailed: "复制失败，请选中提示词手动复制",
@@ -135,6 +141,10 @@ const els = {
   tabs: document.querySelector(".works-tabs"),
   keyword: document.getElementById("keyword"),
   searchForm: document.getElementById("searchForm"),
+  videoPromo: document.getElementById("videoPromo"),
+  videoPromoClip: document.getElementById("videoPromoClip"),
+  closingHeading: document.getElementById("closingHeading"),
+  closingLink: document.getElementById("closingLink"),
   grid: document.getElementById("worksGrid"),
   status: document.getElementById("worksStatus"),
   count: document.getElementById("resultCount"),
@@ -469,12 +479,28 @@ function renderCard(item, index) {
 
 function render() {
   els.grid.replaceChildren();
+  const showVideoPromo = !state.keyword && (state.media === "all" || state.media === "video");
+  const promoWasVisible = !els.videoPromo.hidden;
+  els.videoPromo.hidden = !showVideoPromo;
+  if (showVideoPromo !== promoWasVisible) {
+    if (!showVideoPromo) els.videoPromoClip.pause();
+    else if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) els.videoPromoClip.play().catch(() => {});
+  }
+  const showVideoInvite = !state.items.length && !state.total && !state.keyword && state.media === "video";
+  els.grid.hidden = showVideoInvite;
+  els.videoPromo.closest(".works-section").classList.toggle("is-video-only", showVideoInvite);
+  els.closingHeading.textContent = state.media === "video" ? tr("closingVideoHeading") : (state.language === "en" ? EN.closingHeading : "看到喜欢的，就动手做出来。");
+  els.closingLink.textContent = state.media === "video" ? tr("closingVideoLink") : (state.language === "en" ? EN.closingLink : "进入创作工作台 ↗");
+  els.closingLink.href = state.media === "video" ? "/video" : "/playground";
   const showExamples = !state.items.length && !state.total && !state.keyword && state.media !== "video";
   if (showExamples) {
     examples.forEach((item, index) => els.grid.appendChild(renderCard(item, index)));
     els.count.textContent = state.total ? state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品") :
       String(examples.length).padStart(2, "0") + " " + (state.language === "en" ? tr("sampleCount") : "个创作方向");
     els.status.textContent = tr("examplesStatus");
+  } else if (showVideoInvite) {
+    els.count.textContent = tr("videoPromoCount");
+    els.status.textContent = tr("videoPromoStatus");
   } else if (!state.items.length) {
     const empty = document.createElement("div");
     empty.className = "works-empty";
