@@ -37,7 +37,7 @@ const ZH = {
 
 const EXAMPLE_EN = {
   1: { title: "Crimson couture", label: "Editorial / Fashion", prompt: "An adult East Asian model in a sculptural crimson silk gown stands in a pale concrete courtyard. The dress sweeps into a dramatic red arc in the wind. Confident gaze, full-body composition, morning side light, tactile silk, and a premium fashion editorial feel. No text or logos." },
-  2: { title: "Silver crown", label: "Editorial / Portrait", prompt: "A close fashion portrait of an adult Black woman wearing a mirrored metallic floral headpiece. Deep navy styling, cobalt fill light, crisp rim light, direct gaze, authentic skin texture, and an avant-garde magazine cover feel. No text or logos." },
+  2: { title: "Halloween pendant · Set 049", label: "Image work", badge: "Product detail visual", detailLabel: "IMAGE WORK / PRODUCT VISUAL", prompt: "Create a process detail poster for a round PMMA acrylic Halloween pendant based on the supplied main image. Add a red label reading “2D Flat Acrylic” at the lower right, and show four close-up views of the original pendant's pearl effect, color layers, UV highlights, and raised finish." },
   3: { title: "Neon rain", label: "Editorial / Cinema", prompt: "An adult East Asian man in a tailored black coat holds a vivid red umbrella on a rainy city street. Wet pavement reflects red and cyan neon; distant people and headlights are softly blurred. Full-body framing, cinematic backlight, and fashion campaign photography. No readable signs or logos." },
   4: { title: "Two beneath the moon", label: "Editorial / Scene", prompt: "Two adult models in minimal ivory couture stand apart on a reflective salt flat at dusk. A huge amber moon meets the horizon, with distant misty mountains and soft reflections. A wide, quiet, cinematic fashion composition. No text or logos." },
   5: { title: "Yangshuo after dark", label: "Real photo / Holiday travel", prompt: "A lively pedestrian street in Yangshuo at night. A young woman in locally inspired traditional dress stands naturally among the crowd with a relaxed smile. Warm shop lights meet blue-green neon, with passersby softly out of focus. Candid environmental portrait with an authentic street atmosphere." },
@@ -53,8 +53,8 @@ const examples = [
     prompt: "一位成年东亚女性模特身穿雕塑感深红丝绸礼服，站在浅色混凝土建筑庭院。长裙被风吹成巨大的红色弧线，人物目光坚定，全身构图，早晨侧光，真实丝绸质感，高级时尚杂志摄影，无文字与标志。",
   },
   {
-    kind: "image", demo: 2, image: "/assets/editorial-chrome.jpg", title: "银色花冠", label: "人物大片 / 肖像",
-    prompt: "成年黑人女性模特的近景时尚肖像，精致的镜面金属花瓣头饰环绕面部，深海军蓝服装与背景，钴蓝色补光和冷白边缘光，坚定直视镜头，真实皮肤质感，前卫高级时装封面摄影，无文字与标志。",
+    kind: "image", demo: 2, featured: true, image: "/assets/halloween-acrylic-worn-049.png", title: "人物穿戴图 · 套图 049", label: "图片作品", badge: "人物穿戴图", detailLabel: "图片作品 / 人物穿戴图", cardMeta: "2026/09/27",
+    prompt: "基于提供的主图生成一个圆形 PMMA 亚克力万圣节挂饰工艺细节说明海报。画面右下角放置一个横向正红色长方形标签，与画面边缘保持安全距离，使用鲜艳正红色背景和白色粗体衬线字体，文字内容为“2D Flat Acrylic”。右侧四组圆形局部放大镜展示珠光、彩色叠层、UV 高光和立体工艺细节。",
   },
   {
     kind: "image", demo: 3, image: "/assets/editorial-rain.jpg", title: "霓虹雨夜", label: "人物大片 / 电影感",
@@ -435,12 +435,14 @@ function mediaMarkup(item) {
 function renderCard(item) {
   const card = document.createElement("article");
   card.className = "work-card";
+  const badge = fieldOf(item, "badge") || (item.sourceUrl ? tr("photoBadge") : item.demo ? tr("sampleBadge") : item.kind === "video" ? "VIDEO" : "IMAGE");
+  const cardMeta = item.cardMeta || (item.demo ? String(item.demo).padStart(2, "0") + " / " + String(examples.length).padStart(2, "0") : formatDate(item.publishedAt));
   card.innerHTML = '<button type="button" aria-label="' + escapeHtml(tr("viewWork")) + ' ' + escapeHtml(titleOf(item)) + '">' +
     '<span class="work-media">' + mediaMarkup(item) +
-    '<span class="media-badge">' + (item.sourceUrl ? tr("photoBadge") : item.demo ? tr("sampleBadge") : item.kind === "video" ? "VIDEO" : "IMAGE") +
+    '<span class="media-badge">' + escapeHtml(badge) +
     '</span></span><span class="work-card-body"><span class="work-card-meta"><span>' +
     escapeHtml(fieldOf(item, "label") || tr("genericLabel")) + '</span><span>' +
-    escapeHtml(item.demo ? String(item.demo).padStart(2, "0") + " / " + String(examples.length).padStart(2, "0") : formatDate(item.publishedAt)) +
+    escapeHtml(cardMeta) +
     '</span></span><h3>' + escapeHtml(titleOf(item)) + '</h3><p>' +
     escapeHtml(promptOf(item) || tr("promptFallback")) + '</p></span></button>';
   card.querySelector("button").addEventListener("click", () => openDetail(item));
@@ -508,15 +510,15 @@ function openDetail(item) {
     item.kind === "video" ?
       '<video src="' + escapeHtml(item.url) + '" controls playsinline preload="metadata"></video>' :
       '<img src="' + escapeHtml(item.url) + '" alt="' + escapeHtml(titleOf(item)) + '" />';
-  els.dialogLabel.textContent = item.sourceUrl ? tr("realDetail") : item.demo ? tr("demoDetail") :
-    item.kind === "video" ? tr("publicVideo") : tr("publicImage");
+  els.dialogLabel.textContent = fieldOf(item, "detailLabel") || (item.sourceUrl ? tr("realDetail") : item.demo ? tr("demoDetail") :
+    item.kind === "video" ? tr("publicVideo") : tr("publicImage"));
   els.dialogTitle.textContent = titleOf(item);
-  els.dialogDate.textContent = item.photoCredit ? tr("photoCredit") :
-    item.demo ? tr("demoDate") : tr("publishedOn") + " " + formatDate(item.publishedAt);
+  els.dialogDate.textContent = item.cardMeta || (item.photoCredit ? tr("photoCredit") :
+    item.demo ? tr("demoDate") : tr("publishedOn") + " " + formatDate(item.publishedAt));
   els.dialogSource.hidden = !item.sourceUrl;
   if (item.sourceUrl) els.dialogSource.href = item.sourceUrl;
   els.dialogPrompt.textContent = promptOf(item) || tr("promptMissing");
-  els.dialogPromptHeading.textContent = item.sourceUrl ? tr("photoPromptHeading") : item.demo ? tr("demoPromptHeading") : tr("promptHeading");
+  els.dialogPromptHeading.textContent = item.sourceUrl ? tr("photoPromptHeading") : item.demo && !item.featured ? tr("demoPromptHeading") : tr("promptHeading");
   els.dialogMessage.textContent = "";
   els.copyPrompt.disabled = !promptOf(item);
   els.createFromPrompt.disabled = !promptOf(item);
