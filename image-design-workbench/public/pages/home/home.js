@@ -421,7 +421,7 @@ function promptOf(item) {
 
 function mediaMarkup(item) {
   if (item.image) {
-    return '<img src="' + escapeHtml(item.image) + '" alt="" loading="lazy" />';
+    return imageMarkup(item.image);
   }
   if (item.demo) {
     return '<span class="demo-art demo-art-' + item.demo + '"></span>';
@@ -429,7 +429,13 @@ function mediaMarkup(item) {
   if (item.kind === "video") {
     return '<span class="video-poster" aria-hidden="true">▶</span>';
   }
-  return '<img src="' + escapeHtml(item.url) + '?thumb=1" alt="" loading="lazy" />';
+  return imageMarkup(item.url + '?thumb=1');
+}
+
+function imageMarkup(source) {
+  const src = escapeHtml(source);
+  return '<img class="work-media-backdrop" src="' + src + '" alt="" loading="lazy" aria-hidden="true" />' +
+    '<img class="work-media-image" src="' + src + '" alt="" loading="lazy" />';
 }
 
 function renderCard(item) {
