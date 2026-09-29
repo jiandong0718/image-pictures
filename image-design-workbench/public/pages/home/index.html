@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="浏览公开的 AI 图片与视频作品，查看创作提示词，从灵感开始创作。" />
+    <title>灵感首页 · AI 图像设计工作台</title>
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("imageStudioTheme");
+        document.documentElement.dataset.theme = ["tech", "xianxia", "mystic"].includes(savedTheme) ? savedTheme : "tech";
+      } catch {
+        document.documentElement.dataset.theme = "tech";
+      }
+    </script>
+    <link rel="stylesheet" href="/pages/home/home.css?v=header-clean-1" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="site-brand" href="/" aria-label="AI 图像设计工作台首页">
+        <span class="brand-symbol" aria-hidden="true">✳</span>
+        <strong data-i18n="brand">AI 图像设计工作台</strong>
+      </a>
+      <div class="header-actions" id="headerActions">
+        <div class="header-tools">
+          <button class="header-icon" id="themeToggle" type="button" aria-label="切换主题" aria-haspopup="true" aria-expanded="false" aria-controls="themePanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.7 15.1A8.5 8.5 0 0 1 8.9 3.3 8.5 8.5 0 1 0 20.7 15.1Z" /></svg>
+          </button>
+          <button class="header-icon" id="languageToggle" type="button" aria-label="切换语言" aria-haspopup="true" aria-expanded="false" aria-controls="languagePanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.5 3.7 5.5 3.7 9s-1.2 6.5-3.7 9c-2.5-2.5-3.7-5.5-3.7-9S9.5 5.5 12 3Z" /></svg>
+          </button>
+          <button class="header-icon notification-toggle" id="notificationToggle" type="button" aria-label="版本更新通知" aria-haspopup="true" aria-expanded="false" aria-controls="notificationPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 9h18c0-1-3-2-3-9ZM10 21h4" /></svg>
+            <span class="notification-badge" id="notificationBadge" hidden></span>
+          </button>
+          <button class="header-icon" id="menuToggle" type="button" aria-label="打开菜单" aria-haspopup="true" aria-expanded="false" aria-controls="menuPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+          </button>
+        </div>
+        <a class="account-link" id="accountLink" href="/login"><span id="accountLabel" data-i18n="login">登录 / 注册</span><span aria-hidden="true">↗</span></a>
+        <div class="header-panel compact-panel" id="themePanel" hidden>
+          <p class="panel-eyebrow" data-i18n="themeHeading">外观主题</p>
+          <button type="button" data-theme-choice="tech"><span data-i18n="themeTech">雾夜科技</span><span aria-hidden="true">✓</span></button>
+          <button type="button" data-theme-choice="xianxia"><span data-i18n="themeXianxia">月白仙侠</span><span aria-hidden="true">✓</span></button>
+          <button type="button" data-theme-choice="mystic"><span data-i18n="themeMystic">幻紫星雾</span><span aria-hidden="true">✓</span></button>
+        </div>
+        <div class="header-panel compact-panel" id="languagePanel" hidden>
+          <p class="panel-eyebrow" data-i18n="languageHeading">页面语言</p>
+          <button type="button" data-language-choice="zh"><span>简体中文</span><span aria-hidden="true">✓</span></button>
+          <button type="button" data-language-choice="en"><span>English</span><span aria-hidden="true">✓</span></button>
+        </div>
+        <div class="header-panel notification-panel" id="notificationPanel" hidden>
+          <div class="panel-title-row"><div><p class="panel-eyebrow" data-i18n="releaseEyebrow">WHAT'S NEW</p><h2 data-i18n="releaseHeading">版本更新</h2></div><button id="markAllRead" type="button" data-i18n="markAllRead">全部标为已读</button></div>
+          <div id="releaseList" class="release-list"></div>
+        </div>
+        <nav class="header-panel menu-panel" id="menuPanel" aria-label="快捷菜单" hidden>
+          <p class="panel-eyebrow" data-i18n="quickLinks">快捷入口</p>
+          <a href="/#works" data-i18n="navExplore">探索作品</a>
+          <a href="/playground" data-i18n="navCreate">自由生图</a>
+          <a href="/my-images" data-i18n="navGallery">我的图库</a>
+          <a href="/login" id="menuAccount" data-i18n="login">登录 / 注册</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="heroTitle">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-line"></span> A SPACE FOR IDEAS TO BECOME IMAGES</div>
+          <h1 id="heroTitle"><span data-i18n="heroLineOne">好灵感，</span><br /><em data-i18n="heroLineTwo">从看见开始。</em></h1>
+          <p data-i18n="heroDescription">浏览公开作品，看看一张图如何诞生。找到喜欢的画面、读懂提示词，再创作属于自己的版本。</p>
+          <div class="hero-actions">
+            <a class="button-primary" href="/playground"><span data-i18n="startCreating">开始创作</span><span aria-hidden="true">↗</span></a>
+            <a class="button-text" href="#works"><span data-i18n="browseWorks">浏览作品</span><span aria-hidden="true">↓</span></a>
+          </div>
+          <div class="hero-footnote"><span>01 / DISCOVER</span><span>02 / CREATE</span><span>03 / SHARE</span></div>
+        </div>
+        <div class="hero-visual" aria-label="人物大片与中国旅行风格示例">
+          <div class="hero-tile hero-tile-main editorial-art-1"><span data-i18n="tileFashion">FASHION / 赤色高定</span></div>
+          <div class="hero-tile hero-tile-blue editorial-art-2"><span data-i18n="tileBeauty">BEAUTY / 金属肖像</span></div>
+          <div class="hero-tile hero-tile-landscape editorial-art-3"><span data-i18n="tileNoir">NOIR / 雨夜街景</span></div>
+          <div class="hero-tile hero-tile-beauty editorial-art-travel"><span data-i18n="tileTravel">TRAVEL / 阳朔夜游 · 实拍</span></div>
+          <span class="hero-visual-stamp">EXPLORE<br />THE POSSIBLE ↗</span>
+        </div>
+      </section>
+
+      <section class="works-section" id="works" aria-labelledby="worksTitle">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker" data-i18n="galleryEyebrow">THE OPEN GALLERY / 公开作品</p>
+            <h2 id="worksTitle" data-i18n="galleryHeading">下一张作品的起点。</h2>
+            <p data-i18n="galleryDescription">这里展示创作者主动发布的图片与视频。每件作品都可以继续激发新的创作。</p>
+          </div>
+          <span class="section-count" id="resultCount">正在寻找灵感…</span>
+        </div>
+
+        <div class="works-toolbar">
+          <div class="works-tabs" role="tablist" aria-label="筛选作品类型">
+              <button type="button" role="tab" data-media="all" aria-selected="true" data-i18n="allWorks">全部作品</button>
+              <button type="button" role="tab" data-media="image" aria-selected="false" data-i18n="images">图片</button>
+              <button type="button" role="tab" data-media="video" aria-selected="false" data-i18n="videos">视频</button>
+          </div>
+          <form id="searchForm" class="works-search" role="search">
+            <label class="sr-only" for="keyword" data-i18n="searchLabel">搜索作品标题或提示词</label>
+            <input id="keyword" type="search" autocomplete="off" placeholder="搜索标题或提示词" data-i18n-placeholder="searchPlaceholder" />
+            <button type="submit" aria-label="搜索作品" data-i18n-aria="searchButton">⌕</button>
+          </form>
+        </div>
+        <p class="works-status" id="worksStatus" role="status"></p>
+        <div class="works-grid" id="worksGrid" aria-live="polite"></div>
+        <button class="load-more" id="loadMore" type="button" hidden>加载更多作品 <span aria-hidden="true">↓</span></button>
+      </section>
+
+      <section class="closing-banner" aria-label="开始创作">
+        <div><span>MAKE THE NEXT ONE YOURS</span><h2 data-i18n="closingHeading">看到喜欢的，就动手做出来。</h2></div>
+        <a href="/playground" data-i18n="closingLink">进入创作工作台 ↗</a>
+      </section>
+    </main>
+
+    <footer class="site-footer"><span>AI IMAGE STUDIO © 2026</span><span data-i18n="footer">创造 · 浏览 · 再创造</span></footer>
+
+    <dialog class="work-dialog" id="workDialog" aria-labelledby="dialogTitle">
+      <button class="dialog-close" id="closeDialog" type="button" aria-label="关闭作品详情" data-i18n-aria="closeDetail">×</button>
+      <div class="dialog-media" id="dialogMedia"></div>
+      <div class="dialog-info">
+        <span class="dialog-label" id="dialogLabel"></span>
+        <h2 id="dialogTitle"></h2>
+        <p class="dialog-date" id="dialogDate"></p>
+        <a class="dialog-source" id="dialogSource" href="#" target="_blank" rel="noopener noreferrer" hidden data-i18n="viewSource">查看摄影原作 ↗</a>
+        <div class="dialog-prompt-heading"><span id="dialogPromptHeading">创作提示词</span><button id="copyPrompt" type="button" data-i18n="copy">复制</button></div>
+        <p class="dialog-prompt" id="dialogPrompt"></p>
+        <p class="dialog-message" id="dialogMessage" role="status"></p>
+        <button class="dialog-create" id="createFromPrompt" type="button">用这个灵感继续创作 ↗</button>
+      </div>
+    </dialog>
+
+    <script type="module" src="/pages/home/home.js?v=header-clean-1"></script>
+  </body>
+</html>

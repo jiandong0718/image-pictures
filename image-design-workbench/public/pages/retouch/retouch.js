@@ -6,6 +6,7 @@ import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost, apiUpload, downloadFile, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 import { enableImagePaste } from "/shared/image-paste.js";
+import { takeReuse } from "/shared/reuse.js";
 
 const ICONS = {
   removeBg:
@@ -328,6 +329,19 @@ function selectFile(f) {
   renderCanvas();
 }
 
+async function applyGallerySource(reuse) {
+  if (!reuse?.imageId) return;
+  try {
+    const response = await fetch("/api/images/file/" + encodeURIComponent(reuse.imageId));
+    if (!response.ok) throw new Error("原图无法读取");
+    const blob = await response.blob();
+    const filename = String(reuse.imageId).split("/").pop() || "gallery-image.png";
+    selectFile(new File([blob], filename, { type: blob.type || "image/png" }));
+  } catch (error) {
+    setMsg("图库图片加载失败：" + error.message, "error");
+  }
+}
+
 async function ensureImageSet() {
   if (imageSet?.id) return imageSet;
   const data = await apiPost("/api/image-sets", {});
@@ -481,11 +495,14 @@ async function main() {
   renderCanvas();
 
   // 若离开前还有修图任务没轮询完，回来续上把结果捞回（避免扣了费图却丢了）。
+  const galleryReuse = takeReuse("retouch");
   if (pendingTask) {
     loading = true;
     renderState();
     renderCanvas();
-    awaitTask(pendingTask);
+    awaitTask(pendingTask).finally(() => applyGallerySource(galleryReuse));
+  } else {
+    applyGallerySource(galleryReuse);
   }
 }
 

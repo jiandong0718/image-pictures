@@ -22,7 +22,7 @@ const els = {
 function redirectTarget() {
   const params = new URLSearchParams(location.search);
   const redirect = params.get("redirect");
-  return redirect && redirect.startsWith("/") ? redirect : "/studio/hat";
+  return redirect && redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/";
 }
 
 function renderMode() {

@@ -1,0 +1,452 @@
+import { apiGet, fetchMe } from "/shared/api.js";
+import { saveReuse } from "/shared/reuse.js";
+import { normalizeTheme, normalizeLanguage, parseReadReleaseIds, unreadReleaseIds, RELEASE_NOTES } from "/shared/site-preferences.js";
+
+const EN = {
+  brand: "AI Image Studio",
+  navExplore: "Explore", navCreate: "Create", navGallery: "My gallery", login: "Log in / Sign up", openStudio: "Open studio",
+  themeHeading: "APPEARANCE", themeTech: "Misty night", themeXianxia: "Soft daylight", themeMystic: "Violet haze",
+  languageHeading: "LANGUAGE", releaseEyebrow: "WHAT'S NEW", releaseHeading: "Product updates", markAllRead: "Mark all as read", quickLinks: "QUICK LINKS",
+  heroLineOne: "Great ideas,", heroLineTwo: "start with a view.", heroDescription: "Explore shared work and the ideas behind it. Find an image you love, learn from its prompt, and create your own version.",
+  startCreating: "Start creating", browseWorks: "Explore works", tileFashion: "FASHION / Crimson couture", tileBeauty: "BEAUTY / Chrome portrait", tileNoir: "NOIR / Rainy city", tileTravel: "TRAVEL / Yangshuo at night · photo",
+  galleryEyebrow: "THE OPEN GALLERY / SHARED WORK", galleryHeading: "A starting point for your next image.", galleryDescription: "Creators choose which images and videos to share here. Every work can spark a new idea.",
+  allWorks: "All works", images: "Images", videos: "Videos", searchLabel: "Search titles or prompts", searchPlaceholder: "Search titles or prompts", searchButton: "Search works",
+  closingHeading: "See something you love? Make your own.", closingLink: "Enter the studio ↗", footer: "Create · Explore · Create again", closeDetail: "Close work details", viewSource: "View original photograph ↗", copy: "Copy",
+  notifications: "Product updates", themeButton: "Choose a theme", languageButton: "Choose a language", menuButton: "Open menu", markRead: "Mark as read", markUnread: "Mark as unread",
+  sampleBadge: "IDEA", photoBadge: "REAL PHOTO", genericLabel: "Creative work", viewWork: "View", sampleCount: "creative directions", publicCount: "shared works", examplesStatus: "The public gallery is growing. Start with these ideas.",
+  emptyHeading: "No works found", emptyDescription: "Try another search, or share one of your works.", emptyLink: "Go to my gallery ↗", loading: "Loading shared works…", loadError: "The public gallery is temporarily unavailable.", promptFallback: "Open this work for your next idea.",
+  demoDetail: "CREATIVE DIRECTION / IDEA", realDetail: "REAL PHOTO / REFERENCE", publicVideo: "SHARED WORK / VIDEO", publicImage: "SHARED WORK / IMAGE", demoDate: "Start a new creation from this direction.", publishedOn: "Published on", photoCredit: "Photo: Willian Justen de Vasconcellos · Unsplash",
+  promptMissing: "The creator did not add a prompt.", photoPromptHeading: "Prompt inspired by the composition", demoPromptHeading: "Reference prompt", promptHeading: "Creation prompt", createImage: "Create an image with this prompt ↗", createVideo: "Create a video with this prompt ↗", copied: "Prompt copied", copyFailed: "Copy failed. Please select the prompt and copy it manually.",
+};
+
+const ZH = {
+  openStudio: "进入工作台", notifications: "版本更新通知", themeButton: "选择主题", languageButton: "切换语言", menuButton: "打开菜单", markRead: "标为已读", markUnread: "标为未读",
+  sampleBadge: "灵感示例", photoBadge: "实拍参考", genericLabel: "创作作品", viewWork: "查看", examplesStatus: "公开作品正在生长；先从这些示例中找到灵感。",
+  emptyHeading: "还没有找到这类作品", emptyDescription: "换个关键词，或来发布一件你的作品。", emptyLink: "去我的图库 ↗", loading: "正在加载公开作品…", loadError: "公开作品暂时无法加载。", promptFallback: "打开作品，寻找下一次创作的灵感。",
+  demoDetail: "CREATIVE DIRECTION / 灵感示例", realDetail: "REAL PHOTO / 实拍参考", publicVideo: "PUBLIC WORK / 视频", publicImage: "PUBLIC WORK / 图片", demoDate: "从一个方向，开始自己的创作。", publishedOn: "发布于", photoCredit: "摄影：Willian Justen de Vasconcellos · Unsplash",
+  promptMissing: "创作者未留下提示词。", photoPromptHeading: "借鉴构图的提示词", demoPromptHeading: "参考提示词", promptHeading: "创作提示词", createImage: "用提示词创作图片 ↗", createVideo: "用提示词创作视频 ↗", copied: "提示词已复制", copyFailed: "复制失败，请选中提示词手动复制",
+};
+
+const EXAMPLE_EN = {
+  1: { title: "Crimson couture", label: "Editorial / Fashion", prompt: "An adult East Asian model in a sculptural crimson silk gown stands in a pale concrete courtyard. The dress sweeps into a dramatic red arc in the wind. Confident gaze, full-body composition, morning side light, tactile silk, and a premium fashion editorial feel. No text or logos." },
+  2: { title: "Silver crown", label: "Editorial / Portrait", prompt: "A close fashion portrait of an adult Black woman wearing a mirrored metallic floral headpiece. Deep navy styling, cobalt fill light, crisp rim light, direct gaze, authentic skin texture, and an avant-garde magazine cover feel. No text or logos." },
+  3: { title: "Neon rain", label: "Editorial / Cinema", prompt: "An adult East Asian man in a tailored black coat holds a vivid red umbrella on a rainy city street. Wet pavement reflects red and cyan neon; distant people and headlights are softly blurred. Full-body framing, cinematic backlight, and fashion campaign photography. No readable signs or logos." },
+  4: { title: "Two beneath the moon", label: "Editorial / Scene", prompt: "Two adult models in minimal ivory couture stand apart on a reflective salt flat at dusk. A huge amber moon meets the horizon, with distant misty mountains and soft reflections. A wide, quiet, cinematic fashion composition. No text or logos." },
+  5: { title: "Yangshuo after dark", label: "Real photo / Holiday travel", prompt: "A lively pedestrian street in Yangshuo at night. A young woman in locally inspired traditional dress stands naturally among the crowd with a relaxed smile. Warm shop lights meet blue-green neon, with passersby softly out of focus. Candid environmental portrait with an authentic street atmosphere." },
+  6: { title: "A vase in the light", label: "Materials / Still life", prompt: "An ivory sculptural ceramic vase on a travertine surface, with soft linen falling naturally beside it. Slanting afternoon sun creates delicate shadows. Warm tones, refined still-life photography, realistic materials, and a quiet composition." },
+  7: { title: "A product from tomorrow", label: "Product concept", prompt: "A futuristic wearable device in a dark studio, with a cobalt translucent shell and mirrored metal details. Dramatic rim light, a clean silhouette, and precise industrial-design photography." },
+  8: { title: "Beyond the mountains", label: "Imagined worlds", prompt: "Layered teal mountains and a sea of clouds, with a glowing river winding through the valley. An Eastern fantasy world at sunrise, poetic atmosphere, cinematic environmental light, and a sweeping wide composition." },
+  9: { title: "A brand's atmosphere", label: "Brand visual", prompt: "An amber serum bottle on pale travertine, with natural shadows cast by leaves. Warm beige background, soft morning light, and premium skincare campaign photography. No text or logos." },
+};
+
+const examples = [
+  {
+    kind: "image", demo: 1, image: "/assets/editorial-crimson.jpg", title: "赤色高定", label: "人物大片 / 时尚",
+    prompt: "一位成年东亚女性模特身穿雕塑感深红丝绸礼服，站在浅色混凝土建筑庭院。长裙被风吹成巨大的红色弧线，人物目光坚定，全身构图，早晨侧光，真实丝绸质感，高级时尚杂志摄影，无文字与标志。",
+  },
+  {
+    kind: "image", demo: 2, image: "/assets/editorial-chrome.jpg", title: "银色花冠", label: "人物大片 / 肖像",
+    prompt: "成年黑人女性模特的近景时尚肖像，精致的镜面金属花瓣头饰环绕面部，深海军蓝服装与背景，钴蓝色补光和冷白边缘光，坚定直视镜头，真实皮肤质感，前卫高级时装封面摄影，无文字与标志。",
+  },
+  {
+    kind: "image", demo: 3, image: "/assets/editorial-rain.jpg", title: "霓虹雨夜", label: "人物大片 / 电影感",
+    prompt: "成年东亚男性模特穿剪裁利落的黑色长大衣，在雨夜城市街头撑一把鲜红雨伞。湿润路面倒映红色和青蓝色霓虹，远处行人与车灯虚化，人物全身可见，电影感逆光，时尚广告摄影，无可读文字与标志。",
+  },
+  {
+    kind: "image", demo: 4, image: "/assets/editorial-moon.jpg", title: "月下双人", label: "人物大片 / 场景",
+    prompt: "两位成年模特身穿极简象牙白高定服装，相隔数米站在黄昏时的镜面盐湖。地平线上一轮巨大的琥珀色月亮，水面映出人物和天空，远山隐于薄雾，宽幅对称构图，安静而恢宏的电影时尚摄影，无文字与标志。",
+  },
+  {
+    kind: "image", demo: 5, image: "/assets/real-yangshuo-night.jpg", title: "阳朔夜游", label: "实拍旅拍 / 假日出游",
+    photoCredit: "摄影：Willian Justen de Vasconcellos · Unsplash",
+    sourceUrl: "https://unsplash.com/photos/woman-in-traditional-attire-on-a-busy-street-pLJdpeYQq7k",
+    prompt: "阳朔夜晚的热闹步行街，一位年轻旅行者穿着富有地方特色的传统服饰，自然地站在人群中，面带轻松的笑容。街头暖色灯光与蓝绿色霓虹交织，背景行人柔和虚化，真实抓拍感，环境人像摄影，保留街道的烟火气。",
+  },
+  {
+    kind: "image", demo: 6, title: "一束光，一件静物", label: "材质与静物",
+    prompt: "米白色雕塑陶瓷花器置于洞石台面，柔软亚麻布自然垂落。午后斜阳留下细腻的光影，暖色调，高级静物摄影，强调真实材质与安静的构图。",
+  },
+  {
+    kind: "image", demo: 7, title: "来自未来的产品", label: "产品概念",
+    prompt: "深色摄影棚中的未来感可穿戴设备，钴蓝色半透明外壳与镜面金属细节，戏剧性的边缘光，干净的产品轮廓，精密工业设计摄影。",
+  },
+  {
+    kind: "image", demo: 8, title: "山川里的另一种可能", label: "场景想象",
+    prompt: "层叠的青绿色山峦与云海，一条发光的河流在山谷中蜿蜒。日出时分，诗意的东方奇幻世界，电影级环境光，大场景构图。",
+  },
+  {
+    kind: "image", demo: 9, title: "为品牌创造氛围", label: "品牌视觉",
+    prompt: "琥珀色精华瓶置于浅色洞石台面，植物枝叶投下自然阴影，温暖米色背景，柔和晨光，高级护肤品牌广告摄影，不含文字或商标。",
+  },
+];
+
+const els = {
+  accountLink: document.getElementById("accountLink"),
+  accountLabel: document.getElementById("accountLabel"),
+  menuAccount: document.getElementById("menuAccount"),
+  headerActions: document.getElementById("headerActions"),
+  themeToggle: document.getElementById("themeToggle"),
+  languageToggle: document.getElementById("languageToggle"),
+  notificationToggle: document.getElementById("notificationToggle"),
+  menuToggle: document.getElementById("menuToggle"),
+  themePanel: document.getElementById("themePanel"),
+  languagePanel: document.getElementById("languagePanel"),
+  notificationPanel: document.getElementById("notificationPanel"),
+  menuPanel: document.getElementById("menuPanel"),
+  notificationBadge: document.getElementById("notificationBadge"),
+  releaseList: document.getElementById("releaseList"),
+  markAllRead: document.getElementById("markAllRead"),
+  tabs: document.querySelector(".works-tabs"),
+  keyword: document.getElementById("keyword"),
+  searchForm: document.getElementById("searchForm"),
+  grid: document.getElementById("worksGrid"),
+  status: document.getElementById("worksStatus"),
+  count: document.getElementById("resultCount"),
+  loadMore: document.getElementById("loadMore"),
+  dialog: document.getElementById("workDialog"),
+  dialogMedia: document.getElementById("dialogMedia"),
+  dialogLabel: document.getElementById("dialogLabel"),
+  dialogTitle: document.getElementById("dialogTitle"),
+  dialogDate: document.getElementById("dialogDate"),
+  dialogPrompt: document.getElementById("dialogPrompt"),
+  dialogPromptHeading: document.getElementById("dialogPromptHeading"),
+  dialogSource: document.getElementById("dialogSource"),
+  dialogMessage: document.getElementById("dialogMessage"),
+  copyPrompt: document.getElementById("copyPrompt"),
+  createFromPrompt: document.getElementById("createFromPrompt"),
+};
+
+function readStorage(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function writeStorage(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* Preference remains active for this page. */ }
+}
+
+const state = {
+  media: "all", keyword: "", page: 1, pageSize: 9, total: 0, items: [], selected: null, request: 0,
+  language: normalizeLanguage(readStorage("imageStudioLanguage")),
+  theme: normalizeTheme(document.documentElement.dataset.theme),
+  readReleases: new Set(parseReadReleaseIds(readStorage("imageStudioReadReleases"))),
+  user: null,
+};
+
+const staticText = new Map([...document.querySelectorAll("[data-i18n]")].map((element) => [element, element.textContent]));
+const staticPlaceholders = new Map([...document.querySelectorAll("[data-i18n-placeholder]")].map((element) => [element, element.getAttribute("placeholder")]));
+const staticAria = new Map([...document.querySelectorAll("[data-i18n-aria]")].map((element) => [element, element.getAttribute("aria-label")]));
+
+function tr(key) {
+  return (state.language === "en" ? EN : ZH)[key] || key;
+}
+
+function fieldOf(item, field) {
+  return state.language === "en" && item.demo ? (EXAMPLE_EN[item.demo]?.[field] || item[field]) : item[field];
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+
+const panelControls = {
+  theme: [els.themeToggle, els.themePanel],
+  language: [els.languageToggle, els.languagePanel],
+  notification: [els.notificationToggle, els.notificationPanel],
+  menu: [els.menuToggle, els.menuPanel],
+};
+
+function closePanels(focus = false) {
+  for (const [button, panel] of Object.values(panelControls)) {
+    if (!panel.hidden && focus) button.focus();
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+  }
+}
+
+function togglePanel(name) {
+  const wasOpen = !panelControls[name][1].hidden;
+  closePanels();
+  if (!wasOpen) {
+    const [button, panel] = panelControls[name];
+    panel.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+  }
+}
+
+function syncAccount() {
+  els.accountLabel.textContent = state.user ? tr("openStudio") : state.language === "en" ? EN.login : "登录 / 注册";
+  els.accountLink.href = state.user ? "/playground" : "/login";
+  els.menuAccount.textContent = els.accountLabel.textContent;
+  els.menuAccount.href = els.accountLink.href;
+}
+
+function applyTheme(theme, persist = true) {
+  state.theme = normalizeTheme(theme);
+  document.documentElement.dataset.theme = state.theme;
+  if (persist) writeStorage("imageStudioTheme", state.theme);
+  els.themePanel.querySelectorAll("[data-theme-choice]").forEach((button) =>
+    button.setAttribute("aria-pressed", String(button.dataset.themeChoice === state.theme)));
+}
+
+function renderReleases() {
+  const unread = unreadReleaseIds(RELEASE_NOTES, state.readReleases);
+  els.notificationBadge.hidden = unread.length === 0;
+  els.notificationBadge.textContent = unread.length > 9 ? "9+" : String(unread.length);
+  els.notificationToggle.setAttribute("aria-label", tr("notifications") + (unread.length ?
+    (state.language === "en" ? `, ${unread.length} unread` : `，${unread.length} 条未读`) : ""));
+  els.markAllRead.disabled = unread.length === 0;
+  els.releaseList.replaceChildren();
+  for (const note of RELEASE_NOTES) {
+    const isUnread = unread.includes(note.id);
+    const article = document.createElement("article");
+    article.className = "release-item" + (isUnread ? " is-unread" : "");
+    article.innerHTML = '<time datetime="' + escapeHtml(note.date) + '">' + escapeHtml(note.date) +
+      '</time><h3>' + escapeHtml(note.title[state.language]) + '</h3><p>' +
+      escapeHtml(note.summary[state.language]) + '</p>';
+    const markButton = document.createElement("button");
+    markButton.type = "button";
+    markButton.textContent = tr(isUnread ? "markRead" : "markUnread");
+    markButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setReleaseRead(note.id, isUnread);
+    });
+    article.appendChild(markButton);
+    els.releaseList.appendChild(article);
+  }
+}
+
+function markReleasesRead(ids) {
+  ids.forEach((id) => state.readReleases.add(id));
+  writeStorage("imageStudioReadReleases", JSON.stringify([...state.readReleases]));
+  renderReleases();
+}
+
+function setReleaseRead(id, read) {
+  if (read) state.readReleases.add(id);
+  else state.readReleases.delete(id);
+  writeStorage("imageStudioReadReleases", JSON.stringify([...state.readReleases]));
+  renderReleases();
+}
+
+function applyLanguage(language, persist = true) {
+  state.language = normalizeLanguage(language);
+  document.documentElement.lang = state.language === "en" ? "en" : "zh-CN";
+  if (persist) writeStorage("imageStudioLanguage", state.language);
+  for (const [element, original] of staticText) {
+    element.textContent = state.language === "en" ? (EN[element.dataset.i18n] || original) : original;
+  }
+  for (const [element, original] of staticPlaceholders) {
+    element.placeholder = state.language === "en" ? (EN[element.dataset.i18nPlaceholder] || original) : original;
+  }
+  for (const [element, original] of staticAria) {
+    element.setAttribute("aria-label", state.language === "en" ? (EN[element.dataset.i18nAria] || original) : original);
+  }
+  document.title = state.language === "en" ? "Inspiration home · AI Image Studio" : "灵感首页 · AI 图像设计工作台";
+  els.themeToggle.setAttribute("aria-label", tr("themeButton"));
+  els.languageToggle.setAttribute("aria-label", tr("languageButton"));
+  els.menuToggle.setAttribute("aria-label", tr("menuButton"));
+  els.menuPanel.setAttribute("aria-label", state.language === "en" ? "Quick menu" : "快捷菜单");
+  document.querySelector(".site-brand").setAttribute("aria-label", state.language === "en" ? "AI Image Studio home" : "AI 图像设计工作台首页");
+  document.querySelector(".hero-visual").setAttribute("aria-label", state.language === "en" ? "Editorial and travel ideas" : "人物大片与中国旅行风格示例");
+  document.querySelector(".works-tabs").setAttribute("aria-label", state.language === "en" ? "Filter works by type" : "筛选作品类型");
+  document.querySelector(".closing-banner").setAttribute("aria-label", state.language === "en" ? "Start creating" : "开始创作");
+  els.languagePanel.querySelectorAll("[data-language-choice]").forEach((button) =>
+    button.setAttribute("aria-pressed", String(button.dataset.languageChoice === state.language)));
+  syncAccount();
+  renderReleases();
+  render();
+}
+
+function initControls() {
+  for (const [name, [button]] of Object.entries(panelControls)) {
+    button.addEventListener("click", () => togglePanel(name));
+  }
+  els.themePanel.querySelectorAll("[data-theme-choice]").forEach((button) => button.addEventListener("click", () => {
+    applyTheme(button.dataset.themeChoice);
+    closePanels(true);
+  }));
+  els.languagePanel.querySelectorAll("[data-language-choice]").forEach((button) => button.addEventListener("click", () => {
+    applyLanguage(button.dataset.languageChoice);
+    closePanels(true);
+  }));
+  els.markAllRead.addEventListener("click", (event) => {
+    event.stopPropagation();
+    markReleasesRead(RELEASE_NOTES.map((note) => note.id));
+  });
+  els.menuPanel.querySelectorAll("a").forEach((link) => link.addEventListener("click", () => closePanels()));
+  document.addEventListener("click", (event) => {
+    if (!els.headerActions.contains(event.target)) closePanels();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closePanels(true);
+  });
+  applyTheme(state.theme, false);
+  applyLanguage(state.language, false);
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(state.language === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function titleOf(item) {
+  return fieldOf(item, "title") || fieldOf(item, "label") || (item.kind === "video" ? tr("videos") : tr("images"));
+}
+
+function promptOf(item) {
+  return fieldOf(item, "prompt") || "";
+}
+
+function mediaMarkup(item) {
+  if (item.image) {
+    return '<img src="' + escapeHtml(item.image) + '" alt="" loading="lazy" />';
+  }
+  if (item.demo) {
+    return '<span class="demo-art demo-art-' + item.demo + '"></span>';
+  }
+  if (item.kind === "video") {
+    return '<span class="video-poster" aria-hidden="true">▶</span>';
+  }
+  return '<img src="' + escapeHtml(item.url) + '?thumb=1" alt="" loading="lazy" />';
+}
+
+function renderCard(item) {
+  const card = document.createElement("article");
+  card.className = "work-card";
+  card.innerHTML = '<button type="button" aria-label="' + escapeHtml(tr("viewWork")) + ' ' + escapeHtml(titleOf(item)) + '">' +
+    '<span class="work-media">' + mediaMarkup(item) +
+    '<span class="media-badge">' + (item.sourceUrl ? tr("photoBadge") : item.demo ? tr("sampleBadge") : item.kind === "video" ? "VIDEO" : "IMAGE") +
+    '</span></span><span class="work-card-body"><span class="work-card-meta"><span>' +
+    escapeHtml(fieldOf(item, "label") || tr("genericLabel")) + '</span><span>' +
+    escapeHtml(item.demo ? String(item.demo).padStart(2, "0") + " / " + String(examples.length).padStart(2, "0") : formatDate(item.publishedAt)) +
+    '</span></span><h3>' + escapeHtml(titleOf(item)) + '</h3><p>' +
+    escapeHtml(promptOf(item) || tr("promptFallback")) + '</p></span></button>';
+  card.querySelector("button").addEventListener("click", () => openDetail(item));
+  return card;
+}
+
+function render() {
+  els.grid.replaceChildren();
+  const showExamples = !state.items.length && !state.total && !state.keyword && state.media !== "video";
+  if (showExamples) {
+    examples.forEach((item) => els.grid.appendChild(renderCard(item)));
+    els.count.textContent = state.total ? state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品") :
+      String(examples.length).padStart(2, "0") + " " + (state.language === "en" ? tr("sampleCount") : "个创作方向");
+    els.status.textContent = tr("examplesStatus");
+  } else if (!state.items.length) {
+    const empty = document.createElement("div");
+    empty.className = "works-empty";
+    empty.innerHTML = '<span aria-hidden="true">✳</span><h3>' + tr("emptyHeading") + '</h3>' +
+      '<p>' + tr("emptyDescription") + '</p><a href="/my-images">' + tr("emptyLink") + '</a>';
+    els.grid.appendChild(empty);
+    els.count.textContent = state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品");
+    els.status.textContent = "";
+  } else {
+    state.items.forEach((item) => els.grid.appendChild(renderCard(item)));
+    els.count.textContent = state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品");
+    els.status.textContent = "";
+  }
+  els.loadMore.hidden = state.items.length >= state.total || !state.total;
+}
+
+async function load(reset = true) {
+  const request = ++state.request;
+  if (reset) {
+    state.page = 1;
+    state.items = [];
+    els.status.textContent = tr("loading");
+    els.grid.replaceChildren();
+  }
+  els.loadMore.disabled = true;
+  const params = new URLSearchParams({ page: String(state.page), pageSize: String(state.pageSize) });
+  if (state.media !== "all") params.set("media", state.media);
+  if (state.keyword) params.set("keyword", state.keyword);
+  try {
+    const data = await apiGet("/api/showcase?" + params);
+    if (request !== state.request) return;
+    state.total = data.pagination?.total || 0;
+    state.items = reset ? (data.items || []) : [...state.items, ...(data.items || [])];
+    render();
+  } catch (error) {
+    if (request !== state.request) return;
+    if (!reset) state.page = Math.max(1, state.page - 1);
+    render();
+    els.status.textContent = tr("loadError") + (error.message ? " " + error.message : "");
+  } finally {
+    if (request === state.request) els.loadMore.disabled = false;
+  }
+}
+
+function openDetail(item) {
+  state.selected = item;
+  els.dialogMedia.innerHTML = item.image ?
+    '<img src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(titleOf(item)) + '" />' :
+    item.demo ?
+    '<div class="detail-demo demo-art demo-art-' + item.demo + '" role="img" aria-label="' + escapeHtml(titleOf(item)) + '"></div>' :
+    item.kind === "video" ?
+      '<video src="' + escapeHtml(item.url) + '" controls playsinline preload="metadata"></video>' :
+      '<img src="' + escapeHtml(item.url) + '" alt="' + escapeHtml(titleOf(item)) + '" />';
+  els.dialogLabel.textContent = item.sourceUrl ? tr("realDetail") : item.demo ? tr("demoDetail") :
+    item.kind === "video" ? tr("publicVideo") : tr("publicImage");
+  els.dialogTitle.textContent = titleOf(item);
+  els.dialogDate.textContent = item.photoCredit ? tr("photoCredit") :
+    item.demo ? tr("demoDate") : tr("publishedOn") + " " + formatDate(item.publishedAt);
+  els.dialogSource.hidden = !item.sourceUrl;
+  if (item.sourceUrl) els.dialogSource.href = item.sourceUrl;
+  els.dialogPrompt.textContent = promptOf(item) || tr("promptMissing");
+  els.dialogPromptHeading.textContent = item.sourceUrl ? tr("photoPromptHeading") : item.demo ? tr("demoPromptHeading") : tr("promptHeading");
+  els.dialogMessage.textContent = "";
+  els.copyPrompt.disabled = !promptOf(item);
+  els.createFromPrompt.disabled = !promptOf(item);
+  els.createFromPrompt.textContent = item.kind === "video" ? tr("createVideo") : tr("createImage");
+  els.dialog.showModal();
+}
+
+els.tabs.querySelectorAll("[data-media]").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    state.media = tab.dataset.media;
+    els.tabs.querySelectorAll("[data-media]").forEach((button) =>
+      button.setAttribute("aria-selected", String(button === tab)));
+    load();
+  });
+});
+
+els.searchForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  state.keyword = els.keyword.value.trim();
+  load();
+});
+
+els.loadMore.addEventListener("click", () => { state.page += 1; load(false); });
+document.getElementById("closeDialog").addEventListener("click", () => els.dialog.close());
+els.dialog.addEventListener("close", () => {
+  state.selected = null;
+  els.dialogMedia.replaceChildren();
+});
+els.copyPrompt.addEventListener("click", async () => {
+  if (!state.selected || !promptOf(state.selected)) return;
+  try {
+    await navigator.clipboard.writeText(promptOf(state.selected));
+    els.dialogMessage.textContent = tr("copied");
+  } catch {
+    els.dialogMessage.textContent = tr("copyFailed");
+  }
+});
+els.createFromPrompt.addEventListener("click", () => {
+  if (!state.selected || !promptOf(state.selected)) return;
+  const target = state.selected.kind === "video" ? "video" : "playground";
+  saveReuse({ target, prompt: promptOf(state.selected) });
+  location.href = target === "video" ? "/video" : "/playground";
+});
+
+fetchMe().then((user) => {
+  if (!user) return;
+  state.user = user;
+  syncAccount();
+}).catch(() => {});
+
+initControls();
+load();

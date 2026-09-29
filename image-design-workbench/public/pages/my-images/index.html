@@ -3,32 +3,101 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="整理、收藏并复用你的 AI 图片和视频作品。" />
     <title>我的图库 · AI 图像设计工作台</title>
     <link rel="stylesheet" href="/shared/theme.css" />
     <script src="/shared/theme-init.js"></script>
-    <link rel="stylesheet" href="/pages/my-images/my-images.css" />
+    <link rel="stylesheet" href="/pages/my-images/my-images.css?v=showcase-1" />
   </head>
   <body>
     <div id="page">
-      <div class="card">
-        <div class="mi-head">
+      <main class="gallery-page">
+        <header class="gallery-intro">
           <div>
-            <div class="section-label">我的图库</div>
-            <div class="card-title">生成过的图都在这里</div>
-            <div class="card-desc">图片长期保存在服务器，换设备、清缓存都不会丢。</div>
+            <p class="gallery-eyebrow">CREATIVE ARCHIVE / 我的作品</p>
+            <h2>让好作品，成为下一张的起点。</h2>
+            <p class="gallery-description">逐件回看图片与视频，找回提示词；满意的作品还可以发布到灵感首页。</p>
           </div>
-          <form class="mi-search" id="searchForm">
-            <input class="input" id="keyword" type="search" placeholder="按提示词搜索…" autocomplete="off" />
-            <button class="btn" type="submit">搜索</button>
-          </form>
+          <div class="gallery-intro-actions">
+            <a class="gallery-home-link" href="/">浏览灵感首页</a>
+            <a class="gallery-create" href="/playground">开始创作 <span aria-hidden="true">↗</span></a>
+          </div>
+        </header>
+        <section class="gallery-browser" aria-label="浏览作品">
+          <div class="gallery-toolbar">
+            <div class="gallery-tabs" role="tablist" aria-label="作品类型">
+              <button type="button" role="tab" data-filter="all" aria-selected="true">全部作品</button>
+              <button type="button" role="tab" data-filter="image" aria-selected="false">图片</button>
+              <button type="button" role="tab" data-filter="video" aria-selected="false">视频</button>
+              <button type="button" role="tab" data-filter="favorite" aria-selected="false">我的收藏</button>
+            </div>
+            <form class="gallery-search" id="searchForm" role="search">
+              <label class="sr-only" for="keyword">搜索标题或提示词</label>
+              <input id="keyword" type="search" autocomplete="off" placeholder="搜索标题、类型或提示词" />
+              <button type="submit" aria-label="搜索">⌕</button>
+            </form>
+          </div>
+          <div class="gallery-result-line">
+            <p id="resultCount" aria-live="polite">正在整理你的作品…</p>
+            <p id="galleryMessage" role="status"></p>
+          </div>
+          <div class="gallery-grid" id="grid" aria-live="polite"></div>
+          <div class="gallery-pagination" id="pagination"></div>
+        </section>
+      </main>
+      <dialog class="gallery-dialog" id="collectionDialog" aria-labelledby="detailTitle">
+        <div class="gallery-dialog-top">
+          <span class="gallery-eyebrow">WORK / <span id="detailSetId">---</span></span>
+          <button class="gallery-close" id="closeDetail" type="button" aria-label="关闭作品详情">×</button>
         </div>
-        <p class="msg" id="msg"></p>
-        <div class="mi-grid" id="grid">
-          <div class="empty">加载中…</div>
+        <div class="gallery-dialog-grid">
+          <div class="gallery-viewer">
+            <div class="gallery-stage" id="detailStage"></div>
+            <div class="gallery-viewer-footer">
+              <div class="gallery-viewer-nav">
+                <button type="button" id="previousItem" aria-label="上一项">←</button>
+                <span id="itemPosition">1 / 1</span>
+                <button type="button" id="nextItem" aria-label="下一项">→</button>
+              </div>
+              <div class="gallery-thumbs" id="detailThumbs" aria-label="同一套图中的作品"></div>
+            </div>
+          </div>
+          <aside class="gallery-detail-panel">
+            <div class="gallery-detail-heading">
+              <span class="gallery-detail-type" id="detailType"></span>
+                <button class="gallery-favorite-detail" id="detailFavorite" type="button" aria-label="收藏作品">☆</button>
+            </div>
+            <h2 id="detailTitle"></h2>
+            <p class="gallery-detail-date" id="detailDate"></p>
+            <form class="gallery-title-form" id="titleForm">
+              <label for="customTitle">作品标题</label>
+              <div>
+                <input id="customTitle" type="text" maxlength="120" placeholder="给这组作品起个名字" />
+                <button type="submit">保存</button>
+              </div>
+            </form>
+            <div class="gallery-publication">
+              <div>
+                <strong>灵感首页展示</strong>
+                <p id="publicationNote">默认仅你可见。发布后，作品、标题和提示词将对所有访客可见。</p>
+              </div>
+              <button id="togglePublication" type="button">发布到首页</button>
+            </div>
+            <div class="gallery-prompt-head">
+              <h3>创作提示词</h3>
+              <button id="copyPrompt" type="button">复制</button>
+            </div>
+            <p class="gallery-prompt-text" id="detailPrompt"></p>
+            <p class="gallery-detail-message" id="detailMessage" role="status"></p>
+            <div class="gallery-detail-actions">
+              <button class="gallery-action-primary" id="reusePrompt" type="button">用提示词再次创作 ↗</button>
+              <button class="gallery-action-secondary" id="editImage" type="button">以此图继续修图</button>
+              <button class="gallery-action-secondary" id="downloadItem" type="button">下载当前作品 ↓</button>
+            </div>
+          </aside>
         </div>
-        <div class="pagination" id="pagination"></div>
-      </div>
+      </dialog>
     </div>
-    <script type="module" src="/pages/my-images/my-images.js"></script>
+    <script type="module" src="/pages/my-images/my-images.js?v=showcase-1"></script>
   </body>
 </html>

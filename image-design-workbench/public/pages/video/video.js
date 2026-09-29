@@ -5,6 +5,7 @@ import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost, apiUpload, downloadFile, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 import { enableImagePaste } from "/shared/image-paste.js";
+import { takeReuse } from "/shared/reuse.js";
 
 const RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4"];
 const QUALITIES = ["480p", "720p", "1080p"];
@@ -344,6 +345,11 @@ async function main() {
   });
 
   loadSaved();
+  const reuse = takeReuse("video");
+  if (reuse?.prompt) {
+    els.prompt.value = reuse.prompt;
+    save();
+  }
   renderMode();
   renderChips();
 

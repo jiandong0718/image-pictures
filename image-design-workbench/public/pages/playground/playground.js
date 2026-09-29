@@ -4,6 +4,7 @@
 import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost, apiUpload, downloadFile } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
+import { takeReuse } from "/shared/reuse.js";
 
 const RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
 const RATIO_PRESETS = { "1:1": [1, 1], "3:4": [3, 4], "4:3": [4, 3], "16:9": [16, 9], "9:16": [9, 16] };
@@ -469,6 +470,12 @@ async function main() {
   });
 
   loadSaved();
+  const reuse = takeReuse("playground");
+  if (reuse?.prompt) {
+    els.prompt.value = reuse.prompt;
+    mode = "generate";
+    save();
+  }
   els.textMode.addEventListener("click", () => { mode = "generate"; renderMode(); save(); });
   els.imageMode.addEventListener("click", () => { mode = "edit"; renderMode(); save(); });
   els.referenceInput.addEventListener("change", (event) => { uploadReference(event.target.files?.[0]); event.target.value = ""; });

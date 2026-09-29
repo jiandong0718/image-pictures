@@ -6,6 +6,7 @@ import { fetchMe, logout } from "./api.js";
 
 // 导航图标（线性 SVG，颜色继承 currentColor，自动跟随各主题 --accent）。
 const ICONS = {
+  "home": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 10.5 12 3l9 7.5V21H3z\"/><path d=\"M9 21v-7h6v7\"/></svg>",
   "playground": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3l1.8 4.4L18 9l-4.2 1.6L12 15l-1.8-4.4L6 9l4.2-1.6z\"/><path d=\"M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z\"/></svg>",
   "video": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 7a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z\"/><path d=\"M22 8.5 16 12l6 3.5z\"/></svg>",
   "retouch": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 21 20 7\"/><path d=\"M15 5l4 4\"/><path d=\"M9.5 4.2l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5L7.4 6.3l1.5-.6z\"/></svg>",
@@ -24,6 +25,8 @@ const ICONS = {
 };
 
 const NAV = [
+  { group: "探索" },
+  { href: "/", label: "灵感首页", key: "home" },
   { group: "工具" },
   { href: "/playground", label: "自由生图", key: "playground" },
   { href: "/video", label: "AI 生视频", key: "video" },

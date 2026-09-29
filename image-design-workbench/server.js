@@ -16,6 +16,7 @@ const auth = require("./lib/auth");
 const imageConfig = require("./lib/image-config");
 const imageSets = require("./lib/image-sets");
 const images = require("./lib/images");
+const gallery = require("./lib/gallery");
 const videos = require("./lib/videos");
 const videoClient = require("./lib/video-client");
 const { createAccountApi } = require("./lib/api-accounts");
@@ -1528,6 +1529,7 @@ async function resetImageSetsNow(ownerUserId) {
   await imageSets.removeOwned(ownerUserId);
   await images.removeByOwner(ownerUserId);
   await videos.removeByOwner(ownerUserId);
+  await gallery.removeByOwner(ownerUserId);
   const imageSet = await allocateImageSetNow(ownerUserId);
   return { removedCount: ownedIds.length, imageSet };
 }
@@ -2192,7 +2194,7 @@ function resolveVideoFile(id) {
   return filePath;
 }
 
-async function serveVideo(req, res, id, attachment, user) {
+async function serveVideo(req, res, id, attachment, user, cacheControl = "private, max-age=604800, immutable") {
   try {
     await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
     const filePath = resolveVideoFile(id);
@@ -2200,7 +2202,7 @@ async function serveVideo(req, res, id, attachment, user) {
     const headers = {
       "Content-Type": "video/mp4",
       "Content-Length": data.length,
-      "Cache-Control": "private, max-age=604800, immutable",
+      "Cache-Control": cacheControl,
     };
     if (attachment) {
       headers["Content-Disposition"] = `attachment; filename="${path.basename(filePath)}"`;
@@ -2269,6 +2271,8 @@ async function runPythonProcess(args, cwd, env = process.env) {
 // 干净 URL → 页面目录的映射。auth: 'user' 需登录，'admin' 需管理员，'guest' 无需登录。
 const PAGES_DIR = path.join(PUBLIC_DIR, "pages");
 const PAGE_ROUTES = {
+  "/": { dir: "home", auth: "guest" },
+  "/index.html": { dir: "home", auth: "guest" },
   "/login": { dir: "login", auth: "guest" },
   "/register": { dir: "login", auth: "guest" },
   "/config": { dir: "config", auth: "admin" },
@@ -2292,14 +2296,6 @@ async function servePage(req, res, pathname) {
   if (req.method !== "GET") {
     return false;
   }
-  // 根路径：登录后进套图工作台，未登录去登录页。
-  if (pathname === "/" || pathname === "/index.html") {
-    const user = await auth.getSessionUser(req).catch(() => null);
-    res.writeHead(302, { Location: user ? "/studio/hat" : "/login" });
-    res.end();
-    return true;
-  }
-
   const route = PAGE_ROUTES[pathname] || PAGE_ROUTES[pathname.replace(/\/$/, "")];
   if (!route) {
     return false;
@@ -2426,7 +2422,8 @@ async function serveGptImagePlayground(req, res, pathname) {
   await serveStaticFromDir(req, res, GPT_IMAGE_PLAYGROUND_DIST_DIR, relativePath, "index.html");
 }
 
-async function serveImage(req, res, id, attachment, user, thumb = false) {
+async function serveImage(req, res, id, attachment, user, thumb = false,
+  cacheControl = "private, max-age=604800, immutable") {
   try {
     await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
     const filePath = resolveOutputFile(id);
@@ -2441,7 +2438,7 @@ async function serveImage(req, res, id, attachment, user, thumb = false) {
       "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
       "Content-Length": data.length,
       // 图片按 id/路径不可变（文件名带时间戳），按用户私有长缓存，避免每次打开图库重复下载。
-      "Cache-Control": "private, max-age=604800, immutable",
+      "Cache-Control": cacheControl,
     };
     if (attachment) {
       headers["Content-Disposition"] = `attachment; filename="${path.basename(filePath)}"`;
@@ -2562,6 +2559,38 @@ async function createZip(ids) {
 async function handleApi(req, res, pathname, searchParams) {
   // 账户 / 认证 / 管理员接口优先处理；命中即返回。
   if (await accountApi.handle(req, res, pathname)) {
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/showcase") {
+    const data = await gallery.listShowcase({
+      page: searchParams.get("page"),
+      pageSize: searchParams.get("pageSize"),
+      media: searchParams.get("media"),
+      keyword: searchParams.get("keyword"),
+    });
+    sendJson(res, 200, { ok: true, ...data });
+    return;
+  }
+
+  const publicMedia = req.method === "GET" &&
+    pathname.match(/^\/api\/showcase\/media\/(image|video)\/(.+)$/);
+  if (publicMedia) {
+    let id;
+    let ownerUserId;
+    try {
+      id = decodeURIComponent(publicMedia[2]);
+      ownerUserId = await gallery.getPublicMediaOwner(publicMedia[1], id);
+    } catch {
+      return sendError(res, 404, "公开作品不存在");
+    }
+    if (ownerUserId === null) return sendError(res, 404, "公开作品不存在");
+    const owner = { id: ownerUserId, role: "user" };
+    if (publicMedia[1] === "image") {
+      await serveImage(req, res, id, false, owner, searchParams.get("thumb") === "1", "no-store");
+    } else {
+      await serveVideo(req, res, id, false, owner, "no-store");
+    }
     return;
   }
 
@@ -3215,6 +3244,45 @@ async function handleApi(req, res, pathname, searchParams) {
     return;
   }
 
+  if (req.method === "GET" && pathname === "/api/gallery") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) return;
+    const data = await gallery.listGallery(user.id, {
+      page: searchParams.get("page"),
+      pageSize: searchParams.get("pageSize"),
+      media: searchParams.get("media"),
+      favorite: searchParams.get("favorite"),
+      keyword: searchParams.get("keyword"),
+    });
+    sendJson(res, 200, { ok: true, ...data });
+    return;
+  }
+
+  if (pathname === "/api/gallery/item") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) return;
+    try {
+      if (req.method === "GET") {
+        const detail = await gallery.getGalleryDetail(
+          user.id, searchParams.get("kind"), searchParams.get("id"),
+        );
+        if (!detail) return sendError(res, 404, "作品不存在");
+        sendJson(res, 200, { ok: true, detail });
+        return;
+      }
+      if (req.method === "POST") {
+        const payload = await readJson(req);
+        const item = await gallery.updateGalleryItem(user.id, payload.kind, payload.id, payload);
+        if (!item) return sendError(res, 404, "作品不存在");
+        sendJson(res, 200, { ok: true, item });
+        return;
+      }
+    } catch (error) {
+      sendError(res, 400, error.message);
+      return;
+    }
+  }
+
   if (req.method === "POST" && pathname === "/api/images/main") {
     const user = await accountApi.requireUser(req, res);
     if (!user) {
@@ -3527,6 +3595,7 @@ if (require.main === module) {
     .then(() => images.init())
     // 生视频元数据表建好。
     .then(() => videos.init())
+    .then(() => gallery.init())
     .then(() => {
       server.listen(PORT, HOST, () => {
         console.log(`AI 图像设计工作台已启动：http://${HOST}:${PORT}`);
