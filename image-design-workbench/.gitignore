@@ -1,5 +1,4 @@
 node_modules/
 generated-images/
-public/assets/showcase-contact-sheet.png
 .DS_Store
 .env
