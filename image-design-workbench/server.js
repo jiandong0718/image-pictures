@@ -2301,10 +2301,18 @@ async function servePage(req, res, pathname) {
     return false;
   }
 
+  if (route.dir === "login") {
+    const params = new URL(req.url, "http://localhost").searchParams;
+    params.set("auth", pathname.startsWith("/register") ? "register" : "login");
+    res.writeHead(302, { Location: `/?${params.toString()}` });
+    res.end();
+    return true;
+  }
+
   if (route.auth === "user" || route.auth === "admin") {
     const user = await auth.getSessionUser(req).catch(() => null);
     if (!user) {
-      res.writeHead(302, { Location: `/login?redirect=${encodeURIComponent(pathname)}` });
+      res.writeHead(302, { Location: `/?auth=login&redirect=${encodeURIComponent(pathname)}` });
       res.end();
       return true;
     }

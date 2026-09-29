@@ -54,9 +54,9 @@ export async function pollTask(taskId, { interval = 2000, timeoutMs = 5 * 60 * 1
 async function handle(res) {
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) {
-    // 未登录：带回跳地址去登录页。
+    // 未登录：在首页打开登录面板，并保留原页面地址。
     const redirect = encodeURIComponent(location.pathname + location.search);
-    location.href = `/login?redirect=${redirect}`;
+    location.href = `/?auth=login&redirect=${redirect}`;
     throw new Error(data.error || "请先登录");
   }
   if (!res.ok) {
@@ -104,7 +104,7 @@ function triggerBrowserDownload(blob, filename) {
 async function handleDownload(res, fallbackFilename) {
   if (res.status === 401) {
     const redirect = encodeURIComponent(location.pathname + location.search);
-    location.href = `/login?redirect=${redirect}`;
+    location.href = `/?auth=login&redirect=${redirect}`;
     throw new Error("请先登录");
   }
   if (!res.ok) {
@@ -127,5 +127,5 @@ export async function logout() {
   } catch {
     /* 忽略 */
   }
-  location.href = "/login";
+  location.href = "/";
 }

@@ -1,4 +1,5 @@
 import { apiGet, fetchMe } from "/shared/api.js";
+import { DEFAULT_AUTH_DESTINATION, resolveAuthDestination } from "/shared/auth-navigation.js";
 import { saveReuse } from "/shared/reuse.js";
 import { normalizeTheme, normalizeLanguage, parseReadReleaseIds, unreadReleaseIds, RELEASE_NOTES } from "/shared/site-preferences.js";
 
@@ -17,6 +18,11 @@ const EN = {
   emptyHeading: "No works found", emptyDescription: "Try another search, or share one of your works.", emptyLink: "Go to my gallery ↗", loading: "Loading shared works…", loadError: "The public gallery is temporarily unavailable.", promptFallback: "Open this work for your next idea.",
   demoDetail: "CREATIVE DIRECTION / IDEA", realDetail: "REAL PHOTO / REFERENCE", publicVideo: "SHARED WORK / VIDEO", publicImage: "SHARED WORK / IMAGE", demoDate: "Start a new creation from this direction.", publishedOn: "Published on", photoCredit: "Photo: Willian Justen de Vasconcellos · Unsplash",
   promptMissing: "The creator did not add a prompt.", photoPromptHeading: "Prompt inspired by the composition", demoPromptHeading: "Reference prompt", promptHeading: "Creation prompt", createImage: "Create an image with this prompt ↗", createVideo: "Create a video with this prompt ↗", copied: "Prompt copied", copyFailed: "Copy failed. Please select the prompt and copy it manually.",
+  closeAuth: "Close sign in", authEyebrow: "YOUR CREATIVE SPACE / SIGN IN", authDescription: "Sign in and go straight to the studio. Turn the ideas you found into your next work.", authRegisterDescription: "Create an account and go straight to the studio. Your first 20 credits are waiting.",
+  usernameLabel: "Username", usernamePlaceholder: "Enter your username", passwordLabel: "Password", passwordPlaceholder: "Enter your password", emailLabel: "Email", phoneLabel: "Phone", phonePlaceholder: "Phone number",
+  contactHint: "Add an email or phone number so you can recover your account later.", registerCredit: "New accounts get 20 credits", authLoginTitle: "Welcome back.", authRegisterTitle: "Start creating.",
+  authLoginSubmit: "Sign in and enter the studio", authRegisterSubmit: "Create account and enter the studio", authSwitchToRegisterHint: "New here?", authSwitchToRegister: "Create an account", authSwitchToLoginHint: "Already have an account?", authSwitchToLogin: "Sign in",
+  authMissingCredentials: "Enter your username and password.", authMissingContact: "Add an email or phone number.", authLoggingIn: "Signing in…", authRegistering: "Creating account…", authRequestFailed: "Something went wrong. Please try again.",
 };
 
 const ZH = {
@@ -25,6 +31,8 @@ const ZH = {
   emptyHeading: "还没有找到这类作品", emptyDescription: "换个关键词，或来发布一件你的作品。", emptyLink: "去我的图库 ↗", loading: "正在加载公开作品…", loadError: "公开作品暂时无法加载。", promptFallback: "打开作品，寻找下一次创作的灵感。",
   demoDetail: "CREATIVE DIRECTION / 灵感示例", realDetail: "REAL PHOTO / 实拍参考", publicVideo: "PUBLIC WORK / 视频", publicImage: "PUBLIC WORK / 图片", demoDate: "从一个方向，开始自己的创作。", publishedOn: "发布于", photoCredit: "摄影：Willian Justen de Vasconcellos · Unsplash",
   promptMissing: "创作者未留下提示词。", photoPromptHeading: "借鉴构图的提示词", demoPromptHeading: "参考提示词", promptHeading: "创作提示词", createImage: "用提示词创作图片 ↗", createVideo: "用提示词创作视频 ↗", copied: "提示词已复制", copyFailed: "复制失败，请选中提示词手动复制",
+  authDescription: "登录后直接进入创作工作台，让刚看到的灵感变成下一张作品。", authRegisterDescription: "注册后直接进入创作工作台，开始制作你的第一张作品。", authLoginTitle: "欢迎回来。", authRegisterTitle: "开启创作。", authLoginSubmit: "登录并进入工作台", authRegisterSubmit: "注册并进入工作台", authSwitchToRegisterHint: "还没有账户？", authSwitchToRegister: "立即注册", authSwitchToLoginHint: "已有账户？", authSwitchToLogin: "去登录",
+  authMissingCredentials: "请输入用户名和密码", authMissingContact: "请填写邮箱或手机号（至少一项）", authLoggingIn: "登录中…", authRegistering: "注册中…", authRequestFailed: "操作失败，请稍后重试",
 };
 
 const EXAMPLE_EN = {
@@ -80,10 +88,26 @@ const examples = [
   },
 ];
 
+const protectedHomeDestinations = new Set(["/playground", "/my-images", "/video"]);
+
 const els = {
   accountLink: document.getElementById("accountLink"),
   accountLabel: document.getElementById("accountLabel"),
   menuAccount: document.getElementById("menuAccount"),
+  authDialog: document.getElementById("authDialog"),
+  authClose: document.getElementById("authClose"),
+  authTitle: document.getElementById("authTitle"),
+  authDescription: document.getElementById("authDescription"),
+  authForm: document.getElementById("authForm"),
+  authUsername: document.getElementById("authUsername"),
+  authPassword: document.getElementById("authPassword"),
+  authContactFields: document.getElementById("authContactFields"),
+  authEmail: document.getElementById("authEmail"),
+  authPhone: document.getElementById("authPhone"),
+  authMessage: document.getElementById("authMessage"),
+  authSubmit: document.getElementById("authSubmit"),
+  authSwitchHint: document.getElementById("authSwitchHint"),
+  authSwitchMode: document.getElementById("authSwitchMode"),
   headerActions: document.getElementById("headerActions"),
   themeToggle: document.getElementById("themeToggle"),
   languageToggle: document.getElementById("languageToggle"),
@@ -130,6 +154,8 @@ const state = {
   theme: normalizeTheme(document.documentElement.dataset.theme),
   readReleases: new Set(parseReadReleaseIds(readStorage("imageStudioReadReleases"))),
   user: null,
+  authMode: "login",
+  authDestination: DEFAULT_AUTH_DESTINATION,
 };
 
 const staticText = new Map([...document.querySelectorAll("[data-i18n]")].map((element) => [element, element.textContent]));
@@ -179,6 +205,68 @@ function syncAccount() {
   els.accountLink.href = state.user ? "/playground" : "/login";
   els.menuAccount.textContent = els.accountLabel.textContent;
   els.menuAccount.href = els.accountLink.href;
+}
+
+function setAuthMessage(message, isError = false) {
+  els.authMessage.textContent = message;
+  els.authMessage.classList.toggle("is-error", isError);
+}
+
+function renderAuthMode() {
+  const isLogin = state.authMode === "login";
+  els.authTitle.textContent = tr(isLogin ? "authLoginTitle" : "authRegisterTitle");
+  els.authDescription.textContent = tr(isLogin ? "authDescription" : "authRegisterDescription");
+  els.authSubmit.firstChild.textContent = tr(isLogin ? "authLoginSubmit" : "authRegisterSubmit") + " ";
+  els.authSwitchHint.textContent = tr(isLogin ? "authSwitchToRegisterHint" : "authSwitchToLoginHint");
+  els.authSwitchMode.textContent = tr(isLogin ? "authSwitchToRegister" : "authSwitchToLogin");
+  els.authPassword.autocomplete = isLogin ? "current-password" : "new-password";
+  els.authContactFields.hidden = isLogin;
+  setAuthMessage("");
+}
+
+function openAuth(mode = "login", redirect = null) {
+  if (state.user) {
+    location.assign(resolveAuthDestination(redirect));
+    return;
+  }
+  closePanels();
+  state.authMode = mode === "register" ? "register" : "login";
+  state.authDestination = resolveAuthDestination(redirect);
+  els.authForm.reset();
+  renderAuthMode();
+  if (!els.authDialog.open) els.authDialog.showModal();
+  els.authUsername.focus();
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const username = els.authUsername.value.trim();
+  const password = els.authPassword.value;
+  if (!username || !password) {
+    setAuthMessage(tr("authMissingCredentials"), true);
+    return;
+  }
+  const email = els.authEmail.value.trim();
+  const phone = els.authPhone.value.trim();
+  if (state.authMode === "register" && !email && !phone) {
+    setAuthMessage(tr("authMissingContact"), true);
+    return;
+  }
+  els.authSubmit.disabled = true;
+  setAuthMessage(tr(state.authMode === "login" ? "authLoggingIn" : "authRegistering"));
+  try {
+    const response = await fetch(state.authMode === "login" ? "/api/auth/login" : "/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state.authMode === "login" ? { username, password } : { username, password, email, phone }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || tr("authRequestFailed"));
+    location.assign(state.authDestination);
+  } catch (error) {
+    setAuthMessage(error.message || tr("authRequestFailed"), true);
+    els.authSubmit.disabled = false;
+  }
 }
 
 function applyTheme(theme, persist = true) {
@@ -247,6 +335,7 @@ function applyLanguage(language, persist = true) {
   els.languageToggle.setAttribute("aria-label", tr("languageButton"));
   els.menuToggle.setAttribute("aria-label", tr("menuButton"));
   els.menuPanel.setAttribute("aria-label", state.language === "en" ? "Quick menu" : "快捷菜单");
+  renderAuthMode();
   document.querySelector(".site-brand").setAttribute("aria-label", state.language === "en" ? "AI Image Studio home" : "AI 图像设计工作台首页");
   document.querySelector(".hero-visual").setAttribute("aria-label", state.language === "en" ? "Editorial and travel ideas" : "人物大片与中国旅行风格示例");
   document.querySelector(".works-tabs").setAttribute("aria-label", state.language === "en" ? "Filter works by type" : "筛选作品类型");
@@ -259,6 +348,36 @@ function applyLanguage(language, persist = true) {
 }
 
 function initControls() {
+  for (const link of [els.accountLink, els.menuAccount]) {
+    link.addEventListener("click", (event) => {
+      if (state.user) return;
+      event.preventDefault();
+      openAuth();
+    });
+  }
+  els.authClose.addEventListener("click", () => els.authDialog.close());
+  els.authDialog.addEventListener("click", (event) => {
+    if (event.target !== els.authDialog) return;
+    const bounds = els.authDialog.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) els.authDialog.close();
+  });
+  els.authDialog.addEventListener("close", () => {
+    els.authForm.reset();
+    els.authSubmit.disabled = false;
+    setAuthMessage("");
+  });
+  els.authSwitchMode.addEventListener("click", () => {
+    state.authMode = state.authMode === "login" ? "register" : "login";
+    renderAuthMode();
+  });
+  els.authForm.addEventListener("submit", submitAuth);
+  document.addEventListener("click", (event) => {
+    if (state.user) return;
+    const link = event.target.closest("a");
+    if (!link || link.target || !protectedHomeDestinations.has(link.getAttribute("href"))) return;
+    event.preventDefault();
+    openAuth("login", link.getAttribute("href"));
+  });
   for (const [name, [button]] of Object.entries(panelControls)) {
     button.addEventListener("click", () => togglePanel(name));
   }
@@ -439,14 +558,28 @@ els.createFromPrompt.addEventListener("click", () => {
   if (!state.selected || !promptOf(state.selected)) return;
   const target = state.selected.kind === "video" ? "video" : "playground";
   saveReuse({ target, prompt: promptOf(state.selected) });
-  location.href = target === "video" ? "/video" : "/playground";
+  const destination = target === "video" ? "/video" : "/playground";
+  if (!state.user) {
+    els.dialog.close();
+    openAuth("login", destination);
+    return;
+  }
+  location.href = destination;
 });
 
 fetchMe().then((user) => {
   if (!user) return;
   state.user = user;
   syncAccount();
+  if (els.authDialog.open) location.assign(state.authDestination);
 }).catch(() => {});
 
 initControls();
+const authParams = new URLSearchParams(location.search);
+if (authParams.has("auth")) {
+  openAuth(authParams.get("auth"), authParams.get("redirect"));
+  authParams.delete("auth");
+  authParams.delete("redirect");
+  history.replaceState(null, "", location.pathname + (authParams.size ? "?" + authParams : "") + location.hash);
+}
 load();

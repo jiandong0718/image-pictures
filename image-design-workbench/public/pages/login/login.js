@@ -1,6 +1,7 @@
 // 登录 / 注册页。根据 URL（/login 或 /register）决定初始模式，可在页内切换。
 
 import { apiPost, fetchMe } from "/shared/api.js";
+import { resolveAuthDestination } from "/shared/auth-navigation.js";
 
 let mode = location.pathname === "/register" ? "register" : "login";
 
@@ -22,7 +23,7 @@ const els = {
 function redirectTarget() {
   const params = new URLSearchParams(location.search);
   const redirect = params.get("redirect");
-  return redirect && redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/";
+  return resolveAuthDestination(redirect);
 }
 
 function renderMode() {

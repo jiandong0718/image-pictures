@@ -123,7 +123,7 @@ function cacheMe(me) {
 
 function loginRedirect() {
   const redirect = encodeURIComponent(location.pathname + location.search);
-  location.href = `/login?redirect=${redirect}`;
+  location.href = `/?auth=login&redirect=${redirect}`;
 }
 
 // 切换菜单是整页刷新：先用本地缓存的用户信息同步渲染骨架（侧栏/顶栏立即出现，不等网络），
