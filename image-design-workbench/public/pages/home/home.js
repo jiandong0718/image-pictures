@@ -40,11 +40,13 @@ const EXAMPLE_EN = {
   2: { title: "Moonlit Magic · Halloween Pendant", label: "Image work", badge: "Product detail visual", detailLabel: "IMAGE WORK / PRODUCT VISUAL", prompt: "Create a process detail poster for a round PMMA acrylic Halloween pendant based on the supplied main image. Add a red label reading “2D Flat Acrylic” at the lower right, and show four close-up views of the original pendant's pearl effect, color layers, UV highlights, and raised finish." },
   3: { title: "Neon rain", label: "Editorial / Cinema", prompt: "An adult East Asian man in a tailored black coat holds a vivid red umbrella on a rainy city street. Wet pavement reflects red and cyan neon; distant people and headlights are softly blurred. Full-body framing, cinematic backlight, and fashion campaign photography. No readable signs or logos." },
   4: { title: "Two beneath the moon", label: "Editorial / Scene", prompt: "Two adult models in minimal ivory couture stand apart on a reflective salt flat at dusk. A huge amber moon meets the horizon, with distant misty mountains and soft reflections. A wide, quiet, cinematic fashion composition. No text or logos." },
-  5: { title: "Yangshuo after dark", label: "Real photo / Holiday travel", prompt: "A lively pedestrian street in Yangshuo at night. A young woman in locally inspired traditional dress stands naturally among the crowd with a relaxed smile. Warm shop lights meet blue-green neon, with passersby softly out of focus. Candid environmental portrait with an authentic street atmosphere." },
+  5: { title: "Yangshuo after dark", label: "Real photo / Holiday travel", photoCredit: "Photo: Willian Justen de Vasconcellos · Unsplash", prompt: "A lively pedestrian street in Yangshuo at night. A young woman in locally inspired traditional dress stands naturally among the crowd with a relaxed smile. Warm shop lights meet blue-green neon, with passersby softly out of focus. Candid environmental portrait with an authentic street atmosphere." },
   6: { title: "A vase in the light", label: "Materials / Still life", prompt: "An ivory sculptural ceramic vase on a travertine surface, with soft linen falling naturally beside it. Slanting afternoon sun creates delicate shadows. Warm tones, refined still-life photography, realistic materials, and a quiet composition." },
   7: { title: "A product from tomorrow", label: "Product concept", prompt: "A futuristic wearable device in a dark studio, with a cobalt translucent shell and mirrored metal details. Dramatic rim light, a clean silhouette, and precise industrial-design photography." },
   8: { title: "Beyond the mountains", label: "Imagined worlds", prompt: "Layered teal mountains and a sea of clouds, with a glowing river winding through the valley. An Eastern fantasy world at sunrise, poetic atmosphere, cinematic environmental light, and a sweeping wide composition." },
   9: { title: "A brand's atmosphere", label: "Brand visual", prompt: "An amber serum bottle on pale travertine, with natural shadows cast by leaves. Warm beige background, soft morning light, and premium skincare campaign photography. No text or logos." },
+  10: { title: "Binggou River · Qilian inspiration", label: "AI landscape / Wuwei, Gansu", badge: "AI LANDSCAPE", detailLabel: "AI LANDSCAPE / TRAVEL INSPIRATION", prompt: "Create a photorealistic landscape inspired by the Binggou River area near Wuwei, Gansu: a clear mountain stream winding through conifer forest and alpine meadow, with distant snow-capped Qilian peaks. This is an AI-generated travel inspiration image, not a photograph of the actual site." },
+  11: { title: "Sayram Lake · blue horizon", label: "Real photo / Xinjiang", badge: "REAL PHOTO", photoCredit: "Photo: Fumikas Sagisavas · Wikimedia Commons (CC0)", prompt: "Draw inspiration from this real photograph of Sayram Lake: deep blue water, distant mountains, layered clouds, and a calm lakeshore. Preserve the natural atmosphere and generous sky in a new landscape composition." },
 };
 
 const examples = [
@@ -75,8 +77,18 @@ const examples = [
     prompt: "米白色雕塑陶瓷花器置于洞石台面，柔软亚麻布自然垂落。午后斜阳留下细腻的光影，暖色调，高级静物摄影，强调真实材质与安静的构图。",
   },
   {
+    kind: "image", demo: 10, image: "/assets/binggouhe-inspired.png", title: "冰沟河 · 祁连山间", label: "AI 风光 / 甘肃武威", badge: "AI 风光示意", detailLabel: "AI 地景创作 / 冰沟河风光灵感",
+    prompt: "以甘肃武威天祝冰沟河一带的山地景观为灵感，创作写实风光画面：清澈溪流穿过祁连山针叶林和高山草甸，远处可见雪峰。这是 AI 生成的旅行灵感图，并非景区实拍。",
+  },
+  {
     kind: "image", demo: 7, title: "来自未来的产品", label: "产品概念",
     prompt: "深色摄影棚中的未来感可穿戴设备，钴蓝色半透明外壳与镜面金属细节，戏剧性的边缘光，干净的产品轮廓，精密工业设计摄影。",
+  },
+  {
+    kind: "image", demo: 11, image: "/assets/sayram-lake-real.jpg", title: "赛里木湖 · 湖岸晴光", label: "风景实拍 / 新疆", badge: "实拍风光",
+    photoCredit: "摄影：Fumikas Sagisavas · Wikimedia Commons（CC0）",
+    sourceUrl: "https://commons.wikimedia.org/wiki/File:Sayram_Lake_scenery.jpg",
+    prompt: "参考这张赛里木湖实拍照片的构图：湛蓝湖水、远山与层叠云朵，以宽阔天空和宁静湖岸呈现自然风光。",
   },
   {
     kind: "image", demo: 8, title: "山川里的另一种可能", label: "场景想象",
@@ -438,11 +450,11 @@ function imageMarkup(source) {
     '<img class="work-media-image" src="' + src + '" alt="" loading="lazy" />';
 }
 
-function renderCard(item) {
+function renderCard(item, index) {
   const card = document.createElement("article");
   card.className = "work-card";
   const badge = fieldOf(item, "badge") || (item.sourceUrl ? tr("photoBadge") : item.demo ? tr("sampleBadge") : item.kind === "video" ? "VIDEO" : "IMAGE");
-  const cardMeta = item.cardMeta || (item.demo ? String(item.demo).padStart(2, "0") + " / " + String(examples.length).padStart(2, "0") : formatDate(item.publishedAt));
+  const cardMeta = item.cardMeta || (item.demo ? String(index + 1).padStart(2, "0") + " / " + String(examples.length).padStart(2, "0") : formatDate(item.publishedAt));
   card.innerHTML = '<button type="button" aria-label="' + escapeHtml(tr("viewWork")) + ' ' + escapeHtml(titleOf(item)) + '">' +
     '<span class="work-media">' + mediaMarkup(item) +
     '<span class="media-badge">' + escapeHtml(badge) +
@@ -459,7 +471,7 @@ function render() {
   els.grid.replaceChildren();
   const showExamples = !state.items.length && !state.total && !state.keyword && state.media !== "video";
   if (showExamples) {
-    examples.forEach((item) => els.grid.appendChild(renderCard(item)));
+    examples.forEach((item, index) => els.grid.appendChild(renderCard(item, index)));
     els.count.textContent = state.total ? state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品") :
       String(examples.length).padStart(2, "0") + " " + (state.language === "en" ? tr("sampleCount") : "个创作方向");
     els.status.textContent = tr("examplesStatus");
@@ -472,7 +484,7 @@ function render() {
     els.count.textContent = state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品");
     els.status.textContent = "";
   } else {
-    state.items.forEach((item) => els.grid.appendChild(renderCard(item)));
+    state.items.forEach((item, index) => els.grid.appendChild(renderCard(item, index)));
     els.count.textContent = state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品");
     els.status.textContent = "";
   }
@@ -519,7 +531,7 @@ function openDetail(item) {
   els.dialogLabel.textContent = fieldOf(item, "detailLabel") || (item.sourceUrl ? tr("realDetail") : item.demo ? tr("demoDetail") :
     item.kind === "video" ? tr("publicVideo") : tr("publicImage"));
   els.dialogTitle.textContent = titleOf(item);
-  els.dialogDate.textContent = item.cardMeta || (item.photoCredit ? tr("photoCredit") :
+  els.dialogDate.textContent = item.cardMeta || (item.photoCredit ? fieldOf(item, "photoCredit") :
     item.demo ? tr("demoDate") : tr("publishedOn") + " " + formatDate(item.publishedAt));
   els.dialogSource.hidden = !item.sourceUrl;
   if (item.sourceUrl) els.dialogSource.href = item.sourceUrl;
