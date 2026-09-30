@@ -19,6 +19,7 @@ const EN = {
   closingHeading: "See something you love? Make your own.", closingLink: "Enter the studio ↗", footer: "Create · Explore · Create again", closeDetail: "Close work details", viewSource: "View original photograph ↗", copy: "Copy",
   notifications: "Product updates", themeButton: "Choose a theme", languageButton: "Choose a language", menuButton: "Open menu", markRead: "Mark as read", markUnread: "Mark as unread",
   sampleBadge: "IDEA", photoBadge: "REAL PHOTO", genericLabel: "Creative work", viewWork: "View", sampleCount: "creative directions", publicCount: "shared works", examplesStatus: "The public gallery is growing. Start with these ideas.",
+  shareBadge: "YOUR SPACE", shareLabel: "Community / Your work", shareMeta: "OPEN SLOT", shareTitle: "Your idea could be next.", shareDescription: "Choose a work from your gallery and share it on the home page.", shareAction: "Share from my gallery ↗",
   emptyHeading: "No works found", emptyDescription: "Try another search, or share one of your works.", emptyLink: "Go to my gallery ↗", loading: "Loading shared works…", loadError: "The public gallery is temporarily unavailable.", promptFallback: "Open this work for your next idea.",
   demoDetail: "CREATIVE DIRECTION / IDEA", realDetail: "REAL PHOTO / REFERENCE", publicVideo: "SHARED WORK / VIDEO", publicImage: "SHARED WORK / IMAGE", demoDate: "Start a new creation from this direction.", publishedOn: "Published on", photoCredit: "Photo: Willian Justen de Vasconcellos · Unsplash",
   promptMissing: "The creator did not add a prompt.", photoPromptHeading: "Prompt inspired by the composition", demoPromptHeading: "Reference prompt", promptHeading: "Creation prompt", createImage: "Create an image with this prompt ↗", createVideo: "Create a video with this prompt ↗", copied: "Prompt copied", copyFailed: "Copy failed. Please select the prompt and copy it manually.",
@@ -32,6 +33,7 @@ const EN = {
 const ZH = {
   openStudio: "进入工作台", notifications: "版本更新通知", themeButton: "选择主题", languageButton: "切换语言", menuButton: "打开菜单", markRead: "标为已读", markUnread: "标为未读",
   sampleBadge: "灵感示例", photoBadge: "实拍参考", genericLabel: "创作作品", viewWork: "查看", examplesStatus: "公开作品正在生长；先从这些示例中找到灵感。",
+  shareBadge: "你的作品位", shareLabel: "创作者分享", shareMeta: "期待你的作品", shareTitle: "下一个好创意，来自你。", shareDescription: "从我的图库挑选作品，分享至首页，让更多人看到。", shareAction: "去我的图库分享 ↗",
   videoPromoCount: "视频创作预览", videoPromoStatus: "公开视频还在征集中，先了解视频创作方式。",
   closingVideoHeading: "下一段画面，从这里开始。", closingVideoLink: "进入视频工作台 ↗",
   emptyHeading: "还没有找到这类作品", emptyDescription: "换个关键词，或来发布一件你的作品。", emptyLink: "去我的图库 ↗", loading: "正在加载公开作品…", loadError: "公开作品暂时无法加载。", promptFallback: "打开作品，寻找下一次创作的灵感。",
@@ -53,6 +55,7 @@ const EXAMPLE_EN = {
   9: { title: "A brand's atmosphere", label: "Brand visual", prompt: "An amber serum bottle on pale travertine, with natural shadows cast by leaves. Warm beige background, soft morning light, and premium skincare campaign photography. No text or logos." },
   10: { title: "Binggou River · Qilian inspiration", label: "AI landscape / Wuwei, Gansu", badge: "AI LANDSCAPE", detailLabel: "AI LANDSCAPE / TRAVEL INSPIRATION", prompt: "Create a photorealistic landscape inspired by the Binggou River area near Wuwei, Gansu: a clear mountain stream winding through conifer forest and alpine meadow, with distant snow-capped Qilian peaks. This is an AI-generated travel inspiration image, not a photograph of the actual site." },
   11: { title: "Sayram Lake · blue horizon", label: "Real photo / Xinjiang", badge: "REAL PHOTO", photoCredit: "Photo: Fumikas Sagisavas · Wikimedia Commons (CC0)", prompt: "Draw inspiration from this real photograph of Sayram Lake: deep blue water, distant mountains, layered clouds, and a calm lakeshore. Preserve the natural atmosphere and generous sky in a new landscape composition." },
+  12: { title: "Light within the curve", label: "AI architecture / Space", badge: "AI SPACE STUDY", detailLabel: "AI ARCHITECTURE / SPATIAL LIGHT", prompt: "An imagined contemporary art museum interior with sweeping ivory concrete curves, a sculptural spiral staircase, a round skylight, and a shallow reflecting pool. Warm sunlight traces the walls and water. A photorealistic AI concept image, not a photograph of a real building. No people, text, or logos." },
 };
 
 const examples = [
@@ -103,6 +106,10 @@ const examples = [
   {
     kind: "image", demo: 9, title: "为品牌创造氛围", label: "品牌视觉",
     prompt: "琥珀色精华瓶置于浅色洞石台面，植物枝叶投下自然阴影，温暖米色背景，柔和晨光，高级护肤品牌广告摄影，不含文字或商标。",
+  },
+  {
+    kind: "image", demo: 12, image: "/assets/museum-spiral-interior.jpg", title: "光落在空间里", label: "AI 建筑 / 空间灵感", badge: "AI 空间创作", detailLabel: "AI 建筑创作 / 空间光影",
+    prompt: "想象中的当代美术馆室内空间：象牙色混凝土弧墙和雕塑感旋转楼梯，圆形天窗洒下温暖日光，浅水池映出建筑曲线。这是 AI 创作的建筑概念图，并非真实建筑实拍。无人物、文字和标志。",
   },
 ];
 
@@ -476,6 +483,19 @@ function renderCard(item, index) {
   return card;
 }
 
+function renderShareCard() {
+  const card = document.createElement("article");
+  card.className = "work-card share-card";
+  card.innerHTML = '<a class="share-card-link" href="/my-images" aria-label="' + escapeHtml(tr("shareAction")) + '">' +
+    '<span class="work-media share-card-media"><span class="media-badge">' + escapeHtml(tr("shareBadge")) + '</span>' +
+    '<span class="share-card-art" aria-hidden="true"><span>＋</span></span></span>' +
+    '<span class="work-card-body"><span class="work-card-meta"><span>' + escapeHtml(tr("shareLabel")) +
+    '</span><span>' + escapeHtml(tr("shareMeta")) + '</span></span><h3>' + escapeHtml(tr("shareTitle")) +
+    '</h3><p>' + escapeHtml(tr("shareDescription")) + '</p><span class="share-card-action">' +
+    escapeHtml(tr("shareAction")) + '</span></span></a>';
+  return card;
+}
+
 function render() {
   els.grid.replaceChildren();
   const showVideoPromo = !state.keyword && (state.media === "all" || state.media === "video");
@@ -492,8 +512,10 @@ function render() {
   els.closingLink.textContent = state.media === "video" ? tr("closingVideoLink") : (state.language === "en" ? EN.closingLink : "进入创作工作台 ↗");
   els.closingLink.href = state.media === "video" ? "/video" : "/playground";
   const showExamples = !state.items.length && !state.total && !state.keyword && state.media !== "video";
+  els.grid.classList.toggle("is-example-grid", showExamples);
   if (showExamples) {
     examples.forEach((item, index) => els.grid.appendChild(renderCard(item, index)));
+    els.grid.appendChild(renderShareCard());
     els.count.textContent = state.total ? state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品") :
       String(examples.length).padStart(2, "0") + " " + (state.language === "en" ? tr("sampleCount") : "个创作方向");
     els.status.textContent = tr("examplesStatus");
