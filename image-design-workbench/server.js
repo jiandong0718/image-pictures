@@ -2193,6 +2193,43 @@ function resolveVideoFile(id) {
   return filePath;
 }
 
+function parseVideoRange(value, length) {
+  if (typeof value !== "string") return null;
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(value.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+
+  const start = match[1] ? Number(match[1]) : Math.max(0, length - Number(match[2]));
+  const requestedEnd = match[1] && match[2] ? Number(match[2]) : length - 1;
+  const end = Math.min(requestedEnd, length - 1);
+  if (!length || !Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) ||
+      start >= length || start > end) {
+    return { unsatisfiable: true };
+  }
+  return { start, end };
+}
+
+function sendVideoData(req, res, data, headers) {
+  const range = parseVideoRange(req.headers.range, data.length);
+  const videoHeaders = { ...headers, "Accept-Ranges": "bytes" };
+  if (range?.unsatisfiable) {
+    res.writeHead(416, { ...videoHeaders, "Content-Range": `bytes */${data.length}`, "Content-Length": 0 });
+    res.end();
+    return;
+  }
+  if (range) {
+    const body = data.subarray(range.start, range.end + 1);
+    res.writeHead(206, {
+      ...videoHeaders,
+      "Content-Range": `bytes ${range.start}-${range.end}/${data.length}`,
+      "Content-Length": body.length,
+    });
+    res.end(req.method === "HEAD" ? undefined : body);
+    return;
+  }
+  res.writeHead(200, { ...videoHeaders, "Content-Length": data.length });
+  res.end(req.method === "HEAD" ? undefined : data);
+}
+
 async function serveVideo(req, res, id, attachment, user, cacheControl = "private, max-age=604800, immutable") {
   try {
     await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
@@ -2200,15 +2237,12 @@ async function serveVideo(req, res, id, attachment, user, cacheControl = "privat
     const data = await fsp.readFile(filePath);
     const headers = {
       "Content-Type": "video/mp4",
-      "Content-Length": data.length,
       "Cache-Control": cacheControl,
     };
     if (attachment) {
       headers["Content-Disposition"] = `attachment; filename="${path.basename(filePath)}"`;
     }
-    // ponytail: 整段返回，不支持 Range；短片够用，要拖动播放/大文件再补 Range。
-    res.writeHead(200, headers);
-    res.end(data);
+    sendVideoData(req, res, data, headers);
   } catch (error) {
     sendError(res, 404, "视频不存在", error.message);
   }
@@ -2349,6 +2383,10 @@ function sendStaticData(req, res, data, ext) {
     "Cache-Control": staticCacheControl(ext),
     Vary: "Accept-Encoding",
   };
+  if (ext === ".mp4") {
+    sendVideoData(req, res, data, headers);
+    return;
+  }
   const acceptsGzip = /\bgzip\b/.test(req.headers["accept-encoding"] || "");
   if (acceptsGzip && COMPRESSIBLE_EXT.has(ext) && data.length > 512) {
     const gz = zlib.gzipSync(data);
@@ -3661,4 +3699,5 @@ module.exports = {
   normalizeGeneratedImageFile,
   parsePromptExtractionResponse,
   readImageDimensions,
+  sendVideoData,
 };
