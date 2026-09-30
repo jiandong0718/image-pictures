@@ -69,7 +69,7 @@ img, video { display: block; max-width: 100%; }
 .hero-tile { position: relative; overflow: hidden; background-color: #27312c; transition: filter .3s; }
 .hero-tile:hover { filter: brightness(1.12); }
 .hero-tile::before { content: ""; position: absolute; inset: -18px; background-image: inherit; background-position: center; background-size: cover; filter: blur(18px) brightness(.6); }
-.hero-tile img { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.hero-tile img { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .hero-tile::after { content: ""; position: absolute; z-index: 2; inset: 52% 0 0; background: linear-gradient(transparent, rgba(0, 0, 0, .55)); pointer-events: none; }
 .hero-tile span { position: absolute; z-index: 3; bottom: 15px; left: 16px; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-shadow: 0 1px 6px rgba(0,0,0,.4); }
 .hero-tile-main { grid-column: 1; grid-row: 1; }
@@ -131,8 +131,7 @@ img, video { display: block; max-width: 100%; }
 .work-card button:hover .work-media-image, .work-card button:hover .work-media .demo-art { transform: scale(1.045); }
 .work-media { position: relative; display: block; flex: 1 1 0; min-height: 0; width: 100%; overflow: hidden; background: var(--surface-2); }
 .work-media img { position: absolute; inset: 0; width: 100%; height: 100%; transition: transform .45s; }
-.work-media-backdrop { object-fit: cover; filter: blur(18px) brightness(.62); transform: scale(1.1); }
-.work-media-image { object-fit: contain; }
+.work-media-image { object-fit: cover; }
 .work-media .demo-art { width: 100%; height: 100%; transition: transform .45s; }
 .work-media .demo-art { display: block; }
 .work-media::after { content: ""; position: absolute; z-index: 2; inset: 60% 0 0; background: linear-gradient(transparent, rgba(0,0,0,.32)); pointer-events: none; }

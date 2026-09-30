@@ -43,7 +43,7 @@ const ZH = {
 
 const EXAMPLE_EN = {
   1: { title: "Crimson couture", label: "Editorial / Fashion", prompt: "An adult East Asian model in a sculptural crimson silk gown stands in a pale concrete courtyard. The dress sweeps into a dramatic red arc in the wind. Confident gaze, full-body composition, morning side light, tactile silk, and a premium fashion editorial feel. No text or logos." },
-  2: { title: "Moonlit Magic · Halloween Pendant", label: "Image work", badge: "Product detail visual", detailLabel: "IMAGE WORK / PRODUCT VISUAL", prompt: "Create a process detail poster for a round PMMA acrylic Halloween pendant based on the supplied main image. Add a red label reading “2D Flat Acrylic” at the lower right, and show four close-up views of the original pendant's pearl effect, color layers, UV highlights, and raised finish." },
+  2: { title: "Moonlit Magic · Halloween Pendant", label: "E-commerce visual", badge: "Amazon product details", detailLabel: "E-COMMERCE VISUAL / PRODUCT DETAILS", prompt: "Create a process detail poster for a round PMMA acrylic Halloween pendant based on the supplied main image. Add a red label reading “2D Flat Acrylic” at the lower right, and show four close-up views of the original pendant's pearl effect, color layers, UV highlights, and raised finish." },
   3: { title: "Neon rain", label: "Editorial / Cinema", prompt: "An adult East Asian man in a tailored black coat holds a vivid red umbrella on a rainy city street. Wet pavement reflects red and cyan neon; distant people and headlights are softly blurred. Full-body framing, cinematic backlight, and fashion campaign photography. No readable signs or logos." },
   4: { title: "Two beneath the moon", label: "Editorial / Scene", prompt: "Two adult models in minimal ivory couture stand apart on a reflective salt flat at dusk. A huge amber moon meets the horizon, with distant misty mountains and soft reflections. A wide, quiet, cinematic fashion composition. No text or logos." },
   5: { title: "Yangshuo after dark", label: "Real photo / Holiday travel", photoCredit: "Photo: Willian Justen de Vasconcellos · Unsplash", prompt: "A lively pedestrian street in Yangshuo at night. A young woman in locally inspired traditional dress stands naturally among the crowd with a relaxed smile. Warm shop lights meet blue-green neon, with passersby softly out of focus. Candid environmental portrait with an authentic street atmosphere." },
@@ -61,7 +61,7 @@ const examples = [
     prompt: "一位成年东亚女性模特身穿雕塑感深红丝绸礼服，站在浅色混凝土建筑庭院。长裙被风吹成巨大的红色弧线，人物目光坚定，全身构图，早晨侧光，真实丝绸质感，高级时尚杂志摄影，无文字与标志。",
   },
   {
-    kind: "image", demo: 2, featured: true, image: "/assets/halloween-acrylic-worn-049.png", title: "月夜魔法 · 万圣节挂饰", label: "图片作品", badge: "人物穿戴图", detailLabel: "图片作品 / 人物穿戴图", cardMeta: "2026/09/27",
+    kind: "image", demo: 2, featured: true, image: "/assets/halloween-acrylic-worn-049.png", title: "月夜魔法 · 万圣节挂饰", label: "电商商品图", badge: "亚马逊商品细节", detailLabel: "电商商品图 / 亚马逊商品细节", cardMeta: "2026/09/27",
     prompt: "基于提供的主图生成一个圆形 PMMA 亚克力万圣节挂饰工艺细节说明海报。画面右下角放置一个横向正红色长方形标签，与画面边缘保持安全距离，使用鲜艳正红色背景和白色粗体衬线字体，文字内容为“2D Flat Acrylic”。右侧四组圆形局部放大镜展示珠光、彩色叠层、UV 高光和立体工艺细节。",
   },
   {
@@ -456,8 +456,7 @@ function mediaMarkup(item) {
 
 function imageMarkup(source) {
   const src = escapeHtml(source);
-  return '<img class="work-media-backdrop" src="' + src + '" alt="" loading="lazy" aria-hidden="true" />' +
-    '<img class="work-media-image" src="' + src + '" alt="" loading="lazy" />';
+  return '<img class="work-media-image" src="' + src + '" alt="" loading="lazy" />';
 }
 
 function renderCard(item, index) {
