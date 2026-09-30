@@ -59,7 +59,7 @@ const THEME_ORDER = ["tech", "xianxia", "mystic"];
 
 function currentTheme() {
   const theme = document.documentElement.dataset.theme;
-  return THEME_ORDER.includes(theme) ? theme : "tech";
+  return THEME_ORDER.includes(theme) ? theme : "mystic";
 }
 
 function broadcastTheme() {

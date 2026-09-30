@@ -180,6 +180,58 @@ html.workbench-embed:not([data-workbench-theme]) [data-input-card] button[aria-l
   box-shadow: 0 10px 26px rgba(56, 224, 208, 0.24) !important;
 }
 
+html.workbench-embed[data-workbench-theme="mystic"]:root {
+  --background: 244 47% 8%;
+  --foreground: 255 100% 96%;
+  --muted: 248 34% 16%;
+  --muted-foreground: 255 24% 73%;
+  --border: 255 27% 27%;
+  --input: 255 27% 27%;
+  --primary: 258 100% 77%;
+  --primary-foreground: 244 47% 8%;
+  --sidebar: 246 42% 11%;
+  --sidebar-foreground: 255 100% 96%;
+  color-scheme: dark;
+}
+
+html.workbench-embed[data-workbench-theme="mystic"] body {
+  color: #f0ecff !important;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(155, 140, 255, 0.24), transparent 38%),
+    radial-gradient(circle at 82% 26%, rgba(126, 205, 220, 0.12), transparent 42%),
+    linear-gradient(160deg, #0a0a1c, #17112e 64%, #101127) !important;
+}
+
+html.workbench-embed[data-workbench-theme="mystic"] [data-input-card] {
+  background: linear-gradient(160deg, rgba(37, 29, 72, 0.93), rgba(20, 18, 49, 0.96)) !important;
+  border-color: rgba(155, 140, 255, 0.34) !important;
+  box-shadow: 0 22px 56px rgba(10, 6, 34, 0.45) !important;
+  color: #f0ecff !important;
+}
+
+html.workbench-embed[data-workbench-theme="mystic"] [data-prompt-editor],
+html.workbench-embed[data-workbench-theme="mystic"] [data-input-card] :where(select, input) {
+  background: rgba(18, 15, 43, 0.88) !important;
+  border-color: rgba(155, 140, 255, 0.28) !important;
+  color: #f0ecff !important;
+}
+
+html.workbench-embed[data-workbench-theme="mystic"] [data-prompt-editor]:focus {
+  border-color: rgba(185, 140, 255, 0.62) !important;
+  box-shadow: 0 0 0 3px rgba(155, 140, 255, 0.15) !important;
+}
+
+html.workbench-embed[data-workbench-theme="mystic"] [data-input-card] .prompt-placeholder,
+html.workbench-embed[data-workbench-theme="mystic"] [data-input-card] button:not(:disabled) {
+  color: #b8aee0 !important;
+}
+
+html.workbench-embed[data-workbench-theme="mystic"] [data-input-card] button[aria-label*="生成"]:not(:disabled),
+html.workbench-embed[data-workbench-theme="mystic"] [data-input-card] button[aria-label*="发送"]:not(:disabled) {
+  background: linear-gradient(135deg, #9b8cff, #c895f5) !important;
+  color: #15102c !important;
+}
+
 html.workbench-embed[data-workbench-theme="xianxia"]:root {
   --background: 90 27% 94%;
   --foreground: 132 16% 18%;

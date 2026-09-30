@@ -81,7 +81,7 @@ function isEmbeddedInWorkbench() {
 }
 
 function normalizeWorkbenchTheme(value: unknown) {
-  return value === 'xianxia' ? 'xianxia' : 'tech'
+  return value === 'xianxia' || value === 'mystic' ? value : 'tech'
 }
 
 function applyWorkbenchTheme(value: unknown) {

@@ -6,7 +6,8 @@ import { apiGet } from "/shared/api.js";
 let selectedModel = "";
 
 function currentTheme() {
-  return document.documentElement.dataset.theme === "xianxia" ? "xianxia" : "tech";
+  const theme = document.documentElement.dataset.theme;
+  return ["tech", "xianxia", "mystic"].includes(theme) ? theme : "mystic";
 }
 
 function sendThemeToFrame() {

@@ -8,9 +8,9 @@
     <script>
       try {
         const savedTheme = localStorage.getItem("imageStudioTheme");
-        document.documentElement.dataset.theme = ["tech", "xianxia", "mystic"].includes(savedTheme) ? savedTheme : "tech";
+        document.documentElement.dataset.theme = ["tech", "xianxia", "mystic"].includes(savedTheme) ? savedTheme : "mystic";
       } catch {
-        document.documentElement.dataset.theme = "tech";
+        document.documentElement.dataset.theme = "mystic";
       }
     </script>
     <link rel="stylesheet" href="/pages/home/home.css?v=gallery-fullbleed-3" />

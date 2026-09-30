@@ -13,7 +13,7 @@ export const RELEASE_NOTES = [
 ];
 
 export function normalizeTheme(value) {
-  return THEME_OPTIONS.includes(value) ? value : "tech";
+  return THEME_OPTIONS.includes(value) ? value : "mystic";
 }
 
 export function normalizeLanguage(value) {
