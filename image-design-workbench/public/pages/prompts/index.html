@@ -4,7 +4,7 @@
 <body><div id="page" class="creative-page">
   <div class="creative-heading"><div><h2>把好灵感，留给下一次创作</h2><p>浏览全部公共提示词，找到适合你的画面与风格。</p></div><div class="creative-actions"><button class="btn" id="syncAll" type="button">一键同步全部</button><button class="btn primary" id="newPrompt" type="button">新建私人提示词</button></div></div>
   <p class="prompt-library-summary" id="librarySummary" role="status">正在读取公共提示词库…</p>
-  <label class="creative-row creative-note"><input type="checkbox" id="showExamples" /> 显示当前页示例图（按需加载）</label>
+  <label class="creative-row creative-note"><input type="checkbox" id="showExamples" checked /> 显示当前页示例图（滚动到卡片时加载）</label>
   <form class="creative-toolbar" id="searchForm"><label class="field creative-search"><span>搜索提示词</span><input class="input" name="q" maxlength="200" placeholder="跨全部公共来源搜索标题或内容" /></label><label class="field"><span>标签</span><input class="input" name="tag" maxlength="40" placeholder="例如：产品摄影" /></label><label class="field"><span>来源</span><select class="select" name="source" id="sourceFilter"><option value="all">全部公共提示词</option><option value="mine">我的私人提示词</option></select></label><button class="btn" type="submit">搜索</button></form>
   <details class="creative-panel creative-sources"><summary>公共提示词来源</summary><p class="creative-note">同步后可搜索并引用公开来源的提示词。你的私人提示词只对自己可见。</p><div id="sourceList"></div></details>
   <section class="creative-panel prompt-sync-result" id="syncResultPanel" hidden aria-labelledby="syncResultTitle"><h3 id="syncResultTitle">同步结果</h3><p class="creative-status" id="syncStatus" role="status" aria-live="polite"></p><div id="syncResults"></div></section>

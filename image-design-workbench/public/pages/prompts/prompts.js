@@ -11,7 +11,8 @@ let version = 0;
 let items = [];
 let sources = [];
 let syncing = false;
-let showExamples = false;
+// 示例图默认可见，浏览器仍只在卡片进入视口附近时请求图片。
+let showExamples = true;
 
 function editable(item) { return !item.readOnly && [undefined, "", "mine", "user", "local", "personal"].includes(item.sourceId || item.source); }
 

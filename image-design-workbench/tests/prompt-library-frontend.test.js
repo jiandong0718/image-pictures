@@ -73,7 +73,7 @@ async function promptHarness(overrides = {}) {
   return { context, element, calls, run: (code) => vm.runInContext(code, context) };
 }
 
-test("默认公共全量查询按18条分页，卡片不请求封面且公共库没有编辑删除入口", async () => {
+test("默认公共全量查询按18条分页，卡片直接显示懒加载封面且公共库没有编辑删除入口", async () => {
   const requested = [];
   const items = Array.from({ length: 18 }, (_, index) => ({ id: `public:${index}`, title: `案例 ${index}`, content: "相同正文仍保留不同案例", source: "source-0", sourceName: "公开案例", readOnly: true, coverUrl: `https://example.com/${index}.webp`, referenceImageUrls: ["https://example.com/ref.png"] }));
   const page = await promptHarness({ apiGet: async (url) => { requested.push(url); return { items, pagination: { total: 1742 }, sources: sourceFixtures }; } });
@@ -82,13 +82,14 @@ test("默认公共全量查询按18条分页，卡片不请求封面且公共库
   assert.equal(query.get("source"), "all");
   assert.equal(query.get("pageSize"), "18");
   assert.equal((page.element("promptList").innerHTML.match(/<article /g) || []).length, 18);
-  assert.doesNotMatch(page.element("promptList").innerHTML, /<img|data-action="edit"|data-action="delete"/);
+  assert.equal((page.element("promptList").innerHTML.match(/<img /g) || []).length, 18);
+  assert.match(page.element("promptList").innerHTML, /loading="lazy" decoding="async"/);
+  assert.doesNotMatch(page.element("promptList").innerHTML, /data-action="edit"|data-action="delete"/);
   assert.match(page.element("promptList").innerHTML, /data-action="fork"/);
   assert.match(page.element("librarySummary").innerHTML, /1,742/);
   assert.equal(page.element("nextPage").disabled, false);
-  page.run("showExamples = true; renderPrompts();");
-  assert.equal((page.element("promptList").innerHTML.match(/<img /g) || []).length, 18);
-  assert.match(page.element("promptList").innerHTML, /loading="lazy" decoding="async"/);
+  page.run("showExamples = false; renderPrompts();");
+  assert.doesNotMatch(page.element("promptList").innerHTML, /<img/);
   assert.doesNotMatch(page.element("promptList").innerHTML, /ref\.png/);
 });
 
