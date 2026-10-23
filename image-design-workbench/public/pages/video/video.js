@@ -1,3 +1,4 @@
+import { previewUrl } from "/shared/media.js";
 // AI 生视频（赛博画布布局）：中间画布（模式切换 + 提示词 + 结果），右侧控制面板（比例/清晰度/时长/高级）。
 // 文生视频 + 图生视频，接 Agnes 异步接口：提交拿 taskId，前端轮询 /api/tasks/:id 取 mp4。每条固定扣积分。
 
@@ -114,7 +115,7 @@ function renderSource() {
   if (mode !== "image") return;
   const parts = sourceImages.map((img, i) => `
     <div class="vid-thumb">
-      <img src="${img.url}" alt="源图 ${i + 1}" />
+      <img src="${previewUrl(img.url)}" decoding="async" alt="源图 ${i + 1}" />
       <button type="button" class="vid-thumb-remove" data-idx="${i}" title="移除">✕</button>
       <span class="vid-thumb-idx">${i + 1}</span>
     </div>`);

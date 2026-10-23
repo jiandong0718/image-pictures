@@ -1,3 +1,4 @@
+import { previewUrl as imagePreviewUrl } from "/shared/media.js";
 // AI 修图页（画布布局）：中间画布（上传→照片→处理中→前后对比 + 底部信息 + 历史），
 // 右侧控制面板（能力卡片 + 输出比例 + 折叠提示词 + 开始生成）。
 // 链路复用现有接口：分配套图 → 上传照片 → /api/playground/images(mode:edit)。提示词/历史只存本地。
@@ -295,7 +296,7 @@ function renderCanvas() {
       const thumb = document.createElement("button");
       thumb.type = "button";
       thumb.className = `rt-thumb${active && active.after === h.after ? " active" : ""}`;
-      thumb.innerHTML = `<img src="${h.after}" alt="${h.label || "结果"}" loading="lazy" />`;
+      thumb.innerHTML = `<img src="${imagePreviewUrl(h.after)}" decoding="async" alt="${h.label || "结果"}" loading="lazy" />`;
       thumb.addEventListener("click", () => {
         active = h;
         renderState();

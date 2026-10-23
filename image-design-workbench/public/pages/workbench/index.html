@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>创作工作台 · AI 图像设计工作台</title><script src="/shared/theme-init.js?v=mystic-default-1"></script><link rel="stylesheet" href="/shared/theme.css" /><link rel="stylesheet" href="/shared/creative.css" /></head>
+<body><div id="page" class="creative-page creative-page-workbench">
+  <div class="creative-heading"><div><h2>从一个想法，开始创作</h2><p>组合提示词与素材，保存方案，持续探索不同的生成结果。</p></div><a class="btn" href="/assets">管理素材</a></div>
+  <nav class="creative-tabs" aria-label="创作类型"><a href="/workbench" aria-current="page">图片创作</a><a href="/video">视频创作</a><a href="/audio">音频创作</a></nav>
+  <div class="creative-two-column"><div class="creative-stack">
+    <section class="creative-panel creative-composer"><div class="creative-heading"><h3>描述你的画面</h3><div class="creative-actions"><button class="btn sm" id="pickPrompt" type="button">选择提示词</button><button class="btn sm" id="pickAsset" type="button">引用素材</button></div></div>
+      <label class="field"><span>创作提示词</span><textarea class="textarea creative-prompt" id="prompt" rows="8" placeholder="描述主体、构图、光线和风格。也可以先选择一条提示词，再引用图片或文本素材。"></textarea></label>
+      <p class="creative-note">素材会以 @ 引用插入光标位置。文本素材会展开为内容，图片素材会成为参考图。</p>
+      <div class="creative-tags creative-reference" id="references"></div>
+      <div class="creative-actions"><button class="btn sm" id="previewComposition" type="button">预览完整提示词</button><button class="btn sm" id="savePrompt" type="button">保存为提示词</button><span class="creative-meta" id="draftStatus" role="status"></span></div>
+      <p class="creative-status" id="composeStatus" role="status" aria-live="polite"></p>
+      <div id="previewPanel" hidden><p class="creative-meta" id="previewMeta"></p><pre class="creative-preview" id="resolvedPrompt"></pre></div>
+    </section>
+    <section class="creative-panel creative-history"><div class="creative-heading"><h3>生成记录</h3><span class="creative-meta" id="historyCount"></span></div><p class="creative-note">每次生成独立保留。离开页面后可回来继续查看任务，图片也会保存到我的图库。</p><div id="history"></div></section>
+  </div><aside class="creative-stack"><section class="creative-panel creative-settings"><h3>生成设置</h3>
+    <label class="field"><span>模型</span><select class="select" id="model"><option value="">自动选择</option></select></label>
+    <div class="creative-form-grid"><label class="field"><span>张数</span><select class="select" id="count"><option value="1">1 张</option><option value="2">2 张</option><option value="3">3 张</option><option value="4">4 张</option></select></label><label class="field"><span>分辨率</span><select class="select" id="resolution"><option value="1k">1K</option><option value="2k">2K</option><option value="4k">4K</option></select></label><label class="field"><span>画面比例</span><select class="select" id="ratio"><option value="1:1">1:1 正方形</option><option value="3:4">3:4 竖版</option><option value="4:3">4:3 横版</option><option value="9:16">9:16 竖屏</option><option value="16:9">16:9 宽屏</option></select></label></div>
+    <p id="configHint" class="creative-note">正在读取生图配置…</p><p id="generateStatus" class="creative-status" role="status" aria-live="polite"></p><button class="btn primary full" id="generate" type="button" disabled>开始生成</button>
+  </section><section class="creative-panel creative-schemes"><h3>我的方案</h3><p class="creative-note">方案保留提示词、素材引用和模型设置，只在当前账户的浏览器中保存。提示词可保存到个人提示词中心。</p><label class="field"><span>方案名称</span><input class="input" id="schemeName" maxlength="80" placeholder="例如：新品白底图" /></label><button class="btn full" id="saveScheme" type="button">保存当前方案</button><p class="creative-status" id="schemeStatus" role="status"></p><div class="creative-stack" id="schemes"></div></section></aside></div>
+</div><script type="module" src="/pages/workbench/workbench.js"></script></body></html>

@@ -46,6 +46,7 @@ export async function pollTask(taskId, { interval = 2000, timeoutMs = 5 * 60 * 1
     const data = await apiGet(`/api/tasks/${encodeURIComponent(taskId)}`);
     if (data.status === "done") return data.result;
     if (data.status === "error") throw new Error(data.error || "生成失败");
+    if (data.status === "interrupted") throw new Error(data.error || "任务已中断，结果待确认，请先查看图库，避免重复生成");
     if (Date.now() > deadline) throw new Error("生成超时，请稍后重试");
     await new Promise((resolve) => setTimeout(resolve, interval));
   }

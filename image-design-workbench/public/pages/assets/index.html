@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>素材库 · AI 图像设计工作台</title><script src="/shared/theme-init.js?v=mystic-default-1"></script><link rel="stylesheet" href="/shared/theme.css" /><link rel="stylesheet" href="/shared/creative.css" /></head>
+<body><div id="page" class="creative-page">
+  <div class="creative-heading"><div><h2>你的创作素材，都在这里</h2><p>保存图片、视频、音频与文本，在创作时直接引用。</p></div><div class="creative-actions"><button class="btn" id="newText" type="button">新建文本</button><button class="btn primary" id="uploadAsset" type="button">上传素材</button></div></div>
+  <form class="creative-toolbar" id="searchForm"><label class="field creative-search"><span>搜索素材</span><input class="input" name="q" placeholder="搜索名称或文本" /></label><label class="field"><span>类型</span><select class="select" name="kind"><option value="">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="audio">音频</option><option value="text">文本</option></select></label><label class="field"><span>标签</span><input class="input" name="tag" placeholder="例如：品牌参考" /></label><button class="btn" type="submit">搜索</button></form>
+  <p id="status" class="creative-status" role="status" aria-live="polite"></p><div class="creative-grid" id="assetList"></div>
+  <div class="creative-pagination"><button class="btn sm" id="previousPage" type="button">上一页</button><span id="pageLabel"></span><button class="btn sm" id="nextPage" type="button">下一页</button></div>
+</div><script type="module" src="/pages/assets/assets.js"></script></body></html>

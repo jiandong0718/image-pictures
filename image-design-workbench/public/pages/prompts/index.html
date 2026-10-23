@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>提示词中心 · AI 图像设计工作台</title><script src="/shared/theme-init.js?v=mystic-default-1"></script><link rel="stylesheet" href="/shared/theme.css" /><link rel="stylesheet" href="/shared/creative.css" /><link rel="stylesheet" href="/pages/prompts/prompts.css" /></head>
+<body><div id="page" class="creative-page">
+  <div class="creative-heading"><div><h2>把好灵感，留给下一次创作</h2><p>浏览全部公共提示词，找到适合你的画面与风格。</p></div><div class="creative-actions"><button class="btn" id="syncAll" type="button">一键同步全部</button><button class="btn primary" id="newPrompt" type="button">新建私人提示词</button></div></div>
+  <p class="prompt-library-summary" id="librarySummary" role="status">正在读取公共提示词库…</p>
+  <label class="creative-row creative-note"><input type="checkbox" id="showExamples" /> 显示当前页示例图（按需加载）</label>
+  <form class="creative-toolbar" id="searchForm"><label class="field creative-search"><span>搜索提示词</span><input class="input" name="q" maxlength="200" placeholder="跨全部公共来源搜索标题或内容" /></label><label class="field"><span>标签</span><input class="input" name="tag" maxlength="40" placeholder="例如：产品摄影" /></label><label class="field"><span>来源</span><select class="select" name="source" id="sourceFilter"><option value="all">全部公共提示词</option><option value="mine">我的私人提示词</option></select></label><button class="btn" type="submit">搜索</button></form>
+  <details class="creative-panel creative-sources"><summary>公共提示词来源</summary><p class="creative-note">同步后可搜索并引用公开来源的提示词。你的私人提示词只对自己可见。</p><div id="sourceList"></div></details>
+  <section class="creative-panel prompt-sync-result" id="syncResultPanel" hidden aria-labelledby="syncResultTitle"><h3 id="syncResultTitle">同步结果</h3><p class="creative-status" id="syncStatus" role="status" aria-live="polite"></p><div id="syncResults"></div></section>
+  <p id="status" class="creative-status" role="status" aria-live="polite"></p><div class="creative-grid" id="promptList"></div>
+  <div class="creative-pagination"><button class="btn sm" id="previousPage" type="button">上一页</button><span id="pageLabel"></span><button class="btn sm" id="nextPage" type="button">下一页</button></div>
+</div><script type="module" src="/pages/prompts/prompts.js"></script></body></html>

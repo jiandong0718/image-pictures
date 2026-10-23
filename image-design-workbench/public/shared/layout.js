@@ -24,10 +24,16 @@ const ICONS = {
   "admin": "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z\"/><path d=\"M9 12l2 2 4-4\"/></svg>",
 };
 
+Object.assign(ICONS, { workbench: ICONS.playground, prompts: ICONS.prompt, assets: ICONS['my-images'], audio: ICONS.video });
+
 const NAV = [
   { group: "探索" },
   { href: "/", label: "灵感首页", key: "home" },
   { group: "工具" },
+  { href: "/workbench", label: "创作工作台", key: "workbench" },
+  { href: "/prompts", label: "提示词中心", key: "prompts" },
+  { href: "/assets", label: "素材库", key: "assets" },
+  { href: "/audio", label: "音频生成", key: "audio" },
   { href: "/playground", label: "自由生图", key: "playground" },
   { href: "/video", label: "AI 生视频", key: "video" },
   { href: "/retouch", label: "AI 修图", key: "retouch" },

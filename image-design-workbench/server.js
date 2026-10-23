@@ -20,6 +20,12 @@ const gallery = require("./lib/gallery");
 const videos = require("./lib/videos");
 const videoClient = require("./lib/video-client");
 const { createAccountApi } = require("./lib/api-accounts");
+const { createPreviewCache } = require("./lib/media-preview");
+const { sendMediaFile } = require("./lib/media-response");
+const generationTasks = require("./lib/generation-tasks");
+const { createTracker } = require("./lib/legacy-task-tracker");
+const creativeResources = require("./lib/creative-resources");
+const { createCreativeApi } = require("./lib/api-creative");
 
 const ROOT_DIR = __dirname;
 const PROJECT_ROOT_DIR = path.resolve(ROOT_DIR, "..");
@@ -35,6 +41,8 @@ const OUTPUT_DIR = path.join(ROOT_DIR, "generated-images", "product-design");
 // 图库缩略图缓存目录（首次访问按需生成，之后走缓存）。.thumbs 不匹配套图 ID 规则，天然不进套图/图库回填。
 const THUMB_DIR = path.join(OUTPUT_DIR, ".thumbs");
 const THUMB_MAX_PX = 400;
+const previewCache = createPreviewCache({ directory: path.join(THUMB_DIR, 'webp-v1') });
+const legacyTaskTracker = createTracker({ tasks: generationTasks, directory: path.join(ROOT_DIR, 'generated-images', '.task-state') });
 const AVATAR_DIR = path.join(ROOT_DIR, "generated-images", "avatars");
 const CONTACT_QR_DIR = path.join(ROOT_DIR, "generated-images", "contact-qr");
 const EMBEDDED_SKILL_SCRIPT = path.join(
@@ -221,53 +229,26 @@ let imageSetAllocationQueue = Promise.resolve();
 
 // 生图任务表：Cloudflare 橙云代理单请求 100s 超时，而生图常需数分钟，
 // 所以生图接口不再同步等待完成，改为「提交任务 -> 后台生成 -> 前端轮询」。
-// ponytail: 单进程内存态，重启即丢；要多实例部署或任务要跨重启存活，再迁移到 DB。
-const GENERATION_TASKS = new Map();
-const GENERATION_TASK_TTL_MS = 15 * 60 * 1000;
-
-function createGenerationTask(userId) {
-  const id = crypto.randomUUID();
-  GENERATION_TASKS.set(id, {
-    userId,
-    status: "running",
-    result: null,
-    error: null,
-    // 渐进上报：total=本次要生成的张数，images=已完成的（谁先好谁先进来）。供前端"谁先好谁先显示"。
-    partial: null,
-    createdAt: Date.now(),
-  });
-  return id;
+// 任务状态落库；重启后未知结果标记待确认，不自动重发上游。
+// 旧业务仍在成功后调用 consumeCredits；这里 maxCost=0 仅持久化任务，不改变扣费时机。
+async function createGenerationTask(userId, input = {}, kind = 'image') {
+  return legacyTaskTracker.create(userId, input, kind);
 }
 
-function getGenerationTask(id, user) {
-  const task = GENERATION_TASKS.get(id);
-  if (!task || (task.userId !== user.id && user.role !== "admin")) {
-    return null;
-  }
-  return task;
+async function getGenerationTask(id, user) {
+  return legacyTaskTracker.get(id, user);
 }
 
-// 渐进上报：先告知总张数，再每完成一张追加进来。
-function setGenerationTaskTotal(id, total) {
-  const task = GENERATION_TASKS.get(id);
-  if (task) {
-    task.partial = { total: Number(total) || 0, images: [] };
-  }
+async function setGenerationTaskTotal(id, total) {
+  return legacyTaskTracker.setTotal(id, total);
 }
 
-function pushGenerationTaskImage(id, image) {
-  const task = GENERATION_TASKS.get(id);
-  if (task && task.partial && image) {
-    task.partial.images.push(image);
-  }
+async function pushGenerationTaskImage(id, image) {
+  return legacyTaskTracker.pushImage(id, image);
 }
 
-function finishGenerationTask(id, result) {
-  const task = GENERATION_TASKS.get(id);
-  if (task) {
-    task.status = "done";
-    task.result = result;
-  }
+async function finishGenerationTask(id, result) {
+  return legacyTaskTracker.finish(id, result);
 }
 
 // 面向用户的错误信息：屏蔽 Python traceback / 上游 API / 超时等技术细节，只给一句友好提示，
@@ -286,25 +267,10 @@ function friendlyGenerationError(rawMessage, fallback = "生成失败，请稍�
   return msg;
 }
 
-function failGenerationTask(id, message) {
-  if (message) {
-    console.error("生成任务失败：", message); // 完整错误留服务端，前端只拿友好提示
-  }
-  const task = GENERATION_TASKS.get(id);
-  if (task) {
-    task.status = "error";
-    task.error = friendlyGenerationError(message);
-  }
+async function failGenerationTask(id, message) {
+  if (message) console.error('生成任务失败：', message);
+  await legacyTaskTracker.fail(id, friendlyGenerationError(message));
 }
-
-setInterval(() => {
-  const cutoff = Date.now() - GENERATION_TASK_TTL_MS;
-  for (const [id, task] of GENERATION_TASKS) {
-    if (task.createdAt < cutoff) {
-      GENERATION_TASKS.delete(id);
-    }
-  }
-}, 5 * 60 * 1000).unref();
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -395,6 +361,11 @@ const accountApi = createAccountApi({
   readMultipartFile,
   inferUploadedImageExt,
   avatarDir: AVATAR_DIR,
+});
+const creativeApi = createCreativeApi({
+  accountApi, sendJson, sendError, readJson, readMultipartFile,
+  inferUploadedImageExt, outputDir: OUTPUT_DIR, resolveOutputFile,
+  assertOwnsImageSet, tasks: generationTasks, previewCache,
 });
 
 function parseEnvLine(line) {
@@ -515,6 +486,9 @@ function normalizePlaygroundRequest(rawRequest = {}) {
   );
   const background = cleanPrompt(rawRequest.background);
   const system = cleanPrompt(rawRequest.system);
+  if (rawRequest.referenceImageIds !== undefined && !Array.isArray(rawRequest.referenceImageIds)) throw new Error('参考图片格式不正确');
+  const referenceImageIds = [...new Set((rawRequest.referenceImageIds || [rawRequest.referenceImageId]).map(cleanPrompt).filter(Boolean))];
+  if (referenceImageIds.length > 16) throw new Error('最多引用 16 张图片');
 
   return {
     mode,
@@ -524,6 +498,7 @@ function normalizePlaygroundRequest(rawRequest = {}) {
     system,
     imageSpec: normalizeImageSpec(rawRequest.imageSpec),
     referenceImageId: cleanPrompt(rawRequest.referenceImageId),
+    ...(rawRequest.referenceImageIds !== undefined ? { referenceImageIds } : {}),
     // 自由生图可指定某个生图节点；留空则按调度策略自动选。仅本页有此选项。
     endpointId: cleanPrompt(rawRequest.endpointId),
     model: imageConfig.normalizeModelName(rawRequest.model),
@@ -1364,23 +1339,7 @@ function getThumbnailCommand(command, filePath, size) {
 
 // 返回 id 对应的缩略图路径，不存在则从原图生成并缓存到 .thumbs。id 已由调用方经 resolveOutputFile 校验安全。
 async function ensureThumbnail(id, srcPath) {
-  const thumbPath = path.join(THUMB_DIR, id);
-  try {
-    await fsp.access(thumbPath, fs.constants.R_OK);
-    return thumbPath;
-  } catch {
-    /* 未缓存，继续生成 */
-  }
-  await fsp.mkdir(path.dirname(thumbPath), { recursive: true });
-  await fsp.copyFile(srcPath, thumbPath);
-  const cmd = getThumbnailCommand(IMAGE_NORMALIZER_COMMAND, thumbPath, THUMB_MAX_PX);
-  try {
-    await runProcess(cmd.command, cmd.args, ROOT_DIR);
-  } catch (error) {
-    await fsp.unlink(thumbPath).catch(() => {});
-    throw error;
-  }
-  return thumbPath;
+  return previewCache.get(srcPath);
 }
 
 function normalizeImageSetId(value) {
@@ -1564,6 +1523,7 @@ function parseGeneratedImagePaths(stdout) {
 }
 
 function makeImageRecord(filePath, type, prompt, sourceMainId = "") {
+  void previewCache.get(filePath).catch(() => {});
   const id = makeImageId(filePath);
   const filename = path.basename(filePath);
   const imageSetId = getImageSetIdFromImageId(id);
@@ -1801,16 +1761,27 @@ async function generatePlaygroundImages(rawRequest = {}, user, hooks = {}) {
   }
 
   const endpoint = request.mode === "edit" ? "edits" : "generations";
+  const referenceImageIds = request.referenceImageIds || (request.referenceImageId ? [request.referenceImageId] : []);
   let sourceMainId = "";
   let sourcePath = "";
+  const sourcePaths = [];
   if (endpoint === "edits") {
-    if (!request.referenceImageId) {
+    if (!referenceImageIds.length) {
       throw new Error("编辑模式需要先选择参考图");
     }
-    await assertOwnsImageSet(user, getImageSetIdFromImageId(request.referenceImageId));
-    sourcePath = resolveOutputFile(request.referenceImageId);
-    await fsp.access(sourcePath, fs.constants.R_OK);
-    sourceMainId = makeImageId(sourcePath);
+    for (const reference of referenceImageIds) {
+      if (/^asset:\d+$/.test(reference)) {
+        const [asset] = await creativeApi.resolveAssetImages(user, [reference]);
+        sourcePaths.push(asset.filePath);
+      } else {
+        await assertOwnsImageSet(user, getImageSetIdFromImageId(reference));
+        const file = resolveOutputFile(reference);
+        await fsp.access(file, fs.constants.R_OK);
+        sourcePaths.push(file);
+      }
+    }
+    sourcePath = sourcePaths[0];
+    sourceMainId = referenceImageIds[0];
   }
 
   // 指定了节点就用该节点，否则按调度策略自动选。
@@ -1820,7 +1791,7 @@ async function generatePlaygroundImages(rawRequest = {}, user, hooks = {}) {
   const imageSet = await allocateImageSet(user.id);
   const outputDir = imageSet.outputDir;
   const env = buildImageGeneratorEnv(process.env, apiConfig);
-  hooks.onTotal?.(request.count); // 先告知总张数，前端好摆 N 个占位
+  await hooks.onTotal?.(request.count); // 先告知总张数，前端好摆 N 个占位
 
   // 多张 = 并发发 N 个各要 1 张的请求，再汇总。这样不依赖上游是否支持 n 参数
   // （如 Agnes 一个请求只回 1 张），选几张就稳定出几张；每个请求用不同文件名前缀避免同秒撞名。
@@ -1840,6 +1811,7 @@ async function generatePlaygroundImages(rawRequest = {}, user, hooks = {}) {
     });
     if (endpoint === "edits") {
       args.push("--image", sourcePath);
+      for (const reference of sourcePaths.slice(1)) args.push('--reference-image', reference);
     }
     const { stdout, stderr } = await runPythonProcess(args, ROOT_DIR, env);
     const paths = parseGeneratedImagePaths(stdout).filter((filePath) => !filePath.endsWith("-response.json"));
@@ -1859,7 +1831,8 @@ async function generatePlaygroundImages(rawRequest = {}, user, hooks = {}) {
       throw error;
     }
     const record = makeImageRecord(keep, "playground", request.prompt, sourceMainId);
-    hooks.onImage?.(record); // 这张完成即上报，前端"谁先好谁先显示"
+    record.generation = { model: apiConfig.model, imageSpec: request.imageSpec, references: referenceImageIds, background: request.background, system: request.system };
+    await hooks.onImage?.(record); // 这张完成即上报，前端"谁先好谁先显示"
     return record;
   };
 
@@ -2068,7 +2041,7 @@ async function downloadVideoFile(url, destPath) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 提交 -> 轮询 -> 下载 -> 落盘 -> 记库。返回视频记录。整个流程跑在后台任务里（见 /api/videos）。
-async function generateVideo({ user, mode, prompt, ratio, quality, duration, negativePrompt, seed, steps, sourceImageIds }) {
+async function generateVideo({ user, mode, prompt, ratio, quality, duration, negativePrompt, seed, steps, sourceImageIds, taskId }) {
   const normalizedPrompt = cleanPrompt(prompt);
   if (!normalizedPrompt) {
     throw new Error("视频提示词不能为空");
@@ -2118,6 +2091,7 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
     steps: Number.isFinite(Number(steps)) && String(steps).trim() !== "" ? Number(steps) : undefined,
   });
 
+  if (taskId) await legacyTaskTracker.metadata(taskId, { upstreamVideoId: videoId, model: config.model, imageSetId, phase: "polling" });
   const deadline = Date.now() + VIDEO_GENERATION_TIMEOUT_MS;
   let last;
   let backoff = 0; // 撞到 429/网关抖动时，在基础间隔上叠加的退避（递增，最多 +30s）
@@ -2234,7 +2208,6 @@ async function serveVideo(req, res, id, attachment, user, cacheControl = "privat
   try {
     await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
     const filePath = resolveVideoFile(id);
-    const data = await fsp.readFile(filePath);
     const headers = {
       "Content-Type": "video/mp4",
       "Cache-Control": cacheControl,
@@ -2242,7 +2215,7 @@ async function serveVideo(req, res, id, attachment, user, cacheControl = "privat
     if (attachment) {
       headers["Content-Disposition"] = `attachment; filename="${path.basename(filePath)}"`;
     }
-    sendVideoData(req, res, data, headers);
+    await sendMediaFile(req, res, filePath, headers);
   } catch (error) {
     sendError(res, 404, "视频不存在", error.message);
   }
@@ -2314,6 +2287,10 @@ const PAGE_ROUTES = {
   "/studio/print": { dir: "studio-print", auth: "user" },
   "/studio/3d": { dir: "studio-3d", auth: "user" },
   "/prompt": { dir: "prompt", auth: "user" },
+  "/prompts": { dir: "prompts", auth: "user" },
+  "/assets": { dir: "assets", auth: "user" },
+  "/audio": { dir: "audio", auth: "user" },
+  "/workbench": { dir: "workbench", auth: "user" },
   "/playground": { dir: "playground", auth: "user" },
   "/video": { dir: "video", auth: "user" },
   "/retouch": { dir: "retouch", auth: "user" },
@@ -2361,13 +2338,13 @@ async function servePage(req, res, pathname) {
   return true;
 }
 
-// 静态资源缓存策略：页面(html)始终校验保新鲜；css/js 缓存 1 小时；图片/字体缓存 1 天。
+// 静态资源缓存策略：页面与脚本样式使用 ETag 重验；图片缓存 1 天。
 // 高延迟链路下，让浏览器缓存静态资源可显著减少切页面时的重复往返。
 const COMPRESSIBLE_EXT = new Set([".html", ".css", ".js", ".json", ".svg"]);
 const LONG_CACHE_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
 
 function staticCacheControl(ext) {
-  if (ext === ".html") {
+  if ([".html", ".js", ".css"].includes(ext)) {
     return "no-cache";
   }
   if (LONG_CACHE_EXT.has(ext)) {
@@ -2377,19 +2354,26 @@ function staticCacheControl(ext) {
 }
 
 // 统一发送静态文件：按类型设缓存头，文本类在客户端支持时 gzip。
-function sendStaticData(req, res, data, ext) {
+async function sendStaticData(req, res, data, ext) {
+  const etag = '"' + crypto.createHash('sha256').update(data).digest('hex').slice(0, 32) + '"';
   const headers = {
     "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
     "Cache-Control": staticCacheControl(ext),
     Vary: "Accept-Encoding",
+    ETag: etag,
   };
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, headers);
+    res.end();
+    return;
+  }
   if (ext === ".mp4") {
     sendVideoData(req, res, data, headers);
     return;
   }
   const acceptsGzip = /\bgzip\b/.test(req.headers["accept-encoding"] || "");
   if (acceptsGzip && COMPRESSIBLE_EXT.has(ext) && data.length > 512) {
-    const gz = zlib.gzipSync(data);
+    const gz = await new Promise((resolve, reject) => zlib.gzip(data, (error, value) => error ? reject(error) : resolve(value)));
     headers["Content-Encoding"] = "gzip";
     res.writeHead(200, headers);
     res.end(gz);
@@ -2408,8 +2392,19 @@ async function serveStatic(req, res, pathname) {
   }
 
   try {
+    const ext = path.extname(filePath).toLowerCase();
+    if (LONG_CACHE_EXT.has(ext) || ext === '.mp4') {
+      const thumb = new URL(req.url, 'http://localhost').searchParams.get('thumb') === '1';
+      const source = thumb && ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)
+        ? await ensureThumbnail(safePath, filePath) : filePath;
+      await sendMediaFile(req, res, source, {
+        'Content-Type': MIME_TYPES[path.extname(source).toLowerCase()] || 'application/octet-stream',
+        'Cache-Control': staticCacheControl(ext),
+      });
+      return;
+    }
     const data = await fsp.readFile(filePath);
-    sendStaticData(req, res, data, path.extname(filePath).toLowerCase());
+    await sendStaticData(req, res, data, path.extname(filePath).toLowerCase());
   } catch (error) {
     sendError(res, 404, "页面资源不存在");
   }
@@ -2436,7 +2431,7 @@ async function serveStaticFromDir(req, res, rootDir, relativePath, fallbackFile 
       filePath = path.join(filePath, "index.html");
     }
     const data = await fsp.readFile(filePath);
-    sendStaticData(req, res, data, path.extname(filePath).toLowerCase());
+    await sendStaticData(req, res, data, path.extname(filePath).toLowerCase());
   } catch (error) {
     if (fallbackFile) {
       const fallbackPath = path.resolve(rootDir, fallbackFile);
@@ -2446,7 +2441,7 @@ async function serveStaticFromDir(req, res, rootDir, relativePath, fallbackFile 
       }
       try {
         const data = await fsp.readFile(fallbackPath);
-        sendStaticData(req, res, data, path.extname(fallbackPath).toLowerCase());
+        await sendStaticData(req, res, data, path.extname(fallbackPath).toLowerCase());
         return;
       } catch (fallbackError) {
         sendError(res, 404, "页面资源不存在", fallbackError.message);
@@ -2477,19 +2472,16 @@ async function serveImage(req, res, id, attachment, user, thumb = false,
       // 缩略图生成失败（如 GIF/命令缺失）时回退原图，保证图能显示。
       servePath = await ensureThumbnail(id, filePath).catch(() => filePath);
     }
-    const data = await fsp.readFile(servePath);
     const ext = path.extname(servePath).toLowerCase();
     const headers = {
       "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
-      "Content-Length": data.length,
       // 图片按 id/路径不可变（文件名带时间戳），按用户私有长缓存，避免每次打开图库重复下载。
       "Cache-Control": cacheControl,
     };
     if (attachment) {
       headers["Content-Disposition"] = `attachment; filename="${path.basename(filePath)}"`;
     }
-    res.writeHead(200, headers);
-    res.end(data);
+    await sendMediaFile(req, res, servePath, headers);
   } catch (error) {
     sendError(res, 404, "图片不存在", error.message);
   }
@@ -2606,6 +2598,7 @@ async function handleApi(req, res, pathname, searchParams) {
   if (await accountApi.handle(req, res, pathname)) {
     return;
   }
+  if (await creativeApi(req, res, pathname, searchParams)) return;
 
   if (req.method === "GET" && pathname === "/api/showcase") {
     const data = await gallery.listShowcase({
@@ -2632,9 +2625,9 @@ async function handleApi(req, res, pathname, searchParams) {
     if (ownerUserId === null) return sendError(res, 404, "公开作品不存在");
     const owner = { id: ownerUserId, role: "user" };
     if (publicMedia[1] === "image") {
-      await serveImage(req, res, id, false, owner, searchParams.get("thumb") === "1", "no-store");
+      await serveImage(req, res, id, false, owner, searchParams.get("thumb") === "1", "private, no-cache");
     } else {
-      await serveVideo(req, res, id, false, owner, "no-store");
+      await serveVideo(req, res, id, false, owner, "private, no-cache");
     }
     return;
   }
@@ -2690,7 +2683,7 @@ async function handleApi(req, res, pathname, searchParams) {
     // 前端（vendor React 自定义服务商）轮询 /api/full-playground-proxy/tasks/:id 取结果。
     // 这样单条请求秒回，彻底绕开 Cloudflare 100s 超时；即使前端断开，图也已落盘、扣费必对应真实可找回的图。
     if (searchParams.get("async") === "true") {
-      const taskId = createGenerationTask(user.id);
+      const taskId = await createGenerationTask(user.id, { prompt: requestPrompt, model: requestedModel, count: requestedCount }, "proxy-image");
       sendJson(res, 200, { taskId });
       (async () => {
         try {
@@ -2713,14 +2706,14 @@ async function handleApi(req, res, pathname, searchParams) {
             activeConfig = await imageConfig.pickEndpoint(requestedModel);
           }
           if (!upstream.ok) {
-            failGenerationTask(taskId, `绘图聚集地上游 ${upstream.status}: ${text.slice(0, 300)}`);
+            await failGenerationTask(taskId, `绘图聚集地上游 ${upstream.status}: ${text.slice(0, 300)}`);
             return;
           }
           let payload;
           try {
             payload = text ? JSON.parse(text) : {};
           } catch {
-            failGenerationTask(taskId, "绘图聚集地上游返回非 JSON");
+            await failGenerationTask(taskId, "绘图聚集地上游返回非 JSON");
             return;
           }
           const records = await saveProxyImagesToLibrary({
@@ -2730,7 +2723,7 @@ async function handleApi(req, res, pathname, searchParams) {
             apiKey: activeConfig.apiKey,
           });
           if (!records.length) {
-            failGenerationTask(taskId, "绘图聚集地上游未返回可识别图片");
+            await failGenerationTask(taskId, "绘图聚集地上游未返回可识别图片");
             return;
           }
           const credits = await accounts.consumeCredits(
@@ -2738,12 +2731,12 @@ async function handleApi(req, res, pathname, searchParams) {
             records.length,
             `绘图聚集地 ${records.length} 张`,
           );
-          finishGenerationTask(taskId, {
+          await finishGenerationTask(taskId, {
             images: records.map((record) => ({ url: record.url })),
             credits,
           });
         } catch (error) {
-          failGenerationTask(taskId, error.message);
+          await failGenerationTask(taskId, error.message);
         }
       })();
       return;
@@ -2815,14 +2808,14 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
     const id = decodeURIComponent(pathname.replace("/api/full-playground-proxy/tasks/", ""));
-    const task = getGenerationTask(id, user);
+    const task = await getGenerationTask(id, user);
     if (!task) {
       sendError(res, 404, "任务不存在或已过期");
       return;
     }
     const origin = getPublicRequestOrigin(req.headers);
     sendJson(res, 200, {
-      status: task.status,
+      status: task.status === "interrupted" ? "error" : task.status,
       error: task.error,
       result: absolutizePlaygroundTaskResult(task.result, origin),
     });
@@ -3219,12 +3212,13 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = createGenerationTask(user.id);
+    const taskId = await createGenerationTask(user.id, payload, 'video');
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
         const video = await generateVideo({
           user,
+          taskId,
           mode: payload.mode === "image" ? "image" : "text",
           prompt: payload.prompt,
           ratio: payload.ratio,
@@ -3239,22 +3233,29 @@ async function handleApi(req, res, pathname, searchParams) {
             : (payload.sourceImageId ? [payload.sourceImageId] : []),
         });
         const balance = await accounts.consumeCredits(user.id, cost, `生成${seconds}秒视频`);
-        finishGenerationTask(taskId, { video, credits: balance });
+        await finishGenerationTask(taskId, { video, credits: balance });
       } catch (error) {
-        failGenerationTask(taskId, error.message);
+        await failGenerationTask(taskId, error.message);
       }
     })();
     return;
   }
 
   // 生图任务轮询：Cloudflare 100s 超时下，生图接口只返回 taskId，真正结果靠这个接口轮询取。
+  if (req.method === "GET" && pathname === "/api/tasks") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) return;
+    const result = await generationTasks.listTasks({ ...user, role: 'user' }, Object.fromEntries(searchParams));
+    return sendJson(res, 200, { ok: true, ...result });
+  }
+
   if (req.method === "GET" && pathname.startsWith("/api/tasks/")) {
     const user = await accountApi.requireUser(req, res);
     if (!user) {
       return;
     }
     const id = decodeURIComponent(pathname.replace("/api/tasks/", ""));
-    const task = getGenerationTask(id, user);
+    const task = await getGenerationTask(id, user);
     if (!task) {
       sendError(res, 404, "任务不存在或已过期");
       return;
@@ -3357,7 +3358,7 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = createGenerationTask(user.id);
+    const taskId = await createGenerationTask(user.id, payload);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
@@ -3369,9 +3370,9 @@ async function handleApi(req, res, pathname, searchParams) {
         });
         const balance = await accounts.consumeCredits(user.id, 1, "生成主图");
         await recordImageRecord(user.id, image);
-        finishGenerationTask(taskId, { image, credits: balance });
+        await finishGenerationTask(taskId, { image, credits: balance });
       } catch (error) {
-        failGenerationTask(taskId, error.message);
+        await failGenerationTask(taskId, error.message);
       }
     })();
     return;
@@ -3424,7 +3425,7 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = createGenerationTask(user.id);
+    const taskId = await createGenerationTask(user.id, payload);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
@@ -3437,9 +3438,9 @@ async function handleApi(req, res, pathname, searchParams) {
         });
         const balance = await accounts.consumeCredits(user.id, 1, `生成${IMAGE_TYPES[payload.type].label}`);
         await recordImageRecord(user.id, image);
-        finishGenerationTask(taskId, { image, credits: balance });
+        await finishGenerationTask(taskId, { image, credits: balance });
       } catch (error) {
-        failGenerationTask(taskId, error.message);
+        await failGenerationTask(taskId, error.message);
       }
     })();
     return;
@@ -3472,9 +3473,10 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = createGenerationTask(user.id);
+    const taskId = await createGenerationTask(user.id, payload);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
+      try {
       const tasks = batchTypes.map(async (type) => {
         try {
           const image = await generateImage({
@@ -3507,7 +3509,8 @@ async function handleApi(req, res, pathname, searchParams) {
         balance = (await accounts.getUserById(user.id))?.credits ?? 0;
       }
       await Promise.all(Object.values(results).map((img) => recordImageRecord(user.id, img)));
-      finishGenerationTask(taskId, { results, errors, credits: balance });
+      await finishGenerationTask(taskId, { results, errors, credits: balance });
+      } catch (error) { await failGenerationTask(taskId, error.message); }
     })();
     return;
   }
@@ -3532,7 +3535,7 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = createGenerationTask(user.id);
+    const taskId = await createGenerationTask(user.id, payload);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
@@ -3548,9 +3551,9 @@ async function handleApi(req, res, pathname, searchParams) {
           balance = (await accounts.getUserById(user.id))?.credits ?? 0;
         }
         await Promise.all(result.images.map((img) => recordImageRecord(user.id, img)));
-        finishGenerationTask(taskId, { imageSet: result.imageSet, images: result.images, credits: balance });
+        await finishGenerationTask(taskId, { imageSet: result.imageSet, images: result.images, credits: balance });
       } catch (error) {
-        failGenerationTask(taskId, error.message || "自由生图失败");
+        await failGenerationTask(taskId, error.message || "自由生图失败");
       }
     })();
     return;
@@ -3647,6 +3650,8 @@ if (require.main === module) {
     // 生视频元数据表建好。
     .then(() => videos.init())
     .then(() => gallery.init())
+    .then(() => generationTasks.init())
+    .then(() => creativeResources.init())
     .then(() => {
       server.listen(PORT, HOST, () => {
         console.log(`AI 图像设计工作台已启动：http://${HOST}:${PORT}`);

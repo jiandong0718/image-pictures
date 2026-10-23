@@ -38,7 +38,7 @@ function setFilter(filter) {
 function buildCover(item) {
   const media = item.kind === "video" ?
     '<video src="' + escapeHtml(item.url) + '" muted playsinline preload="metadata"></video>' :
-    '<img src="' + escapeHtml(item.url) + '?thumb=1" alt="" loading="lazy" />';
+    '<img src="' + escapeHtml(item.url) + '?thumb=1" alt="" loading="lazy" decoding="async" />';
   return '<div class="gallery-cover">' + media +
     '<span class="gallery-cover-count">' + (item.kind === "video" ? "VIDEO" : escapeHtml(item.label)) + '</span>' +
     (item.published ? '<span class="gallery-cover-public">已发布</span>' : "") + '</div>';
@@ -184,7 +184,7 @@ function renderDetail() {
     '<button type="button" data-index="' + index + '" aria-label="查看第 ' + (index + 1) + ' 件作品" aria-current="' +
     String(index === state.index) + '">' +
     (entry.kind === "video" ? '<span class="video-thumb">▶</span>' :
-      '<img src="' + escapeHtml(entry.url) + '?thumb=1" alt="" loading="lazy" />') + "</button>").join("");
+      '<img src="' + escapeHtml(entry.url) + '?thumb=1" alt="" loading="lazy" decoding="async" />') + "</button>").join("");
   els.detailThumbs.querySelectorAll("button").forEach((button) =>
     button.addEventListener("click", () => selectItem(Number(button.dataset.index))));
   els.detailPrompt.textContent = item.prompt || "这件作品没有保存提示词，仍可查看和下载原文件。";

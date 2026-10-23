@@ -1,3 +1,4 @@
+import { previewUrl } from "/shared/media.js";
 import { apiGet, fetchMe } from "/shared/api.js";
 import { DEFAULT_AUTH_DESTINATION, resolveAuthDestination } from "/shared/auth-navigation.js";
 import { saveReuse } from "/shared/reuse.js";
@@ -450,7 +451,7 @@ function promptOf(item) {
 
 function mediaMarkup(item) {
   if (item.image) {
-    return imageMarkup(item.image);
+    return imageMarkup(previewUrl(item.image));
   }
   if (item.demo) {
     return '<span class="demo-art demo-art-' + item.demo + '"></span>';
@@ -458,12 +459,12 @@ function mediaMarkup(item) {
   if (item.kind === "video") {
     return '<span class="video-poster" aria-hidden="true">▶</span>';
   }
-  return imageMarkup(item.url + '?thumb=1');
+  return imageMarkup(previewUrl(item.url));
 }
 
 function imageMarkup(source) {
   const src = escapeHtml(source);
-  return '<img class="work-media-image" src="' + src + '" alt="" loading="lazy" />';
+  return '<img class="work-media-image" src="' + src + '" alt="" loading="lazy" decoding="async" />';
 }
 
 function renderCard(item, index) {
@@ -496,8 +497,8 @@ function renderShareCard() {
   return card;
 }
 
-function render() {
-  els.grid.replaceChildren();
+function render(append = false) {
+  if (!append) els.grid.replaceChildren();
   const showVideoPromo = !state.keyword && (state.media === "all" || state.media === "video");
   const promoWasVisible = !els.videoPromo.hidden;
   els.videoPromo.hidden = !showVideoPromo;
@@ -531,7 +532,11 @@ function render() {
     els.count.textContent = state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品");
     els.status.textContent = "";
   } else {
-    state.items.forEach((item, index) => els.grid.appendChild(renderCard(item, index)));
+    const visibleIds = new Set(Array.from(els.grid.children, card => card.dataset.mediaKey));
+    state.items.forEach((item, index) => {
+      const key = `${item.kind}:${item.id}`;
+      if (!visibleIds.has(key)) { const card = renderCard(item, index); card.dataset.mediaKey = key; els.grid.appendChild(card); }
+    });
     els.count.textContent = state.total + (state.language === "en" ? " " + tr("publicCount") : " 件公开作品");
     els.status.textContent = "";
   }
@@ -555,7 +560,7 @@ async function load(reset = true) {
     if (request !== state.request) return;
     state.total = data.pagination?.total || 0;
     state.items = reset ? (data.items || []) : [...state.items, ...(data.items || [])];
-    render();
+    render(!reset);
   } catch (error) {
     if (request !== state.request) return;
     if (!reset) state.page = Math.max(1, state.page - 1);

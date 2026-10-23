@@ -1,3 +1,4 @@
+import { previewUrl } from "/shared/media.js";
 // 自由生图页（赛博画布布局）：中间画布（提示词 + 结果网格），右侧控制面板
 // （张数 / 分辨率 / 输出比例(+自定义) / 背景 / 附加要求 / 开始生成）。文生图，每张 1 积分。
 
@@ -224,7 +225,7 @@ function renderReference() {
     els.referenceContent.querySelector("button").addEventListener("click", () => els.referenceInput.click());
     return;
   }
-  els.referenceContent.innerHTML = `<div class="pg-reference-preview"><img src="${referenceImage.url}" alt="参考图" /><button class="btn sm pg-reference-remove" id="removeReference" type="button">移除</button></div>`;
+  els.referenceContent.innerHTML = `<div class="pg-reference-preview"><img src="${previewUrl(referenceImage.url)}" decoding="async" alt="参考图" /><button class="btn sm pg-reference-remove" id="removeReference" type="button">移除</button></div>`;
   els.referenceContent.querySelector("button").addEventListener("click", () => {
     referenceImage = null;
     save();
@@ -303,7 +304,7 @@ function renderStage() {
     if (image) {
       item.innerHTML = `
         <div class="pg-shot-media">
-          <img src="${image.url}?t=${enc(image.createdAt || "")}" alt="结果 ${i + 1}" loading="lazy" />
+          <img src="${previewUrl(image.url)}" alt="结果 ${i + 1}" loading="lazy" decoding="async" />
         </div>
         <div class="pg-shot-bar">
           <span class="badge ok">结果 ${i + 1}</span>
@@ -411,6 +412,7 @@ async function awaitTask(taskId) {
         break;
       }
       if (data.status === "error") throw new Error(data.error || "生成失败");
+      if (data.status === "interrupted") throw new Error(data.error || "任务已中断，请先查看图库确认结果");
       if (Date.now() > deadline) throw new Error("生成超时，请稍后重试");
       await new Promise((r) => setTimeout(r, 1500));
     }

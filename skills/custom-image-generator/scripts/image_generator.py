@@ -70,6 +70,7 @@ def parse_args() -> argparse.Namespace:
         help="API style to use",
     )
     parser.add_argument("--image", default="", help="Source image path used for edits")
+    parser.add_argument("--reference-image", action="append", default=[], help="Additional reference image path; repeat for multiple references")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--filename-prefix", default="image")
     parser.add_argument("--n", type=int, default=1, help="Requested image count")
@@ -248,6 +249,8 @@ def build_request_preview(endpoint: str, prompt: str, args: argparse.Namespace) 
     if endpoint == "edits":
         preview = dict(payload)
         preview["image"] = args.image
+        if getattr(args, "reference_image", None):
+            preview["reference_images"] = list(args.reference_image)
         return preview
     return payload
 
@@ -380,12 +383,14 @@ def execute_request(endpoint: str, prompt: str, args: argparse.Namespace) -> dic
     url = make_url(args.api_base, endpoint)
     payload = build_payload(endpoint, prompt, args)
     if endpoint == "edits":
-        image_path, image_data, image_mime = load_upload(args.image, "源图")
+        sources = list(dict.fromkeys([args.image, *getattr(args, "reference_image", [])]))
+        uploads = [load_upload(source, "源图") for source in sources]
+        image_field = "image[]" if len(uploads) > 1 else "image"
         return post_multipart(
             url,
             args.api_key,
             fields=payload,
-            files=[("image", image_path, image_data, image_mime)],
+            files=[(image_field, image_path, image_data, image_mime) for image_path, image_data, image_mime in uploads],
             timeout=args.timeout,
         )
     return post_json(url, args.api_key, payload, args.timeout)

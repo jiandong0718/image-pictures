@@ -1,3 +1,4 @@
+import { previewUrl } from "/shared/media.js";
 // 套图工作台核心引擎（被三个工作台页面复用，但每个页面有自己独立的入口 JS 与 HTML）。
 // 通过 createStudio(config) 注入：模式、衍生类型、默认提示词、文案。引擎负责：
 // 套图分配、主图生成/上传、衍生图单张/批量生成、图板渲染、积分余额联动。
@@ -182,7 +183,8 @@ export function createStudio(config) {
     if (image) {
       preview.innerHTML = "";
       const img = document.createElement("img");
-      img.src = `${image.url}?t=${encodeURIComponent(image.createdAt || "")}`;
+      img.src = previewUrl(image.url);
+      img.decoding = "async";
       img.alt = typeLabels[type] || type;
       img.loading = "lazy";
       img.addEventListener("click", () => window.open(image.url, "_blank", "noopener"));

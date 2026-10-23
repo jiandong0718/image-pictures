@@ -1,0 +1,14 @@
+.prompt-library-summary { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 18px; color: var(--ink-soft); font-size: 14px; }
+.prompt-library-summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.prompt-sync-result { margin: 0 0 20px; }
+.prompt-sync-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.6; }
+.prompt-sync-table th, .prompt-sync-table td { border-bottom: 1px solid var(--line); text-align: left; padding: 10px 8px; overflow-wrap: anywhere; }
+.prompt-sync-table th { color: var(--ink-soft); font-weight: 500; }
+.prompt-sync-table td:last-child { color: var(--ink-soft); }
+.prompt-sync-table tr[data-result="failed"] td:last-child, .prompt-sync-table tr[data-result="unknown"] td:last-child { color: var(--danger); }
+.prompt-card-cover { aspect-ratio: 4 / 3; width: 100%; object-fit: cover; background: var(--bg-1); display: block; }
+.prompt-detail-references { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; margin: 18px 0; }
+.prompt-detail-references img { width: 100%; max-height: 340px; object-fit: contain; border-radius: var(--radius-sm); background: var(--bg-1); }
+.prompt-source-count { font-variant-numeric: tabular-nums; color: var(--ink-soft); margin-left: 8px; font-size: 12px; white-space: nowrap; }
+.prompt-image-error { color: var(--ink-mute); font-size: 12px; padding: 16px; margin: 0; text-align: center; }
+@media (max-width: 600px) { .prompt-sync-table th, .prompt-sync-table td { padding: 8px 4px; } }
