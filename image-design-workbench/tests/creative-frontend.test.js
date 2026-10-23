@@ -138,7 +138,8 @@ test("工作台为最新生成记录提供直达进度或结果的入口", async
   assert.equal(page.element("generationProgressTitle").textContent, "正在生成");
   page.run('history = [{ id: "done", status: "done", images: [{ id: "image.png" }] }]; syncHistoryLink();');
   assert.equal(page.element("viewHistory").textContent, "查看结果");
-  assert.equal(page.element("generationProgressTitle").textContent, "已生成 1 张图片");
+  assert.equal(page.element("generationProgressTitle").textContent, "生成完成");
+  assert.equal(page.element("generationProgressDetail").textContent, "已生成 1 张，结果已保存到下方");
 });
 
 for (const status of [403, 404]) {

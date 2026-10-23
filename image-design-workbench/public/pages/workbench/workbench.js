@@ -32,8 +32,8 @@ function syncHistoryLink() {
   const isDone = latest.status === "done" && latest.images?.length;
   const isPaused = latest.status === "paused";
   panel.dataset.state = isDone ? "done" : isPaused ? "paused" : "pending";
-  $("generationProgressTitle").textContent = isDone ? `已生成 ${latest.images.length} 张图片` : isPaused ? "任务状态待核对" : "正在生成";
-  $("generationProgressDetail").textContent = latest.message || (isDone ? "结果已保存到下方记录" : isPaused ? "请重新查询任务后再继续创作" : "任务已提交，请等待结果");
+  $("generationProgressTitle").textContent = isDone ? "生成完成" : isPaused ? "任务状态待核对" : "正在生成";
+  $("generationProgressDetail").textContent = isDone ? `已生成 ${latest.images.length} 张，结果已保存到下方` : latest.message === "正在生成…" ? "任务已提交，完成后结果会显示在下方" : latest.message || (isPaused ? "请重新查询任务后再继续创作" : "任务已提交，请等待结果");
   button.textContent = isDone ? "查看结果" : isPaused ? "查看任务" : "查看进度";
 }
 function persistDraft() {
