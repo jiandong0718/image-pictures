@@ -14,6 +14,19 @@ function isAllowedNanoBananaPrompt(item) {
   return text.length > 0 && !/\b(nsfw|porn|porno|nude|nudity|naked|topless|explicit|erotic|fetish|sexual|lingerie|underwear|minor|child|teenage)\b/.test(text);
 }
 
+function nanoBananaTitle(item, index) {
+  const raw = sourceText(item?.title, 160);
+  const concise = raw.split(/\b(?:prompt(?:\s*[:：]|\s+create\b)|create\s+image\s*[:：]|image\s+prompt\s*[:：])/i)[0]
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\s+/g, " ")
+    .replace(/[.·:：\-–—\s]+$/, "")
+    .trim();
+  if (concise.length >= 4 && concise.length <= 90) return concise;
+  const category = sourceText(item?.category, 40);
+  const style = sourceText(item?.style, 40);
+  return ["Nano Banana", category, style].filter(Boolean).join(" · ") || `Nano Banana 提示词 ${index + 1}`;
+}
+
 // 创作卡片页使用 12/18 条，独立于旧图库的 10/20/50 分页规则。
 function normalizePagination(rawPage, rawPageSize) {
   const page = Number.isSafeInteger(Number(rawPage)) && Number(rawPage) > 0 && Number(rawPage) <= 1000000 ? Number(rawPage) : 1;
@@ -35,7 +48,7 @@ const PROMPT_SOURCES = Object.freeze([
     "imgedify-nano-banana-pro",
     "ImgEdify Nano Banana Pro（精选 1000）",
     "https://raw.githubusercontent.com/ImgEdify/awesome-nano-banana-pro-prompts/main/data/prompts.json",
-    { maxItems: 1000, maxBytes: MAX_TRUSTED_SOURCE_BYTES, timeoutMs: 60000, useRemoteImages: false, filter: isAllowedNanoBananaPrompt },
+    { maxItems: 1000, maxBytes: MAX_TRUSTED_SOURCE_BYTES, timeoutMs: 60000, formatTitle: nanoBananaTitle, filter: isAllowedNanoBananaPrompt },
   ],
 ].map(([id, title, url, options = {}]) => Object.freeze({
   id,
@@ -118,7 +131,7 @@ function normalizeSourcePrompts(value, sourceId, sourceInfo) {
   if (!bounded.length) throw inputError("来源没有可用的提示词", 502);
   const normalized = bounded.map((item, index) => {
     const content = cleanText(item?.content ?? item?.prompt, "来源提示词", MAX_CONTENT, true);
-    const title = cleanText(item?.title ?? item?.name ?? item?.act ?? `提示词 ${index + 1}`, "来源标题", 160, true);
+    const title = cleanText(typeof source.formatTitle === "function" ? source.formatTitle(item, index) : item?.title ?? item?.name ?? item?.act ?? `提示词 ${index + 1}`, "来源标题", 160, true);
     const originalId = ["string", "number"].includes(typeof item?.id) ? String(item.id).trim() : "";
     // 同样的文案可以对应不同案例/封面；以源内 ID 识别，不能按正文合并。
     const identity = originalId || `item-${index + 1}-${crypto.createHash("sha256").update(JSON.stringify(item)).digest("hex").slice(0, 20)}`;

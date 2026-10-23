@@ -215,18 +215,18 @@ test("公共条目保留来源、作者、描述和安全图片链接，相同�
   assert.equal(normalizeSourcePrompts([{ title: "同文", prompt: "同文", coverUrl: "https://a.example/1" }, { title: "同文", prompt: "同文", coverUrl: "https://a.example/2" }], source.id).length, 2);
 });
 
-test("独立 Nano Banana 来源只保留前 1000 条安全提示词，并保留归因而不拉取外部示例图", () => {
+test("独立 Nano Banana 来源只保留前 1000 条安全提示词，使用清晰标题并保留示例图链接和归因", () => {
   const source = PROMPT_SOURCES.find((item) => item.id === "imgedify-nano-banana-pro");
   assert.equal(source.maxItems, 1000);
-  assert.equal(source.useRemoteImages, false);
-  const raw = Array.from({ length: 1002 }, (_, index) => ({ id: index + 1, title: `案例 ${index + 1}`, prompt: `safe image prompt ${index + 1}`, author: "原作者", source_url: `https://example.com/${index + 1}`, images: [`https://images.example/${index + 1}.jpg`], category: "product", style: "realistic", tags: ["商品"] }));
+  const raw = Array.from({ length: 1002 }, (_, index) => ({ id: index + 1, title: `案例 ${index + 1} · Prompt: safe image prompt ${index + 1}`, prompt: `safe image prompt ${index + 1}`, author: "原作者", source_url: `https://example.com/${index + 1}`, images: [`https://images.example/${index + 1}.jpg`], category: "product", style: "realistic", tags: ["商品"] }));
   raw.splice(5, 0, { id: "blocked", title: "不应导入", prompt: "nsfw image prompt", tags: [] });
   const items = normalizeSourcePrompts(raw, source.id);
   assert.equal(items.length, 1000);
+  assert.equal(items[0].title, "案例 1");
   assert.equal(items[0].author, "原作者");
   assert.equal(items[0].sourceUrl, "https://example.com/1");
-  assert.equal(items[0].coverUrl, "");
-  assert.deepEqual(items[0].referenceImageUrls, []);
+  assert.equal(items[0].coverUrl, "https://images.example/1.jpg");
+  assert.deepEqual(items[0].referenceImageUrls, ["https://images.example/1.jpg"]);
   assert.ok(items.every((item) => !/nsfw/i.test(item.content)));
 });
 
