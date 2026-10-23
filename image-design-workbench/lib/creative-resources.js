@@ -6,7 +6,13 @@ const { inputError, cleanText, normalizeAudioConfig, readLimitedBody } = require
 const MAX_TAGS = 20;
 const MAX_CONTENT = 20000;
 const MAX_SOURCE_BYTES = 5 * 1024 * 1024;
+const MAX_TRUSTED_SOURCE_BYTES = 20 * 1024 * 1024;
 const SOURCE_RETRY_MS = 60000;
+
+function isAllowedNanoBananaPrompt(item) {
+  const text = String(item?.prompt ?? item?.content ?? "").toLowerCase();
+  return text.length > 0 && !/\b(nsfw|porn|porno|nude|nudity|naked|topless|explicit|erotic|fetish|sexual|lingerie|underwear|minor|child|teenage)\b/.test(text);
+}
 
 // 创作卡片页使用 12/18 条，独立于旧图库的 10/20/50 分页规则。
 function normalizePagination(rawPage, rawPageSize) {
@@ -25,7 +31,18 @@ const PROMPT_SOURCES = Object.freeze([
   ["awesome-gpt4o-image-prompts", "Awesome GPT-4o"],
   ["youmind-gpt-image-2", "YouMind GPT Image 2"],
   ["youmind-nano-banana-pro", "YouMind Nano Banana Pro"],
-].map(([id, title]) => Object.freeze({ id, title, url: `https://raw.githubusercontent.com/yukkcat/image-prompts/main/dist/sources/${id}.json` })));
+  [
+    "imgedify-nano-banana-pro",
+    "ImgEdify Nano Banana Pro（精选 1000）",
+    "https://raw.githubusercontent.com/ImgEdify/awesome-nano-banana-pro-prompts/main/data/prompts.json",
+    { maxItems: 1000, maxBytes: MAX_TRUSTED_SOURCE_BYTES, timeoutMs: 60000, useRemoteImages: false, filter: isAllowedNanoBananaPrompt },
+  ],
+].map(([id, title, url, options = {}]) => Object.freeze({
+  id,
+  title,
+  url: url || `https://raw.githubusercontent.com/yukkcat/image-prompts/main/dist/sources/${id}.json`,
+  ...options,
+})));
 
 function normalizeTags(raw = []) {
   if (!Array.isArray(raw) || raw.length > MAX_TAGS) throw inputError("标签需为数组，最多 20 个");
@@ -96,13 +113,17 @@ function normalizeSourcePrompts(value, sourceId, sourceInfo) {
   const items = Array.isArray(value) ? value : value?.prompts || value?.items || value?.data;
   if (!Array.isArray(items) || !items.length || items.length > 10000) throw inputError("来源必须是非空的标准 JSON 提示词数组，最多 10000 条", 502);
   const source = sourceInfo || PROMPT_SOURCES.find((item) => item.id === sourceId) || { id: sourceId, title: sourceId };
-  const normalized = items.map((item, index) => {
+  const accepted = typeof source.filter === "function" ? items.filter((item) => source.filter(item)) : items;
+  const bounded = accepted.slice(0, Number.isSafeInteger(source.maxItems) ? source.maxItems : 10000);
+  if (!bounded.length) throw inputError("来源没有可用的提示词", 502);
+  const normalized = bounded.map((item, index) => {
     const content = cleanText(item?.content ?? item?.prompt, "来源提示词", MAX_CONTENT, true);
     const title = cleanText(item?.title ?? item?.name ?? item?.act ?? `提示词 ${index + 1}`, "来源标题", 160, true);
     const originalId = ["string", "number"].includes(typeof item?.id) ? String(item.id).trim() : "";
     // 同样的文案可以对应不同案例/封面；以源内 ID 识别，不能按正文合并。
     const identity = originalId || `item-${index + 1}-${crypto.createHash("sha256").update(JSON.stringify(item)).digest("hex").slice(0, 20)}`;
-    return publicSourcePrompt({ id: `${sourceId}:${identity}`, originalId, title, content, tags: normalizeTags(item?.tags || []), description: item?.description, author: item?.author, coverUrl: item?.coverUrl, referenceImageUrls: item?.referenceImageUrls, sourceUrl: item?.sourceUrl }, source);
+    const tags = [...(Array.isArray(item?.tags) ? item.tags : []), item?.category, item?.style].filter(Boolean);
+    return publicSourcePrompt({ id: `${sourceId}:${identity}`, originalId, title, content, tags: normalizeTags(tags), description: item?.description, author: item?.author, coverUrl: source.useRemoteImages === false ? "" : item?.coverUrl || item?.images?.[0], referenceImageUrls: source.useRemoteImages === false ? [] : item?.referenceImageUrls || item?.images, sourceUrl: item?.sourceUrl || item?.source_url }, source);
   });
   return [...new Map(normalized.map((item) => [item.id, item])).values()];
 }
@@ -253,7 +274,7 @@ function createCreativeResources({ getPool = () => require("./db").getPool(), fe
         active.didFetch = true;
         const response = await fetchImpl(source.url, { redirect: "error", signal: controller.signal, headers: { Accept: "application/json" } });
         if (!response.ok) { await response.body?.cancel(); throw inputError(`来源返回 HTTP ${response.status}`, 502); }
-        const raw = await readLimitedBody(response, MAX_SOURCE_BYTES);
+      const raw = await readLimitedBody(response, Math.min(MAX_TRUSTED_SOURCE_BYTES, source.maxBytes || MAX_SOURCE_BYTES));
         const items = normalizeSourcePrompts(JSON.parse(raw.toString("utf8")), sourceId, source);
         await getPool().query("INSERT INTO creative_prompt_cache (source_id, items) VALUES (?, ?) ON DUPLICATE KEY UPDATE items = VALUES(items), updated_at = CURRENT_TIMESTAMP", [sourceId, JSON.stringify(items)]);
         const result = { sourceId, sourceName: source.title, count: items.length, cachedAt: new Date().toISOString(), reused: false, success: true };

@@ -59,7 +59,7 @@ async function poll(id, audio = false) {
   assert.equal((await request('/api/assets/file/' + image.id, null, 'GET', otherCookie)).response.status, 404);
   assert.equal((await request('/api/compositions/resolve', { text: `@[asset:${image.id}]` }, 'POST', otherCookie)).response.status, 404);
   assert.equal((await request('/api/audio-config', { model: 'other' }, 'POST', otherCookie)).response.status, 403);
-  assert.equal((await request('/api/prompt-sources')).data.sources.length, 7);
+  assert.equal((await request('/api/prompt-sources')).data.sources.length, 8);
   for (const route of ['/workbench','/prompts','/assets','/audio','/playground','/video','/retouch','/studio/hat','/my-images']) {
     const page = await fetch(base + route, { headers: { Cookie: cookie } });
     assert.equal(page.status, 200, route);

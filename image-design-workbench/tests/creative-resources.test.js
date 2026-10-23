@@ -97,8 +97,8 @@ test("编排按标记出现顺序替换、合并引用且同一图片不重复�
   await assert.rejects(resources.resolveComposition(10, { text: "@[asset:6]" }), /仅支持文本和图片/);
 });
 
-test("七个标准 JSON 来源来自固定 registry，刷新禁止任意 URL 和重定向", async () => {
-  assert.equal(PROMPT_SOURCES.length, 7);
+test("八个标准 JSON 来源来自固定 registry，刷新禁止任意 URL 和重定向", async () => {
+  assert.equal(PROMPT_SOURCES.length, 8);
   const { pool, cache } = fixture();
   const calls = [];
   const resources = createCreativeResources({ getPool: () => pool, fetchImpl: async (url, options) => {
@@ -215,6 +215,21 @@ test("公共条目保留来源、作者、描述和安全图片链接，相同�
   assert.equal(normalizeSourcePrompts([{ title: "同文", prompt: "同文", coverUrl: "https://a.example/1" }, { title: "同文", prompt: "同文", coverUrl: "https://a.example/2" }], source.id).length, 2);
 });
 
+test("独立 Nano Banana 来源只保留前 1000 条安全提示词，并保留归因而不拉取外部示例图", () => {
+  const source = PROMPT_SOURCES.find((item) => item.id === "imgedify-nano-banana-pro");
+  assert.equal(source.maxItems, 1000);
+  assert.equal(source.useRemoteImages, false);
+  const raw = Array.from({ length: 1002 }, (_, index) => ({ id: index + 1, title: `案例 ${index + 1}`, prompt: `safe image prompt ${index + 1}`, author: "原作者", source_url: `https://example.com/${index + 1}`, images: [`https://images.example/${index + 1}.jpg`], category: "product", style: "realistic", tags: ["商品"] }));
+  raw.splice(5, 0, { id: "blocked", title: "不应导入", prompt: "nsfw image prompt", tags: [] });
+  const items = normalizeSourcePrompts(raw, source.id);
+  assert.equal(items.length, 1000);
+  assert.equal(items[0].author, "原作者");
+  assert.equal(items[0].sourceUrl, "https://example.com/1");
+  assert.equal(items[0].coverUrl, "");
+  assert.deepEqual(items[0].referenceImageUrls, []);
+  assert.ok(items.every((item) => !/nsfw/i.test(item.content)));
+});
+
 test("全部公共库只聚合七源缓存，跨源搜索标签后全局分页，mine 仍按用户隔离", async () => {
   const { pool, cache, queries } = fixture();
   for (const [index, source] of PROMPT_SOURCES.entries()) cache.set(source.id, { items: JSON.stringify([
@@ -225,12 +240,12 @@ test("全部公共库只聚合七源缓存，跨源搜索标签后全局分页�
   await resources.savePrompt(10, { title: "私有", content: "私人正文", tags: [] });
   const privateQueries = queries.length;
   const result = await resources.listPrompts(10, { source: "all", q: "光影说明", tag: "商品", page: 2, pageSize: 3 });
-  assert.equal(result.total, 7);
-  assert.equal(result.totalAvailable, 14);
+  assert.equal(result.total, 8);
+  assert.equal(result.totalAvailable, 16);
   assert.equal(result.items.length, 3);
   assert.equal(result.items[0].sourceId, PROMPT_SOURCES[3].id);
   assert.equal(result.items.every((item) => item.readOnly), true);
-  assert.equal(result.sources.length, 7);
+  assert.equal(result.sources.length, 8);
   assert.deepEqual(result.tags, ["人物", "商品"]);
   assert.equal(queries.slice(privateQueries).some(({ sql }) => sql.includes("creative_prompts")), false);
   assert.equal((await resources.listPrompts(10, { source: "all", q: "私人正文" })).total, 0);
@@ -251,13 +266,13 @@ test("首次公共读取自动同步缺失来源，多用户并发只拉取一�
     return new Response(JSON.stringify([{ id: "one", title: "公开内容", prompt: "测试正文" }]));
   } });
   const [first, second] = await Promise.all([resources.listPrompts(10, { source: "all" }), resources.listPrompts(20, { source: "all" })]);
-  assert.equal(first.total, 6);
-  assert.equal(second.total, 6);
+  assert.equal(first.total, 7);
+  assert.equal(second.total, 7);
   assert.equal(first.warnings.length, 1);
-  assert.equal(calls.length, 7);
-  assert.equal(new Set(calls).size, 7);
+  assert.equal(calls.length, 8);
+  assert.equal(new Set(calls).size, 8);
   await resources.listPrompts(10, { source: "all" });
-  assert.equal(calls.length, 7);
+  assert.equal(calls.length, 8);
 });
 
 test("强制全同步绕过新鲜旧缓存补齐 metadata，失败来源保留原记录并返回逐源结果", async () => {
@@ -273,10 +288,10 @@ test("强制全同步绕过新鲜旧缓存补齐 metadata，失败来源保留�
   await resources.refreshAllSources();
   assert.equal(calls, 0);
   const result = await resources.refreshAllSources({ force: true });
-  assert.equal(calls, 7);
-  assert.equal(result.successCount, 6);
+  assert.equal(calls, 8);
+  assert.equal(result.successCount, 7);
   assert.equal(result.failureCount, 1);
-  assert.equal(result.count, 7);
+  assert.equal(result.count, 8);
   assert.equal(result.results[0].stale, true);
   assert.match(result.results[0].error, /503/);
   assert.equal(cache.get(PROMPT_SOURCES[0].id), old);
@@ -295,11 +310,11 @@ test("并发全部同步复用每个来源的同一请求，强制同步不会�
     return new Response(JSON.stringify([{ id: "fresh", title: "同步", prompt: "完整正文" }]));
   } });
   await Promise.all([resources.refreshAllSources({ force: true }), resources.refreshAllSources({ force: true })]);
-  assert.equal(calls, 7);
+  assert.equal(calls, 8);
   const first = PROMPT_SOURCES[0].id;
   assert.ok(cache.has(first));
   await Promise.all([resources.refreshPromptSource(first), resources.refreshPromptSource(first, { force: true })]);
-  assert.equal(calls, 8);
+  assert.equal(calls, 9);
 });
 
 test("缺失来源处于失败冷却时，用户强制同步仍可绕过并补齐缓存", async () => {
