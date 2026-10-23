@@ -21,10 +21,12 @@ function nanoBananaTitle(item, index) {
     .replace(/\s+/g, " ")
     .replace(/[.·:：\-–—\s]+$/, "")
     .trim();
-  if (concise.length >= 4 && concise.length <= 90) return concise;
+  const generic = /^(?:nano\s+banana(?:\s+pro)?(?:\s+via)?|gemini\s+nano\s+banana(?:\s+prompt)?|i\s+created\s+it\s+on\s+gemini\s+nano\s+banana.*)$/i;
+  if (concise.length >= 4 && concise.length <= 90 && !generic.test(concise)) return concise;
   const category = sourceText(item?.category, 40);
   const style = sourceText(item?.style, 40);
-  return ["Nano Banana", category, style].filter(Boolean).join(" · ") || `Nano Banana 提示词 ${index + 1}`;
+  const identity = ["string", "number"].includes(typeof item?.id) ? String(item.id).trim() : String(index + 1);
+  return ["Nano Banana", category, style, `案例 ${identity}`].filter(Boolean).join(" · ");
 }
 
 // 创作卡片页使用 12/18 条，独立于旧图库的 10/20/50 分页规则。

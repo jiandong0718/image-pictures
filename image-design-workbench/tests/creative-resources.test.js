@@ -228,6 +228,8 @@ test("独立 Nano Banana 来源只保留前 1000 条安全提示词，使用清�
   assert.equal(items[0].coverUrl, "https://images.example/1.jpg");
   assert.deepEqual(items[0].referenceImageUrls, ["https://images.example/1.jpg"]);
   assert.ok(items.every((item) => !/nsfw/i.test(item.content)));
+  const generic = normalizeSourcePrompts([{ id: 99, title: "Nano Banana Pro via https://example.com Prompt: test", prompt: "safe image prompt", category: "portrait", style: "realistic" }], source.id);
+  assert.equal(generic[0].title, "Nano Banana · portrait · realistic · 案例 99");
 });
 
 test("全部公共库只聚合七源缓存，跨源搜索标签后全局分页，mine 仍按用户隔离", async () => {
