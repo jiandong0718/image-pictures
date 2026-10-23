@@ -22,6 +22,13 @@ function syncGenerateButton() {
   button.disabled = submitting || inFlight || !configured || !$("prompt").value.trim();
   button.textContent = submitting ? "正在提交…" : inFlight ? "正在生成…" : "开始生成";
 }
+function syncHistoryLink() {
+  const button = $("viewHistory");
+  const latest = history[0];
+  button.hidden = !latest;
+  if (!latest) return;
+  button.textContent = latest.status === "done" && latest.images?.length ? "查看生成结果" : "查看生成进度";
+}
 function persistDraft() {
   const saved = writeStored(user.id, "draft", draft());
   $("draftStatus").textContent = saved ? "草稿已自动保存" : "浏览器存储已满，草稿暂未保存";
@@ -57,7 +64,7 @@ function addAsset(item) {
   insertText(referenceToken(id)); renderReferences();
 }
 function saveHistory() { if (!writeStored(user.id, "history", history)) setStatus($("generateStatus"), "浏览器存储不足，生成记录暂未保存；已生成图片可在我的图库查看", "error"); }
-function updateBatch(batch) { history = mergeBatch(history, batch); saveHistory(); renderHistory(); syncGenerateButton(); }
+function updateBatch(batch) { history = mergeBatch(history, batch); saveHistory(); renderHistory(); syncGenerateButton(); syncHistoryLink(); }
 
 function renderHistory() {
   $("historyCount").textContent = `${history.length} 次创作`;
@@ -134,7 +141,7 @@ async function main() {
   const saved = readStored(user.id, "draft", {});
   history = readStored(user.id, "history", []); if (!Array.isArray(history)) history = [];
   schemes = readStored(user.id, "schemes", []); if (!Array.isArray(schemes)) schemes = [];
-  renderHistory(); renderSchemes();
+  renderHistory(); renderSchemes(); syncHistoryLink();
   try {
     const data = await apiGet("/api/image-config"); configured = Boolean(data.config?.uploaded);
     $("model").innerHTML = '<option value="">自动选择</option>' + (data.models || []).map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join("");
@@ -154,6 +161,10 @@ async function main() {
     catch (error) { if (current === previewVersion) setStatus($("composeStatus"), error.message, "error"); } finally { $("previewComposition").disabled = false; }
   });
   $("savePrompt").addEventListener("click", saveAsPrompt); $("generate").addEventListener("click", generate);
+  $("viewHistory").addEventListener("click", () => {
+    $("historyPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("historyPanel").focus({ preventScroll: true });
+  });
   $("saveScheme").addEventListener("click", () => {
     const title = $("schemeName").value.trim(); if (!title) return setStatus($("schemeStatus"), "请输入方案名称", "error");
     schemes.unshift({ id: crypto.randomUUID(), title, draft: draft() });

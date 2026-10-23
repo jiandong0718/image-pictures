@@ -82,7 +82,7 @@ async function pageHarness(filename, overrides = {}) {
   const source = await fs.readFile(path.join(__dirname, `../public/pages/${filename}`), "utf8");
   const elements = new Map();
   function element(id) {
-    if (!elements.has(id)) elements.set(id, { value: id === "prompt" ? "测试朗读" : "", options: [], hidden: false, disabled: false, textContent: "", innerHTML: "", setAttribute() {}, removeAttribute() {} });
+    if (!elements.has(id)) elements.set(id, { value: id === "prompt" ? "测试朗读" : "", options: [], hidden: false, disabled: false, textContent: "", innerHTML: "", setAttribute() {}, removeAttribute() {}, scrollIntoView() {}, focus() {} });
     return elements.get(id);
   }
   const writes = [];
@@ -125,6 +125,15 @@ test("图片任务待生成或待核对时保持提交入口禁用，终态才�
   page.run('history = [{ id: "done", status: "done" }]; syncGenerateButton();');
   assert.equal(page.element("generate").disabled, false);
   assert.equal(page.element("generate").textContent, "开始生成");
+});
+
+test("工作台为最新生成记录提供直达进度或结果的入口", async () => {
+  const page = await pageHarness("workbench/workbench.js");
+  page.run('history = [{ id: "pending", status: "pending", images: [] }]; syncHistoryLink();');
+  assert.equal(page.element("viewHistory").hidden, false);
+  assert.equal(page.element("viewHistory").textContent, "查看生成进度");
+  page.run('history = [{ id: "done", status: "done", images: [{ id: "image.png" }] }]; syncHistoryLink();');
+  assert.equal(page.element("viewHistory").textContent, "查看生成结果");
 });
 
 for (const status of [403, 404]) {
