@@ -3,7 +3,35 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const sharp = require('sharp');
+const { spawn, spawnSync } = require('node:child_process');
+
+function resolvePreviewConverter() {
+  const preferred = (process.env.IMAGE_PREVIEW_CONVERTER || '').trim();
+  const candidates = [...new Set([preferred, 'magick', 'convert'].filter(Boolean))];
+  for (const command of candidates) {
+    const result = spawnSync(command, ['-version'], { stdio: 'ignore' });
+    if (!result.error || result.error.code !== 'ENOENT') return command;
+  }
+  return candidates[0] || 'convert';
+}
+
+function runConverter(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      reject(new Error('图片预览转换超时'));
+    }, 60000);
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', (error) => { clearTimeout(timer); reject(error); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `图片预览转换失败（退出码 ${code}）`));
+    });
+  });
+}
 
 // 预览与原图独立存储；同一原件共用转换，避免多个卡片同时启动转换进程。
 function createPreviewCache({ directory, concurrency = 2, render = renderPreview }) {
@@ -48,9 +76,9 @@ function createPreviewCache({ directory, concurrency = 2, render = renderPreview
 }
 
 async function renderPreview(source, output, edge) {
-  await sharp(source, { animated: false }).rotate()
-    .resize({ width: edge, height: edge, fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 82 }).toFile(output);
+  const command = resolvePreviewConverter();
+  const args = [source, '-auto-orient', '-thumbnail', `${edge}x${edge}>`, '-strip', '-quality', '82', `webp:${output}`];
+  await runConverter(command, args);
 }
 
-module.exports = { createPreviewCache };
+module.exports = { createPreviewCache, renderPreview };
