@@ -15,10 +15,17 @@ let previewVersion = 0;
 const activePolls = new Set();
 
 function draft() { return cloneCreativeDraft({ prompt: $("prompt").value, assetIds, assetNames, model: $("model").value, count: Number($("count").value), resolution: $("resolution").value, ratio: $("ratio").value }); }
+function hasInFlightGeneration() { return history.some((batch) => ["pending", "paused"].includes(batch.status)); }
+function syncGenerateButton() {
+  const button = $("generate");
+  const inFlight = hasInFlightGeneration();
+  button.disabled = submitting || inFlight || !configured || !$("prompt").value.trim();
+  button.textContent = submitting ? "正在提交…" : inFlight ? "正在生成…" : "开始生成";
+}
 function persistDraft() {
   const saved = writeStored(user.id, "draft", draft());
   $("draftStatus").textContent = saved ? "草稿已自动保存" : "浏览器存储已满，草稿暂未保存";
-  $("generate").disabled = submitting || !configured || !$("prompt").value.trim();
+  syncGenerateButton();
   previewVersion += 1; $("previewPanel").hidden = true;
   setStatus($("composeStatus"), "");
 }
@@ -50,11 +57,11 @@ function addAsset(item) {
   insertText(referenceToken(id)); renderReferences();
 }
 function saveHistory() { if (!writeStored(user.id, "history", history)) setStatus($("generateStatus"), "浏览器存储不足，生成记录暂未保存；已生成图片可在我的图库查看", "error"); }
-function updateBatch(batch) { history = mergeBatch(history, batch); saveHistory(); renderHistory(); }
+function updateBatch(batch) { history = mergeBatch(history, batch); saveHistory(); renderHistory(); syncGenerateButton(); }
 
 function renderHistory() {
   $("historyCount").textContent = `${history.length} 次创作`;
-  $("history").innerHTML = history.map((batch) => `<article class="creative-batch"><div class="creative-batch-head"><div><h3>${escapeHtml(batch.title || batch.prompt?.slice(0, 45) || "图片创作")}</h3><p>${escapeHtml(new Date(batch.createdAt).toLocaleString("zh-CN"))} · ${escapeHtml(batch.model || "自动模型")} · ${batch.count || 1} 张</p></div><button class="btn sm" type="button" data-reuse="${escapeHtml(batch.id)}">复用</button></div><p class="creative-status ${batch.status === "error" ? "error" : ""}">${escapeHtml(batch.message || (batch.status === "done" ? "生成完成" : batch.status === "pending" ? "生成中，可以继续编辑下一次创作。" : "等待处理"))}</p><div class="creative-result-grid">${(batch.images || []).map((image, index) => `<article class="creative-card"><button class="creative-thumb" type="button" data-open="${escapeHtml(batch.id)}" data-index="${index}" aria-label="查看第 ${index + 1} 张生成图片">${thumbHtml({ ...image, kind: "image", title: `生成图片 ${index + 1}` })}</button><div class="creative-card-body"><div class="creative-actions"><button class="btn sm" type="button" data-download="${escapeHtml(batch.id)}" data-index="${index}">下载</button><button class="btn sm" type="button" data-save="${escapeHtml(batch.id)}" data-index="${index}">${image.assetSaved ? "已存素材" : "存为素材"}</button></div></div></article>`).join("")}</div>${batch.status === "paused" ? `<button class="btn sm" type="button" data-resume="${escapeHtml(batch.id)}">重新查询任务</button>` : ""}</article>`).join("") || emptyHtml("第一张作品，从这里开始", "完成描述后点击“开始生成”，每次结果都会保留在这里。");
+  $("history").innerHTML = history.map((batch) => `<article class="creative-batch"><div class="creative-batch-head"><div><h3>${escapeHtml(batch.title || batch.prompt?.slice(0, 45) || "图片创作")}</h3><p>${escapeHtml(new Date(batch.createdAt).toLocaleString("zh-CN"))} · ${escapeHtml(batch.model || "自动模型")} · ${batch.count || 1} 张</p></div><button class="btn sm" type="button" data-reuse="${escapeHtml(batch.id)}">复用</button></div><p class="creative-status ${batch.status === "error" ? "error" : ""}">${escapeHtml(batch.message || (batch.status === "done" ? "生成完成" : batch.status === "pending" ? "正在生成，请等待结果。" : batch.status === "paused" ? "任务状态待核对，请重新查询，不能重复提交。" : "等待处理"))}</p><div class="creative-result-grid">${(batch.images || []).map((image, index) => `<article class="creative-card"><button class="creative-thumb" type="button" data-open="${escapeHtml(batch.id)}" data-index="${index}" aria-label="查看第 ${index + 1} 张生成图片">${thumbHtml({ ...image, kind: "image", title: `生成图片 ${index + 1}` })}</button><div class="creative-card-body"><div class="creative-actions"><button class="btn sm" type="button" data-download="${escapeHtml(batch.id)}" data-index="${index}">下载</button><button class="btn sm" type="button" data-save="${escapeHtml(batch.id)}" data-index="${index}">${image.assetSaved ? "已存素材" : "存为素材"}</button></div></div></article>`).join("")}</div>${batch.status === "paused" ? `<button class="btn sm" type="button" data-resume="${escapeHtml(batch.id)}">重新查询任务</button>` : ""}</article>`).join("") || emptyHtml("第一张作品，从这里开始", "完成描述后点击“开始生成”，每次结果都会保留在这里。");
 }
 
 function buildSpec() {
@@ -95,14 +102,14 @@ async function pollBatch(batch) {
 async function generate() {
   if (submitting || !configured) return;
   const snapshot = draft(); if (!snapshot.prompt.trim()) return setStatus($("generateStatus"), "请先填写创作提示词", "error");
-  const spec = buildSpec(); submitting = true; $("generate").disabled = true;
+  const spec = buildSpec(); submitting = true; syncGenerateButton();
   setStatus($("generateStatus"), "正在解析素材并提交任务…");
   try {
     const resolved = await resolveComposition(snapshot);
     const response = await apiPost("/api/playground/images", { prompt: resolved.prompt, mode: resolved.imageIds?.length ? "edit" : "generate", referenceImageIds: resolved.imageIds || [], referenceImageId: resolved.imageIds?.[0] || "", model: snapshot.model, count: snapshot.count, imageSpec: spec });
     if (!response.taskId) throw new Error("接口没有返回任务编号，请检查我的图库后再操作");
     const batch = { id: String(response.taskId), taskId: response.taskId, createdAt: new Date().toISOString(), prompt: resolved.prompt, draft: snapshot, model: snapshot.model, count: snapshot.count, status: "pending", images: [] };
-    updateBatch(batch); setStatus($("generateStatus"), "任务已提交，结果会出现在生成记录中", "success"); pollBatch(batch);
+    updateBatch(batch); setStatus($("generateStatus"), "任务已提交，正在生成，请等待结果…"); pollBatch(batch);
   } catch (error) { setStatus($("generateStatus"), error.message, "error"); }
   finally { submitting = false; persistDraft(); }
 }

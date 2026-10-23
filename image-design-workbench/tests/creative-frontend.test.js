@@ -114,6 +114,19 @@ test("工作台实际 draft/applyDraft 对历史与方案双向隔离", async ()
   assert.equal(page.run("saved.assetNames[1]"), "图1");
 });
 
+test("图片任务待生成或待核对时保持提交入口禁用，终态才恢复", async () => {
+  const page = await pageHarness("workbench/workbench.js");
+  page.element("generate").textContent = "开始生成";
+  page.run('configured = true; history = [{ id: "pending", status: "pending" }]; syncGenerateButton();');
+  assert.equal(page.element("generate").disabled, true);
+  assert.equal(page.element("generate").textContent, "正在生成…");
+  page.run('history = [{ id: "paused", status: "paused" }]; syncGenerateButton();');
+  assert.equal(page.element("generate").disabled, true);
+  page.run('history = [{ id: "done", status: "done" }]; syncGenerateButton();');
+  assert.equal(page.element("generate").disabled, false);
+  assert.equal(page.element("generate").textContent, "开始生成");
+});
+
 for (const status of [403, 404]) {
   test(`音频任务 ${status} 可显式解除本地关联，不修改服务端任务或账单`, async () => {
     const page = await pageHarness("audio/audio.js", { apiGet: async () => { throw Object.assign(new Error("任务不可访问"), { status }); } });
