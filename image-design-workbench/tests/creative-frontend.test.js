@@ -82,7 +82,7 @@ async function pageHarness(filename, overrides = {}) {
   const source = await fs.readFile(path.join(__dirname, `../public/pages/${filename}`), "utf8");
   const elements = new Map();
   function element(id) {
-    if (!elements.has(id)) elements.set(id, { value: id === "prompt" ? "测试朗读" : "", options: [], hidden: false, disabled: false, textContent: "", innerHTML: "", setAttribute() {}, removeAttribute() {}, scrollIntoView() {}, focus() {} });
+    if (!elements.has(id)) elements.set(id, { value: id === "prompt" ? "测试朗读" : "", options: [], hidden: false, disabled: false, textContent: "", innerHTML: "", dataset: {}, setAttribute() {}, removeAttribute() {}, scrollIntoView() {}, focus() {} });
     return elements.get(id);
   }
   const writes = [];
@@ -120,20 +120,25 @@ test("图片任务待生成或待核对时保持提交入口禁用，终态才�
   page.run('configured = true; history = [{ id: "pending", status: "pending" }]; syncGenerateButton();');
   assert.equal(page.element("generate").disabled, true);
   assert.equal(page.element("generate").textContent, "正在生成…");
+  assert.equal(page.element("generate").hidden, true);
   page.run('history = [{ id: "paused", status: "paused" }]; syncGenerateButton();');
   assert.equal(page.element("generate").disabled, true);
   page.run('history = [{ id: "done", status: "done" }]; syncGenerateButton();');
   assert.equal(page.element("generate").disabled, false);
   assert.equal(page.element("generate").textContent, "开始生成");
+  assert.equal(page.element("generate").hidden, false);
 });
 
 test("工作台为最新生成记录提供直达进度或结果的入口", async () => {
   const page = await pageHarness("workbench/workbench.js");
   page.run('history = [{ id: "pending", status: "pending", images: [] }]; syncHistoryLink();');
   assert.equal(page.element("viewHistory").hidden, false);
-  assert.equal(page.element("viewHistory").textContent, "查看生成进度");
+  assert.equal(page.element("viewHistory").textContent, "查看进度");
+  assert.equal(page.element("generationProgress").hidden, false);
+  assert.equal(page.element("generationProgressTitle").textContent, "正在生成");
   page.run('history = [{ id: "done", status: "done", images: [{ id: "image.png" }] }]; syncHistoryLink();');
-  assert.equal(page.element("viewHistory").textContent, "查看生成结果");
+  assert.equal(page.element("viewHistory").textContent, "查看结果");
+  assert.equal(page.element("generationProgressTitle").textContent, "已生成 1 张图片");
 });
 
 for (const status of [403, 404]) {

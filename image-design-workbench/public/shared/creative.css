@@ -45,6 +45,18 @@
 .creative-status { min-height: 22px; margin: 12px 0; font-size: 13px; line-height: 1.6; color: var(--ink-soft); }
 .creative-status.error { color: var(--danger); }
 .creative-status.success { color: var(--accent); }
+.generation-progress { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 12px; align-items: center; margin: 16px 0 8px; padding: 13px 14px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface)); }
+.generation-progress-indicator { width: 18px; height: 18px; border: 2px solid color-mix(in srgb, var(--accent) 28%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: generation-spin .9s linear infinite; }
+.generation-progress-copy { min-width: 0; display: grid; gap: 3px; }
+.generation-progress-copy strong { font-size: 14px; color: var(--ink); }
+.generation-progress-copy span { color: var(--ink-soft); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.generation-progress-action { padding: 5px 0; background: transparent; color: var(--accent); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.generation-progress-action:hover { color: var(--ink); }
+.generation-progress[data-state="done"] { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); background: color-mix(in srgb, var(--accent-soft) 28%, var(--surface)); }
+.generation-progress[data-state="done"] .generation-progress-indicator { animation: none; border-color: var(--accent); position: relative; }
+.generation-progress[data-state="done"] .generation-progress-indicator::after { content: ""; position: absolute; width: 7px; height: 4px; border-left: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg); left: 3px; top: 4px; }
+.generation-progress[data-state="paused"] .generation-progress-indicator { animation: none; border-color: var(--danger); border-top-color: var(--danger); }
+@keyframes generation-spin { to { transform: rotate(360deg); } }
 .creative-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; min-width: 0; }
 .creative-panel > h3 { margin-bottom: 16px; }
 .creative-two-column { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(260px, .8fr); gap: 20px; align-items: start; }
@@ -82,4 +94,4 @@
   .creative-history { order: 3; }
   .creative-schemes { order: 4; }
 }
-@media (max-width: 600px) { .creative-heading { align-items: start; } .creative-panel { padding: 16px; } .creative-toolbar > .btn { flex: 1; } .creative-form-grid { grid-template-columns: minmax(0, 1fr); } .creative-dialog { padding: 18px; } .creative-page h2 { font-size: 20px; } }
+@media (max-width: 600px) { .creative-heading { align-items: start; } .creative-panel { padding: 16px; } .creative-toolbar > .btn { flex: 1; } .creative-form-grid { grid-template-columns: minmax(0, 1fr); } .creative-dialog { padding: 18px; } .creative-page h2 { font-size: 20px; } .generation-progress { grid-template-columns: 22px minmax(0, 1fr); } .generation-progress-action { grid-column: 2; justify-self: start; } }

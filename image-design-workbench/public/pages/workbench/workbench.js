@@ -19,15 +19,22 @@ function hasInFlightGeneration() { return history.some((batch) => ["pending", "p
 function syncGenerateButton() {
   const button = $("generate");
   const inFlight = hasInFlightGeneration();
+  button.hidden = inFlight;
   button.disabled = submitting || inFlight || !configured || !$("prompt").value.trim();
   button.textContent = submitting ? "正在提交…" : inFlight ? "正在生成…" : "开始生成";
 }
 function syncHistoryLink() {
+  const panel = $("generationProgress");
   const button = $("viewHistory");
   const latest = history[0];
-  button.hidden = !latest;
+  panel.hidden = !latest;
   if (!latest) return;
-  button.textContent = latest.status === "done" && latest.images?.length ? "查看生成结果" : "查看生成进度";
+  const isDone = latest.status === "done" && latest.images?.length;
+  const isPaused = latest.status === "paused";
+  panel.dataset.state = isDone ? "done" : isPaused ? "paused" : "pending";
+  $("generationProgressTitle").textContent = isDone ? `已生成 ${latest.images.length} 张图片` : isPaused ? "任务状态待核对" : "正在生成";
+  $("generationProgressDetail").textContent = latest.message || (isDone ? "结果已保存到下方记录" : isPaused ? "请重新查询任务后再继续创作" : "任务已提交，请等待结果");
+  button.textContent = isDone ? "查看结果" : isPaused ? "查看任务" : "查看进度";
 }
 function persistDraft() {
   const saved = writeStored(user.id, "draft", draft());
@@ -116,7 +123,7 @@ async function generate() {
     const response = await apiPost("/api/playground/images", { prompt: resolved.prompt, mode: resolved.imageIds?.length ? "edit" : "generate", referenceImageIds: resolved.imageIds || [], referenceImageId: resolved.imageIds?.[0] || "", model: snapshot.model, count: snapshot.count, imageSpec: spec });
     if (!response.taskId) throw new Error("接口没有返回任务编号，请检查我的图库后再操作");
     const batch = { id: String(response.taskId), taskId: response.taskId, createdAt: new Date().toISOString(), prompt: resolved.prompt, draft: snapshot, model: snapshot.model, count: snapshot.count, status: "pending", images: [] };
-    updateBatch(batch); setStatus($("generateStatus"), "任务已提交，正在生成，请等待结果…"); pollBatch(batch);
+    updateBatch(batch); setStatus($("generateStatus"), ""); pollBatch(batch);
   } catch (error) { setStatus($("generateStatus"), error.message, "error"); }
   finally { submitting = false; persistDraft(); }
 }
