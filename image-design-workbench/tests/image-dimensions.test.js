@@ -288,6 +288,15 @@ test("normalizes playground requests with bounded count and image spec", () => {
   assert.equal(normalizePlaygroundRequest({ prompt: "画一张图", model: "gpt-image-2.5" }).model, "gpt-image-2.5");
 });
 
+test("超出图片服务总像素上限时保留比例并自动缩小请求尺寸", () => {
+  const square = normalizeImageSpec({ sizePreset: "4k", ratioPreset: "1:1" });
+  assert.equal(square.requestSize, "2880x2880");
+  const widescreen = normalizeImageSpec({ sizePreset: "4k", ratioPreset: "16:9" });
+  assert.equal(widescreen.requestSize, "3840x2160");
+  assert.ok(square.width * square.height <= 8294400);
+  assert.ok(widescreen.width * widescreen.height <= 8294400);
+});
+
 test("counts full playground generated images for credit billing", () => {
   assert.equal(countImagesInApiResponse({ data: [{ url: "https://example.com/a.png" }, { b64_json: "abc" }] }), 2);
   assert.equal(countImagesInApiResponse({ data: [{ revised_prompt: "no image" }] }), 0);

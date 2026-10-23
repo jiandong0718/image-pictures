@@ -13,6 +13,7 @@ let configured = false;
 let submitting = false;
 let previewVersion = 0;
 const activePolls = new Set();
+const MAX_IMAGE_REQUEST_PIXELS = 8294400;
 
 function draft() { return cloneCreativeDraft({ prompt: $("prompt").value, assetIds, assetNames, model: $("model").value, count: Number($("count").value), resolution: $("resolution").value, ratio: $("ratio").value }); }
 function hasInFlightGeneration() { return history.some((batch) => ["pending", "paused"].includes(batch.status)); }
@@ -40,6 +41,7 @@ function persistDraft() {
   const saved = writeStored(user.id, "draft", draft());
   $("draftStatus").textContent = saved ? "草稿已自动保存" : "浏览器存储已满，草稿暂未保存";
   syncGenerateButton();
+  syncSizeHint();
   previewVersion += 1; $("previewPanel").hidden = true;
   setStatus($("composeStatus"), "");
 }
@@ -81,9 +83,22 @@ function renderHistory() {
 function buildSpec() {
   const size = { "1k": 1024, "2k": 2048, "4k": 4096 }[$("resolution").value] || 1024;
   const [rw, rh] = $("ratio").value.split(":").map(Number);
-  const width = rw >= rh ? size : Math.round(size * rw / rh);
-  const height = rh >= rw ? size : Math.round(size * rh / rw);
-  return { sizeMode: "preset", sizePreset: $("resolution").value, customSize: size, ratioPreset: $("ratio").value, customRatioWidth: rw, customRatioHeight: rh, width, height, ratio: `${rw}:${rh}`, requestSize: `${width}x${height}` };
+  let width = rw >= rh ? size : Math.round(size * rw / rh);
+  let height = rh >= rw ? size : Math.round(size * rh / rw);
+  const wasCapped = width * height > MAX_IMAGE_REQUEST_PIXELS;
+  if (wasCapped) {
+    const scale = Math.sqrt(MAX_IMAGE_REQUEST_PIXELS / (width * height));
+    width = Math.max(1, Math.floor(width * scale));
+    height = Math.max(1, Math.floor(height * scale));
+  }
+  return { sizeMode: "preset", sizePreset: $("resolution").value, customSize: size, ratioPreset: $("ratio").value, customRatioWidth: rw, customRatioHeight: rh, width, height, ratio: `${rw}:${rh}`, requestSize: `${width}x${height}`, wasCapped };
+}
+
+function syncSizeHint() {
+  const spec = buildSpec();
+  $("sizeHint").textContent = spec.wasCapped
+    ? `当前接口最多支持 829 万像素，已自动调整为 ${spec.requestSize}。`
+    : `实际生成尺寸：${spec.requestSize}。`;
 }
 
 async function resolveComposition(snapshot = draft()) {

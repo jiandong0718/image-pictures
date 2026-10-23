@@ -114,6 +114,16 @@ test("工作台实际 draft/applyDraft 对历史与方案双向隔离", async ()
   assert.equal(page.run("saved.assetNames[1]"), "图1");
 });
 
+test("工作台在提交前展示像素上限调整后的实际图片尺寸", async () => {
+  const page = await pageHarness("workbench/workbench.js");
+  for (const [id, value] of Object.entries({ model: "", count: "1", resolution: "4k", ratio: "1:1" })) { page.element(id).value = value; page.element(id).options = [{ value }]; }
+  page.run("syncSizeHint();");
+  assert.equal(page.run("buildSpec().requestSize"), "2880x2880");
+  assert.match(page.element("sizeHint").textContent, /2880x2880/);
+  page.element("ratio").value = "16:9"; page.run("syncSizeHint();");
+  assert.equal(page.run("buildSpec().requestSize"), "3840x2160");
+});
+
 test("图片任务待生成或待核对时保持提交入口禁用，终态才恢复", async () => {
   const page = await pageHarness("workbench/workbench.js");
   page.element("generate").textContent = "开始生成";

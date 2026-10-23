@@ -136,6 +136,8 @@ const PROMPT_EXTRACTION_INSTRUCTION =
   "请分析这张图片，并提取一段可直接用于 AI 生图的中文详细提示词。输出只需要提示词正文，不要解释。请覆盖主体、构图、视角、背景、光线、材质、颜色、细节、风格、镜头/渲染质感、画面氛围，并在最后补充适合电商或设计复刻的质量描述。";
 const MIN_IMAGE_SPEC_SIZE = 256;
 const MAX_IMAGE_SPEC_SIZE = 4096;
+// 当前图片服务拒绝总像素数超过该值的请求（例如 4096×4096）。
+const MAX_IMAGE_REQUEST_PIXELS = 8294400;
 const PLAYGROUND_IMAGE_COUNT_MIN = 1;
 const PLAYGROUND_IMAGE_COUNT_MAX = 4;
 const PROMPT_EXTRACT_CREDIT_COST = 1;
@@ -1138,6 +1140,11 @@ function normalizeImageSpec(rawSpec = {}) {
     height = Math.max(1, Math.round((size * ratioHeight) / ratioWidth));
   } else if (ratioHeight > ratioWidth) {
     width = Math.max(1, Math.round((size * ratioWidth) / ratioHeight));
+  }
+  if (width * height > MAX_IMAGE_REQUEST_PIXELS) {
+    const scale = Math.sqrt(MAX_IMAGE_REQUEST_PIXELS / (width * height));
+    width = Math.max(1, Math.floor(width * scale));
+    height = Math.max(1, Math.floor(height * scale));
   }
   const ratio = `${ratioWidth}:${ratioHeight}`;
   return {
