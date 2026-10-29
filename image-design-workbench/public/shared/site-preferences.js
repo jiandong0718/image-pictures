@@ -2,6 +2,15 @@ export const THEME_OPTIONS = ["tech", "xianxia", "mystic"];
 
 export const RELEASE_NOTES = [
   {
+    id: "2026-10-29-model-services-creative-layout",
+    date: "2026-10-29",
+    title: { zh: "模型服务与创作布局更新", en: "Model services and creative workspace update" },
+    summary: {
+      zh: "配置中心支持模型发现与全局默认；生图节点和模型联动选择。音频配置集中管理，自由生图右侧输入，工作台采用选择抽屉，绘图聚集地恢复底部参数并支持分页。",
+      en: "Discover models and set a global default in Settings. Image models follow the selected node. Audio settings are centralized, image inputs move to the right, workspaces gain a node drawer, and the playground restores bottom controls and pagination.",
+    },
+  },
+  {
     id: "2026-09-29-inspiration-home",
     date: "2026-09-29",
     title: { zh: "灵感首页与体验更新", en: "Inspiration home and experience update" },

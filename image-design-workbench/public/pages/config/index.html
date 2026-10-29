@@ -1,119 +1,45 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>配置中心 · AI 图像设计工作台</title>
-    <link rel="stylesheet" href="/shared/theme.css" />
-    <script src="/shared/theme-init.js?v=mystic-default-1"></script>
-    <link rel="stylesheet" href="/pages/config/config.css" />
-  </head>
-  <body>
-    <div id="page">
-      <div class="config-layout">
-        <div class="card"><div class="card-title">音频配置</div><p class="card-desc">语音接口独立配置，按文字长度计算积分。</p><a class="btn" href="/audio#adminConfig">管理音频接口与字符单价</a></div>
-        <div class="config-row">
-          <form class="card" id="imageForm">
-            <div class="config-head-row">
-              <div class="section-label">生图配置（多组）</div>
-              <span class="badge" id="imageStatus">未配置</span>
-            </div>
-            <div class="card-title">画图 API 端点</div>
-            <div class="card-desc" style="margin-bottom: 16px">
-              可接入多组 API（URL + Key）。各工作台画图时按调度策略从中取一组，均摊调用。配置持久化在数据库。
-            </div>
-
-            <label class="field">
-              <span>调度策略</span>
-              <select class="input" id="schedule">
-                <option value="round_robin">轮询（依次轮流）</option>
-                <option value="random">随机</option>
-              </select>
-            </label>
-
-            <div class="endpoint-list" id="endpointList"></div>
-
-            <div class="endpoint-add">
-              <label class="field">
-                <span>API URL</span>
-                <input class="input" id="apiUrl" type="url" autocomplete="off" placeholder="https://api.example.com/v1" />
-              </label>
-              <label class="field">
-                <span>API Key</span>
-                <input class="input" id="apiKey" type="password" autocomplete="off" placeholder="sk-..." />
-              </label>
-              <label class="field">
-                <span>支持的生图模型（逗号分隔）</span>
-                <input class="input" id="apiModel" type="text" autocomplete="off" placeholder="例如 gpt-image-2, gpt-image-2.5；首项为默认模型" />
-              </label>
-              <label class="field">
-                <span>备注（可选）</span>
-                <input class="input" id="apiLabel" type="text" autocomplete="off" placeholder="如：主号 / 备用" />
-              </label>
-            </div>
-            <p class="card-desc" style="margin-bottom: 16px">画图消耗积分：1 积分 = 1 元 = 1 张图。</p>
-            <p class="msg" id="imageMsg"></p>
-            <button class="btn primary full" id="saveImage" type="submit">添加端点</button>
-          </form>
-
-          <form class="card" id="promptForm">
-            <div class="config-head-row">
-              <div class="section-label">提示词提取配置</div>
-              <span class="badge" id="promptStatus">未配置</span>
-            </div>
-            <div class="card-title">视觉理解 API</div>
-            <div class="card-desc" style="margin-bottom: 16px">用于从参考图反推中文提示词，建议使用支持视觉的 GPT 兼容接口。</div>
-            <label class="field">
-              <span>提示词 API URL</span>
-              <input class="input" id="promptUrl" type="url" autocomplete="off" placeholder="https://api.example.com/v1" />
-            </label>
-            <label class="field">
-              <span>提示词 API Key</span>
-              <input class="input" id="promptKey" type="password" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span>提示词模型</span>
-              <input class="input" id="promptModel" type="text" autocomplete="off" placeholder="gpt-4o-mini" />
-            </label>
-            <p class="msg" id="promptMsg"></p>
-            <button class="btn primary full" id="savePrompt" type="submit">保存提示词配置</button>
-          </form>
-        </div>
-
-        <form class="card" id="videoForm">
-          <div class="config-head-row">
-            <div class="section-label">生视频配置（Agnes AI）</div>
-            <span class="badge" id="videoStatus">未配置</span>
-          </div>
-          <div class="card-title">生视频 API</div>
-          <div class="card-desc" style="margin-bottom: 16px">
-            用于「AI 生视频」的文生视频 / 图生视频。接口地址服务端固定，这里只填 API Key 与模型。
-          </div>
-          <label class="field">
-            <span>生视频 API Key</span>
-            <input class="input" id="videoKey" type="password" autocomplete="off" placeholder="sk-..." />
-          </label>
-          <label class="field">
-            <span>生视频模型</span>
-            <input class="input" id="videoModel" type="text" autocomplete="off" placeholder="agnes-video-v2.0" />
-          </label>
-          <p class="msg" id="videoMsg"></p>
-          <button class="btn primary full" id="saveVideo" type="submit">保存生视频配置</button>
-        </form>
-
-        <div class="card config-danger">
-          <div class="config-danger-inner">
-            <div class="copy">
-              <div class="section-label" style="color: var(--danger)">危险操作</div>
-              <div class="card-title">重置生成缓存</div>
-              <div class="card-desc">删除所有已生成图片文件，套图编号从 001 重新开始。不影响账户和积分。</div>
-              <p class="msg" id="resetMsg"></p>
-            </div>
-            <button class="btn danger" id="resetCache" type="button">重置生成缓存</button>
-          </div>
-        </div>
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>配置中心 · AI 图像设计工作台</title>
+<link rel="stylesheet" href="/shared/theme.css" /><script src="/shared/theme-init.js?v=mystic-default-1"></script>
+<link rel="stylesheet" href="/pages/config/config.css?v=global-default-10" />
+</head>
+<body class="settings-surface">
+<div id="page">
+  <div class="settings-page">
+    <header class="settings-header"><div><h2>模型服务</h2><p>按用途管理已接入的服务，配置在各创作模块中共享。</p></div><button class="btn primary" id="addService" type="button">＋ 添加服务</button></header>
+    <nav class="settings-tabs" aria-label="服务类别">
+      <button type="button" data-category="images" aria-pressed="true">图像生成 <span id="countImages">—</span></button>
+      <button type="button" data-category="prompt" aria-pressed="false">视觉理解 <span id="countPrompt">—</span></button>
+      <button type="button" data-category="video" aria-pressed="false">视频生成 <span id="countVideo">—</span></button>
+      <button type="button" data-category="audio" aria-pressed="false">语音生成 <span id="countAudio">—</span></button>
+      <button type="button" data-category="maintenance" aria-pressed="false">维护</button>
+    </nav>
+    <section class="settings-body">
+      <div class="list-toolbar"><p id="categoryDescription">正在读取服务配置…</p><label id="scheduleField" title="未设全局默认或默认节点停用时使用"><span>回退调度</span><select class="select" id="schedule"><option value="round_robin">轮询</option><option value="random">随机</option></select></label></div>
+      <p class="settings-message" id="pageMessage" role="status" aria-live="polite"></p>
+      <div class="provider-list" id="providerList" aria-busy="true"></div>
+      <section class="maintenance-panel" id="maintenancePanel" hidden><h3>清理我的生成缓存</h3><p>清理当前账户的生成图片文件，并重新分配套图编号。此操作无法撤销。</p><button class="btn danger" id="resetCache" type="button">清理缓存</button></section>
+    </section>
+    <footer class="settings-footer">API 密钥仅在服务端使用，列表不会显示完整密钥。</footer>
+  </div>
+  <dialog class="settings-dialog" id="serviceDialog" aria-labelledby="dialogTitle">
+    <header class="dialog-header"><div><h3 id="dialogTitle">添加服务</h3><p id="dialogDescription"></p></div><button class="icon-button" id="closeDialog" type="button" aria-label="关闭">×</button></header>
+    <form id="serviceForm">
+      <div class="dialog-fields">
+        <label class="field" id="labelField"><span>服务名称</span><input class="input" id="serviceLabel" placeholder="例如：主服务" maxlength="100" /></label>
+        <label class="field" id="urlField"><span>API 地址</span><input class="input" id="serviceUrl" type="url" placeholder="https://api.example.com/v1" autocomplete="off" /></label>
+        <label class="field"><span>API Key</span><input class="input" id="serviceKey" type="password" autocomplete="new-password" /><small id="keyHint">仅用于连接当前服务。</small></label>
+        <div class="field" id="modelField"><div class="field-heading"><label for="serviceModel">默认模型</label><button class="text-button" id="fetchModels" type="button">拉取模型</button></div><select class="select" id="serviceModel"><option value="">请先拉取模型</option></select><small id="modelHint">从 API 获取模型列表后选择。模型能力以服务商说明为准。</small></div>
+        <div class="audio-pricing" id="audioPricing" hidden><label class="field"><span>每档字符数</span><input class="input" type="number" min="1" max="100000" id="charactersPerCredit" value="1000" /></label><label class="field"><span>每档积分</span><input class="input" type="number" min="1" max="100000" id="creditsPerUnit" value="1" /></label></div>
+        <p class="settings-message" id="formMessage" role="status" aria-live="polite"></p>
       </div>
-    </div>
-    <script type="module" src="/pages/config/config.js"></script>
-  </body>
+      <footer class="dialog-actions"><button class="btn" id="cancelDialog" type="button">取消</button><button class="btn primary" id="saveService" type="submit">保存服务</button></footer>
+    </form>
+  </dialog>
+</div>
+<script type="module" src="/pages/config/config.js?v=global-default-10"></script>
+</body>
 </html>

@@ -38,6 +38,7 @@ const {
   normalizeApiBase,
   normalizeEndpointInput,
   normalizeModelList,
+  discoverSupportedModels,
   endpointModels,
   maskKey,
   normalizeSchedule,
@@ -447,6 +448,33 @@ test("normalizes a generation endpoint (url + key) and rejects bad input", () =>
   assert.throws(() => normalizeEndpointInput({ apiBase: "not-a-url", apiKey: "k" }), /生图 API URL格式不正确/);
   assert.throws(() => normalizeEndpointInput({ apiBase: "ftp://api/v1", apiKey: "k" }), /http:\/\/ 或 https:\/\//);
   assert.throws(() => normalizeEndpointInput({ apiBase: "https://api/v1", apiKey: "" }), /生图 API Key 不能为空/);
+});
+
+test("discovers supported models from an OpenAI-compatible models endpoint", async () => {
+  let requested;
+  const models = await discoverSupportedModels(
+    { apiBase: "https://api.unit.test/v1/", apiKey: "unit-key" },
+    {
+      fetchImpl: async (url, options) => {
+        requested = { url, options };
+        return {
+          ok: true,
+          json: async () => ({ data: [{ id: "gpt-image-2.5" }, { id: "gpt-image-2" }, { id: "gpt-image-2.5" }] }),
+        };
+      },
+    },
+  );
+  assert.equal(requested.url, "https://api.unit.test/v1/models");
+  assert.equal(requested.options.headers.Authorization, "Bearer unit-key");
+  assert.deepEqual(models, ["gpt-image-2.5", "gpt-image-2"]);
+});
+
+test("模型目录超过 20 个仍可拉取，失败响应和空目录给出明确错误", async () => {
+  const credentials = { apiBase: "https://api.unit.test/v1", apiKey: "unit-key" };
+  const models = Array.from({ length: 50 }, (_, i) => ({ id: `model-${i}` }));
+  assert.equal((await discoverSupportedModels(credentials, { fetchImpl: async () => ({ ok: true, json: async () => ({ data: models }) }) })).length, 50);
+  await assert.rejects(discoverSupportedModels(credentials, { fetchImpl: async () => ({ ok: false, status: 401 }) }), /401/);
+  await assert.rejects(discoverSupportedModels(credentials, { fetchImpl: async () => ({ ok: true, json: async () => ({ data: [] }) }) }), /未返回可用模型/);
 });
 
 test("masks api keys for display without leaking the middle", () => {

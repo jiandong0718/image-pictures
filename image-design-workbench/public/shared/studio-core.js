@@ -7,6 +7,7 @@ import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost, apiUpload, downloadFile, downloadJsonFile, pollTask } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 import { enableImagePaste, createClearButton } from "/shared/image-paste.js";
+import { mountImageTargetDrawer } from "/shared/image-target.js";
 
 const SIZE_PRESETS = { "1k": 1024, "2k": 2048, "4k": 4096 };
 const RATIO_PRESETS = {
@@ -55,6 +56,7 @@ export function createStudio(config) {
   };
 
   let board;
+  let imageTarget;
 
   function readSavedState() {
     const saved = storage.load(null);
@@ -263,6 +265,7 @@ export function createStudio(config) {
         prompt,
         imageSetId: imageSet.id,
         imageSpec: normalizeSpec(state.spec),
+        ...imageTarget.value(),
       });
       setPending(["main"], taskId);
       await pollAndApply(["main"], taskId);
@@ -341,6 +344,7 @@ export function createStudio(config) {
         mainImageId: state.images.main.id,
         imageSetId: imageSet.id,
         imageSpec: normalizeSpec(state.spec),
+        ...imageTarget.value(),
       });
       setPending([type], taskId);
       await pollAndApply([type], taskId);
@@ -381,6 +385,7 @@ export function createStudio(config) {
         imageSetId: imageSet.id,
         prompts,
         imageSpec: normalizeSpec(state.spec),
+        ...imageTarget.value(),
       });
       setPending(derivedTypes, taskId);
       await pollAndApply(derivedTypes, taskId);
@@ -528,13 +533,10 @@ export function createStudio(config) {
     bindToolbar();
     renderImageSet();
     syncSpecButtons();
-
-    try {
-      const cfg = await apiGet("/api/image-config");
-      state.hasImageConfig = Boolean(cfg.config?.uploaded);
-    } catch {
-      state.hasImageConfig = false;
-    }
+    const targetHost = document.createElement("div");
+    document.querySelector(".topbar-right").prepend(targetHost);
+    imageTarget = await mountImageTargetDrawer(targetHost, { storageKey: `imageStudio:target:${ctx.me.id}:${mode}` });
+    state.hasImageConfig = imageTarget.configured;
 
     allTypes.forEach((type) => renderCard(type));
     renderControls();

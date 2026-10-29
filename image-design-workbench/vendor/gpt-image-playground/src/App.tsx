@@ -36,6 +36,7 @@ const WORKBENCH_ASYNC_BODY = {
   moderation: '$params.moderation',
   output_compression: '$params.output_compression',
   n: '$params.n',
+  endpoint_id: '$profile.endpointId',
 }
 
 // 异步自定义服务商：提交拿 taskId（{taskId}），再轮询 tasks/{task_id}。
@@ -85,7 +86,10 @@ function normalizeWorkbenchTheme(value: unknown) {
 }
 
 function applyWorkbenchTheme(value: unknown) {
-  document.documentElement.dataset.workbenchTheme = normalizeWorkbenchTheme(value)
+  const theme = normalizeWorkbenchTheme(value)
+  document.documentElement.dataset.workbenchTheme = theme
+  document.documentElement.classList.toggle('theme-dark', theme !== 'xianxia')
+  document.documentElement.classList.toggle('dark', theme !== 'xianxia')
 }
 
 async function fetchWorkbenchPlaygroundConfig() {
@@ -100,6 +104,7 @@ async function fetchWorkbenchPlaygroundConfig() {
     apiBase: typeof config.apiBase === 'string' ? config.apiBase : '',
     apiKey: typeof config.apiKey === 'string' ? config.apiKey : '',
     model: typeof config.model === 'string' && config.model.trim() ? config.model : DEFAULT_IMAGES_MODEL,
+    endpointId: '',
   }
 }
 
@@ -117,6 +122,7 @@ function applyWorkbenchPlaygroundConfig(config: Awaited<ReturnType<typeof fetchW
     baseUrl: config.apiBase || existing?.baseUrl || settings.baseUrl,
     apiKey: config.uploaded ? config.apiKey : '',
     model: config.model || existing?.model || DEFAULT_IMAGES_MODEL,
+    endpointId: config.endpointId || '',
     timeout: existing?.timeout ?? settings.timeout,
     apiMode: 'images',
     codexCli: false,
@@ -134,8 +140,14 @@ function applyWorkbenchPlaygroundConfig(config: Awaited<ReturnType<typeof fetchW
     codexCli: profile.codexCli,
     apiProxy: profile.apiProxy,
     streamImages: profile.streamImages,
+    reuseTaskApiProfileTemporarily: false,
     customProviders: [
-      WORKBENCH_ASYNC_PROVIDER,
+      {
+        ...WORKBENCH_ASYNC_PROVIDER,
+        // 跟随全局时不固定模型，由服务端在提交时解析当前全局默认。
+        submit: { ...WORKBENCH_ASYNC_PROVIDER.submit, body: { ...WORKBENCH_ASYNC_BODY, model: config.endpointId ? '$profile.model' : '' } },
+        editSubmit: { ...WORKBENCH_ASYNC_PROVIDER.editSubmit!, body: { ...WORKBENCH_ASYNC_BODY, model: config.endpointId ? '$profile.model' : '' } },
+      },
       ...settings.customProviders.filter((item) => item.id !== WORKBENCH_ASYNC_PROVIDER_ID),
     ],
     profiles: [
@@ -195,10 +207,12 @@ export default function App() {
 
     let disposed = false
     let selectedWorkbenchModel = ''
+    let selectedWorkbenchEndpointId = ''
+    let targetConfigured = false
     const syncConfig = async () => {
       const config = await fetchWorkbenchPlaygroundConfig()
-      if (!disposed) applyWorkbenchPlaygroundConfig(config && selectedWorkbenchModel
-        ? { ...config, model: selectedWorkbenchModel }
+      if (!disposed) applyWorkbenchPlaygroundConfig(config
+        ? { ...config, uploaded: config.uploaded && targetConfigured, model: selectedWorkbenchModel || config.model, endpointId: selectedWorkbenchEndpointId }
         : config)
     }
     const handleMessage = (event: MessageEvent) => {
@@ -207,13 +221,25 @@ export default function App() {
         void syncConfig()
       } else if (event.data?.type === 'image-workbench:theme-changed') {
         applyWorkbenchTheme(event.data.theme)
-      } else if (event.data?.type === 'image-workbench:model-changed' && typeof event.data.model === 'string') {
+      } else if (event.data?.type === 'image-workbench:target-changed' && typeof event.data.model === 'string') {
         selectedWorkbenchModel = event.data.model.trim()
+        selectedWorkbenchEndpointId = typeof event.data.endpointId === 'string' ? event.data.endpointId.trim() : ''
+        targetConfigured = event.data.configured === true
         void syncConfig()
       }
     }
 
+    const handleLocalTarget = (event: Event) => {
+      const target = (event as CustomEvent).detail
+      selectedWorkbenchModel = typeof target?.model === 'string' ? target.model : ''
+      selectedWorkbenchEndpointId = typeof target?.endpointId === 'string' ? target.endpointId : ''
+      targetConfigured = target?.configured === true
+      void syncConfig()
+    }
+
     window.addEventListener('message', handleMessage)
+    window.addEventListener('image-workbench:local-target', handleLocalTarget)
+    window.dispatchEvent(new Event('image-workbench:request-local-target'))
     window.parent.postMessage({ type: 'image-workbench:request-config' }, window.location.origin)
     window.parent.postMessage({ type: 'image-workbench:request-theme' }, window.location.origin)
     void syncConfig()
@@ -223,6 +249,7 @@ export default function App() {
       document.documentElement.classList.remove('workbench-embed')
       delete document.documentElement.dataset.workbenchTheme
       window.removeEventListener('message', handleMessage)
+      window.removeEventListener('image-workbench:local-target', handleLocalTarget)
     }
   }, [])
 

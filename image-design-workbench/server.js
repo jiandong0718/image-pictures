@@ -501,7 +501,7 @@ function normalizePlaygroundRequest(rawRequest = {}) {
     imageSpec: normalizeImageSpec(rawRequest.imageSpec),
     referenceImageId: cleanPrompt(rawRequest.referenceImageId),
     ...(rawRequest.referenceImageIds !== undefined ? { referenceImageIds } : {}),
-    // 自由生图可指定某个生图节点；留空则按调度策略自动选。仅本页有此选项。
+    // 所有生图模块共用的执行目标；旧客户端留空时继续兼容自动调度。
     endpointId: cleanPrompt(rawRequest.endpointId),
     model: imageConfig.normalizeModelName(rawRequest.model),
   };
@@ -612,20 +612,45 @@ function getPublicRequestOrigin(headers = {}) {
   return `${protocol}://${headers.host}`;
 }
 
-// 绘图聚集地代理：JSON 请求体使用本次已匹配的模型。multipart 编辑请求由前端携带
-// 同一个模型字段，服务端校验后按该模型选端点，保持文件体原样转发。
+// 全局继承和手动选择都使用服务端实际匹配的模型，编辑时只改文本字段，保留图片字节。
 function applyEndpointModel(body, contentType, endpointModel) {
   const model = (endpointModel || process.env.CUSTOM_IMAGE_MODEL || "").trim();
-  if (!model || !String(contentType).includes("application/json")) {
-    return body;
+  if (!model) return body;
+  if (String(contentType).includes("multipart/form-data")) {
+    const match = String(contentType).match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+    if (!match) return body;
+    const delimiter = "--" + (match[1] || match[2]).trim();
+    return Buffer.from(body.toString("latin1").split(delimiter).map((part) => {
+      const splitAt = part.indexOf("\r\n\r\n");
+      if (splitAt < 0 || !/Content-Disposition:[^\r\n]*;\s*name="model"(?:;|\r|$)/i.test(part.slice(0, splitAt))) return part;
+      // 显式模型已完成归属校验，保持原字段；仅继承全局的空模型需要补齐。
+      if (part.slice(splitAt + 4).trim()) return part;
+      return part.slice(0, splitAt + 4) + model + "\r\n";
+    }).join(delimiter), "latin1");
   }
+  if (!String(contentType).includes("application/json")) return body;
   try {
     const payload = body.length ? JSON.parse(body.toString("utf8")) : {};
+    delete payload.endpointId;
+    delete payload.endpoint_id;
     payload.model = model;
     return Buffer.from(JSON.stringify(payload), "utf8");
   } catch {
     return body;
   }
+}
+
+function stripProxyRoutingFields(body, contentType) {
+  if (!String(contentType).includes("multipart/form-data")) return body;
+  const match = String(contentType).match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  if (!match) return body;
+  const delimiter = "--" + (match[1] || match[2]).trim();
+  // latin1 一字节对一字符，删除本地路由字段时完整保留图片二进制。
+  const parts = body.toString("latin1").split(delimiter);
+  return Buffer.from(parts.filter((part) => {
+    const header = part.split("\r\n\r\n", 1)[0];
+    return !/Content-Disposition:[^\r\n]*;\s*name="(?:endpoint_id|endpointId)"(?:;|\r|$)/i.test(header);
+  }).join(delimiter), "latin1");
 }
 
 function hasImageValue(item) {
@@ -1873,7 +1898,16 @@ async function saveUploadedMain(req, imageSetId, imageSpec = normalizeImageSpec(
   return makeImageRecord(filePath, "main", `上传主图：${upload.filename}`);
 }
 
-async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", imageSpec = {} }) {
+async function generateImage({
+  type,
+  prompt,
+  mainImageId = "",
+  imageSetId = "",
+  imageSpec = {},
+  // 所有生图入口共用同一套模型/节点约定：不传节点即按配置中心的调度策略选择。
+  model = "",
+  endpointId = "",
+}) {
   const normalizedSpec = normalizeImageSpec(imageSpec);
   const config = IMAGE_TYPES[type];
   if (!config) {
@@ -1893,7 +1927,11 @@ async function generateImage({ type, prompt, mainImageId = "", imageSetId = "", 
     );
   }
 
-  const apiConfig = await imageConfig.pickEndpoint();
+  const requestedModel = imageConfig.normalizeModelName(model);
+  const requestedEndpointId = cleanPrompt(endpointId);
+  const apiConfig = requestedEndpointId
+    ? await imageConfig.getEnabledEndpointById(requestedEndpointId, requestedModel)
+    : await imageConfig.pickEndpoint(requestedModel);
   const args = buildImageGeneratorArgs({
     skillScript: SKILL_SCRIPT,
     prompt: normalizedPrompt,
@@ -2655,6 +2693,7 @@ async function handleApi(req, res, pathname, searchParams) {
     let requestedCount = 1;
     let requestPrompt = "";
     let requestedModel = "";
+    let requestedEndpointId = "";
     try {
       body = await readRequestBuffer(req, MAX_PROXY_UPLOAD_BYTES);
       if (contentType.includes("application/json")) {
@@ -2662,11 +2701,14 @@ async function handleApi(req, res, pathname, searchParams) {
         requestedCount = requestedImageCountFromJson(payload);
         requestPrompt = typeof payload.prompt === "string" ? payload.prompt : "";
         requestedModel = imageConfig.normalizeModelName(payload.model);
+        requestedEndpointId = cleanPrompt(payload.endpoint_id || payload.endpointId);
       } else if (contentType.includes("multipart/form-data")) {
         const fields = parseMultipartTextFields(body, contentType);
         requestedCount = requestedImageCountFromJson(fields);
         requestPrompt = typeof fields.prompt === "string" ? fields.prompt : "";
         requestedModel = imageConfig.normalizeModelName(fields.model);
+        requestedEndpointId = cleanPrompt(fields.endpoint_id || fields.endpointId);
+        body = stripProxyRoutingFields(body, contentType);
       }
       await accounts.assertEnoughCredits(user.id, requestedCount);
     } catch (error) {
@@ -2677,7 +2719,9 @@ async function handleApi(req, res, pathname, searchParams) {
 
     let apiConfig;
     try {
-      apiConfig = await imageConfig.pickEndpoint(requestedModel);
+      apiConfig = requestedEndpointId
+        ? await imageConfig.getEnabledEndpointById(requestedEndpointId, requestedModel)
+        : await imageConfig.pickEndpoint(requestedModel);
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -2710,7 +2754,9 @@ async function handleApi(req, res, pathname, searchParams) {
             text = await upstream.text();
             if (upstream.ok || !isRetryablePlaygroundStatus(upstream.status) || attempt === 1) break;
             console.warn(`绘图聚集地节点返回 ${upstream.status}，切换节点重试`);
-            activeConfig = await imageConfig.pickEndpoint(requestedModel);
+            activeConfig = requestedEndpointId
+              ? await imageConfig.getEnabledEndpointById(requestedEndpointId, requestedModel)
+              : await imageConfig.pickEndpoint(requestedModel);
           }
           if (!upstream.ok) {
             await failGenerationTask(taskId, `绘图聚集地上游 ${upstream.status}: ${text.slice(0, 300)}`);
@@ -2855,7 +2901,7 @@ async function handleApi(req, res, pathname, searchParams) {
     const uploaded = (await imageConfig.countEndpoints()) > 0;
     // nodes：脱敏的可选节点列表（供自由生图指定节点，普通用户也能拿，不含 url/key）。
     const nodes = await imageConfig.listSelectableEndpoints();
-    const payload = { ok: true, config: { uploaded }, nodes, models: [...new Set(nodes.flatMap((node) => node.models))] };
+    const payload = { ok: true, config: { uploaded }, nodes, defaultTarget: await imageConfig.getGlobalDefaultTarget(nodes), models: [...new Set(nodes.flatMap((node) => node.models))] };
     if (user.role === "admin") {
       payload.endpoints = await imageConfig.listEndpointsForDisplay();
       payload.schedule = await imageConfig.getSchedule();
@@ -2883,8 +2929,27 @@ async function handleApi(req, res, pathname, searchParams) {
     try {
       if (action === "delete") {
         await imageConfig.deleteEndpoint(payload.id);
+      } else if (action === "set_default") {
+        await imageConfig.setGlobalDefaultTarget(payload.id);
+      } else if (action === "update") {
+        await imageConfig.updateEndpoint(payload.id, payload);
       } else if (action === "models") {
         await imageConfig.updateEndpointModels(payload.id, payload.models);
+      } else if (action === "discover_models") {
+        const type = payload.sourceType || "images";
+        let previous = {};
+        if (type === "images" && payload.id) previous = await imageConfig.getEndpointCredentials(payload.id);
+        else if (type === "prompt") previous = await imageConfig.getPromptConfig();
+        else if (type === "video") previous = { ...await imageConfig.getVideoConfig(), apiBase: FIXED_VIDEO_API_BASE };
+        else if (type === "audio") previous = await creativeResources.getAudioConfig();
+        const apiBase = type === "video" ? FIXED_VIDEO_API_BASE : cleanPrompt(payload.apiBase) || previous.apiBase;
+        // 已保存密钥只可用于原来的地址，修改地址时必须重新输入。
+        const apiKey = cleanPrompt(payload.apiKey) || (apiBase === previous.apiBase ? previous.apiKey : "");
+        const models = await imageConfig.discoverSupportedModels({ apiBase, apiKey });
+        sendJson(res, 200, { ok: true, models });
+        return;
+      } else if (action === "refresh_models") {
+        await imageConfig.refreshEndpointModels(payload.id);
       } else if (action === "toggle") {
         await imageConfig.setEndpointEnabled(payload.id, Boolean(payload.enabled));
       } else if (action === "schedule") {
@@ -2899,6 +2964,7 @@ async function handleApi(req, res, pathname, searchParams) {
     sendJson(res, 200, {
       ok: true,
       endpoints: await imageConfig.listEndpointsForDisplay(),
+      defaultTarget: await imageConfig.getGlobalDefaultTarget(),
       schedule: await imageConfig.getSchedule(),
       config: { uploaded: (await imageConfig.countEndpoints()) > 0 },
     });
@@ -3374,6 +3440,8 @@ async function handleApi(req, res, pathname, searchParams) {
           prompt: payload.prompt,
           imageSetId: payload.imageSetId,
           imageSpec: payload.imageSpec,
+          model: payload.model,
+          endpointId: payload.endpointId,
         });
         const balance = await accounts.consumeCredits(user.id, 1, "生成主图");
         await recordImageRecord(user.id, image);
@@ -3442,6 +3510,8 @@ async function handleApi(req, res, pathname, searchParams) {
           mainImageId: payload.mainImageId,
           imageSetId: payload.imageSetId,
           imageSpec: payload.imageSpec,
+          model: payload.model,
+          endpointId: payload.endpointId,
         });
         const balance = await accounts.consumeCredits(user.id, 1, `生成${IMAGE_TYPES[payload.type].label}`);
         await recordImageRecord(user.id, image);
@@ -3492,6 +3562,8 @@ async function handleApi(req, res, pathname, searchParams) {
             mainImageId: payload.mainImageId,
             imageSetId: payload.imageSetId,
             imageSpec: payload.imageSpec,
+            model: payload.model,
+            endpointId: payload.endpointId,
           });
           return [type, { image }];
         } catch (error) {
@@ -3674,6 +3746,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  stripProxyRoutingFields,
   PREFERRED_IMAGE_HEIGHT,
   PREFERRED_IMAGE_SIZE,
   PREFERRED_IMAGE_WIDTH,

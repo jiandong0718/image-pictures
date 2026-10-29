@@ -467,6 +467,7 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
       : applyLockedBaseUrl(provider, rawBaseUrl),
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
     model: typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model,
+    endpointId: typeof record.endpointId === 'string' ? record.endpointId : undefined,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : defaults.timeout,
     apiMode,
     codexCli: Boolean(record.codexCli),

@@ -30,12 +30,8 @@ function persistDraft() {
 
 async function loadConfig() {
   const data = await apiGet("/api/audio-config"); config = data.config || {};
-  $("configHint").textContent = config.configured ? `当前模型：${config.model}。可用音色由服务决定；生成成功后音频将保存到素材库。` : user.role === "admin" ? "音频服务尚未配置，请展开下方“音频服务配置”填写地址、密钥与模型。" : "音频服务尚未配置，请联系管理员设置后再生成。";
-  if (user.role === "admin") {
-    $("adminConfig").hidden = false;
-    for (const key of ["apiBase", "model", "charactersPerCredit", "creditsPerUnit"]) $("configForm").elements[key].value = config[key] ?? (key === "charactersPerCredit" ? 1000 : key === "creditsPerUnit" ? 1 : "");
-    if (!config.configured) $("adminConfig").open = true;
-  }
+  $("configHint").textContent = config.configured ? `当前模型：${config.model}。音色以当前服务支持范围为准。` : user.role === "admin" ? "音频服务尚未配置，请到配置中心的语音生成类别添加服务。" : "音频服务尚未配置，请联系管理员设置后再生成。";
+  $("audioSettingsLink").hidden = user.role !== "admin";
   updateEstimate();
 }
 
@@ -135,12 +131,6 @@ async function main() {
     const download = event.target.closest("[data-download]"); const reuse = event.target.closest("[data-reuse]");
     if (reuse) { const item = items[Number(reuse.dataset.reuse)]; if (item) { $("prompt").value = item.prompt || item.content || ""; persistDraft(); $("prompt").focus(); } }
     if (download) { const item = items[Number(download.dataset.download)]; if (!item) return; try { await downloadFile(item.downloadUrl || mediaUrl(item), audioFilename(item)); } catch (error) { setStatus($("historyStatus"), error.message, "error"); } }
-  });
-  $("configForm").addEventListener("submit", async (event) => {
-    event.preventDefault(); const button = event.target.querySelector('[type="submit"]'); button.disabled = true;
-    const fields = Object.fromEntries(new FormData(event.target));
-    try { await apiPost("/api/audio-config", { ...fields, charactersPerCredit: Number(fields.charactersPerCredit), creditsPerUnit: Number(fields.creditsPerUnit) }); event.target.elements.apiKey.value = ""; await loadConfig(); setStatus($("configStatus"), "音频配置已保存", "success"); }
-    catch (error) { setStatus($("configStatus"), error.message, "error"); } finally { button.disabled = false; }
   });
   await Promise.all([loadConfig().catch((error) => { $("configHint").textContent = `配置加载失败：${error.message}。请刷新后重试。`; }), loadAudio()]);
   updateEstimate(); if (pendingTask) pollAudio();

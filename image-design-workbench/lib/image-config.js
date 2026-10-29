@@ -29,7 +29,7 @@ function normalizeModelName(value) {
 function normalizeModelList(value) {
   const entries = Array.isArray(value) ? value : clean(value).split(/[,，\n]+/);
   const models = [...new Set(entries.map(normalizeModelName).filter(Boolean))];
-  if (models.length > 20) throw new Error("每个生图端点最多配置 20 个模型");
+  if (models.length > 2000) throw new Error("每个生图端点最多配置 2000 个模型");
   return models;
 }
 
@@ -61,6 +61,58 @@ function normalizeApiBase(value, label = "生图 API URL") {
   return parsed.toString().replace(/\/$/, "");
 }
 
+function normalizeEndpointCredentials(raw = {}) {
+  const apiBase = normalizeApiBase(raw.apiBase || raw.apiUrl || raw.api_url);
+  const apiKey = clean(raw.apiKey || raw.api_key);
+  if (!apiKey) throw new Error("生图 API Key 不能为空");
+  return { apiBase, apiKey };
+}
+
+function modelListFromResponse(payload) {
+  const source = Array.isArray(payload?.data) ? payload.data
+    : Array.isArray(payload?.models) ? payload.models
+      : Array.isArray(payload?.data?.models) ? payload.data.models
+        : Array.isArray(payload?.result) ? payload.result
+          : [];
+  const candidates = source.map((item) => (
+    typeof item === "string" ? item : item?.id || item?.model || item?.name || ""
+  ));
+  return [...new Set(candidates.map(normalizeModelName).filter(Boolean))];
+}
+
+// OpenAI 兼容服务的模型发现：只读取 GET /models，不把密钥返回给浏览器。
+async function discoverSupportedModels(raw = {}, { fetchImpl = globalThis.fetch } = {}) {
+  const { apiBase, apiKey } = normalizeEndpointCredentials(raw);
+  if (typeof fetchImpl !== "function") throw new Error("当前运行环境不支持模型发现");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let response;
+  try {
+    response = await fetchImpl(`${apiBase}/models`, {
+      method: "GET",
+      redirect: "error",
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+      signal: controller.signal,
+    });
+  } catch (error) {
+    throw new Error(error?.name === "AbortError" ? "拉取模型超时，请稍后重试" : "无法连接模型列表接口，请检查 API 地址");
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!response.ok) {
+    throw new Error(`模型列表接口返回 ${response.status}，请确认该服务支持 GET /models 且 Key 有权限`);
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("模型列表接口没有返回 JSON 数据");
+  }
+  const models = modelListFromResponse(payload);
+  if (!models.length) throw new Error("接口未返回可用模型，请确认其响应包含 data[].id 或 models[]");
+  return models;
+}
+
 // 校验并归一化一组生图端点（url + key）。
 function normalizeEndpointInput(raw = {}) {
   const apiBase = normalizeApiBase(raw.apiBase || raw.apiUrl || raw.api_url);
@@ -72,7 +124,7 @@ function normalizeEndpointInput(raw = {}) {
   const legacyModel = normalizeModelName(raw.model);
   const models = normalizeModelList(raw.models ?? raw.supportedModels ?? legacyModel);
   if (legacyModel && !models.includes(legacyModel)) models.unshift(legacyModel);
-  if (models.length > 20) throw new Error("每个生图端点最多配置 20 个模型");
+  if (models.length > 2000) throw new Error("每个生图端点最多配置 2000 个模型");
   const model = models[0] || ""; // 首项为自动调度时的默认模型
   return { apiBase, apiKey, label, model, models };
 }
@@ -192,7 +244,7 @@ async function setEndpointEnabled(id, enabled) {
   );
 }
 
-// 自由生图「指定节点」用：按 id 取一个启用的端点。找不到/已停用则报错。
+// 所有生图模块的指定节点路由：找不到、已停用或模型不匹配时明确报错。
 async function getEnabledEndpointById(id, requestedModel = "") {
   const [rows] = await getPool().query(
     "SELECT api_base, api_key, model, supported_models FROM image_endpoints WHERE id = ? AND enabled = 1 LIMIT 1",
@@ -206,15 +258,21 @@ async function getEnabledEndpointById(id, requestedModel = "") {
   return { apiBase: rows[0].api_base, apiKey: rows[0].api_key, model: model || rows[0].model || "" };
 }
 
-// 给普通用户选节点用的脱敏列表（只给 id + 展示名，不含 url/key），仅启用的，按 id 排「节点N」。
+// 普通用户选节点所用的安全投影，仅启用的节点，不含地址与密钥。
 async function listSelectableEndpoints() {
   const [rows] = await getPool().query(
     "SELECT id, label, model, supported_models FROM image_endpoints WHERE enabled = 1 ORDER BY id ASC",
   );
-  return rows.map((row, i) => ({
+  return selectableEndpoints(rows);
+}
+
+function selectableEndpoints(rows) {
+  return rows.map((row) => ({
     id: row.id,
-    name: `节点${i + 1}`,
+    // 用户侧只需要稳定、可识别的节点名称；不暴露地址或密钥。
+    name: clean(row.label) || `未命名节点 #${row.id}`,
     models: endpointModels(row),
+    defaultModel: clean(row.model) || endpointModels(row)[0],
   }));
 }
 
@@ -227,6 +285,19 @@ async function addEndpoint(raw) {
   return result.insertId;
 }
 
+async function getEndpointCredentials(id) {
+  const [rows] = await getPool().query("SELECT api_base, api_key FROM image_endpoints WHERE id = ? LIMIT 1", [Number(id)]);
+  if (!rows.length) throw new Error("生图端点不存在");
+  return { apiBase: rows[0].api_base, apiKey: rows[0].api_key };
+}
+
+async function updateEndpoint(id, raw) {
+  const previous = await getEndpointCredentials(id);
+  if (!clean(raw.apiKey) && normalizeApiBase(raw.apiBase) !== previous.apiBase) throw new Error("修改 API 地址时请重新输入密钥");
+  const input = normalizeEndpointInput({ ...raw, apiKey: clean(raw.apiKey) || previous.apiKey });
+  await getPool().query("UPDATE image_endpoints SET api_base = ?, api_key = ?, label = ?, model = ?, supported_models = ? WHERE id = ?", [input.apiBase, input.apiKey, input.label, input.model, JSON.stringify(input.models), Number(id)]);
+}
+
 async function updateEndpointModels(id, value) {
   const models = normalizeModelList(value);
   if (!models.length) throw new Error("请至少配置一个生图模型");
@@ -235,6 +306,19 @@ async function updateEndpointModels(id, value) {
     [models[0], JSON.stringify(models), Number(id)],
   );
   if (!result.affectedRows) throw new Error("生图端点不存在");
+}
+
+async function refreshEndpointModels(id) {
+  const [rows] = await getPool().query(
+    "SELECT api_base, api_key FROM image_endpoints WHERE id = ? LIMIT 1",
+    [Number(id)],
+  );
+  if (!rows.length) throw new Error("生图端点不存在");
+  const models = await discoverSupportedModels({ apiBase: rows[0].api_base, apiKey: rows[0].api_key });
+  // 刷新目录不应擅自把文本模型设成图像服务的默认模型。
+  const [saved] = await getPool().query("SELECT model FROM image_endpoints WHERE id = ? LIMIT 1", [Number(id)]);
+  if (saved[0]?.model && !models.includes(saved[0].model)) throw new Error("原默认模型已不在服务目录中，请在管理面板重新选择");
+  return models;
 }
 
 async function deleteEndpoint(id) {
@@ -262,14 +346,37 @@ async function setSchedule(value) {
   return schedule;
 }
 
+function resolveGlobalDefault(nodes, endpointId) {
+  const node = nodes.find((item) => String(item.id) === String(endpointId));
+  if (!node) return null;
+  const model = node.models.includes(node.defaultModel) ? node.defaultModel : node.models[0];
+  return model ? { endpointId: String(node.id), name: node.name, model } : null;
+}
+
+async function getGlobalDefaultTarget(nodes) {
+  return resolveGlobalDefault(nodes || await listSelectableEndpoints(), await getSetting("image_default_endpoint_id", ""));
+}
+
+async function setGlobalDefaultTarget(id) {
+  const target = resolveGlobalDefault(await listSelectableEndpoints(), id);
+  if (!target) throw new Error("仅能把已启用且有可用模型的节点设为全局默认");
+  await setSetting("image_default_endpoint_id", target.endpointId);
+  return target;
+}
+
 // 内存轮询计数器（单实例足够；ponytail: 多实例需改为 DB 计数或随机策略）。
 let roundRobinCounter = 0;
 
 // 画图时取一组端点：按调度策略轮询/随机。
 async function pickEndpoint(requestedModel = "") {
   const rows = await listEndpoints();
-  const schedule = await getSchedule();
   const model = normalizeModelName(requestedModel);
+  const target = await getGlobalDefaultTarget(selectableEndpoints(rows));
+  if (target && (!model || rows.some((row) => String(row.id) === target.endpointId && endpointModels(row).includes(model)))) {
+    const row = rows.find((row) => String(row.id) === target.endpointId);
+    return { apiBase: row.api_base, apiKey: row.api_key, model: model || target.model };
+  }
+  const schedule = await getSchedule();
   const { row, nextCounter } = selectEndpoint(rows, { schedule, counter: roundRobinCounter, model });
   roundRobinCounter = nextCounter;
   return { apiBase: row.api_base, apiKey: row.api_key, model: model || row.model || "" };
@@ -277,6 +384,8 @@ async function pickEndpoint(requestedModel = "") {
 
 async function getDefaultImageModel() {
   const rows = await listEndpoints();
+  const target = await getGlobalDefaultTarget(selectableEndpoints(rows));
+  if (target) return target.model;
   return rows.length ? endpointModels(rows[0])[0] : clean(process.env.CUSTOM_IMAGE_MODEL) || FALLBACK_IMAGE_MODEL;
 }
 
@@ -303,7 +412,9 @@ async function getPromptConfigSummary() {
 
 async function setPromptConfig(raw = {}) {
   const apiBase = normalizeApiBase(raw.apiBase || raw.apiUrl || raw.api_url, "提示词 API URL");
-  const apiKey = clean(raw.apiKey || raw.api_key);
+  const previous = await getPromptConfig();
+  if (!clean(raw.apiKey || raw.api_key) && apiBase !== previous.apiBase) throw new Error("修改 API 地址时请重新输入密钥");
+  const apiKey = clean(raw.apiKey || raw.api_key) || previous.apiKey;
   const model = clean(raw.model) || DEFAULT_PROMPT_MODEL;
   if (!apiKey) {
     throw new Error("提示词 API Key 不能为空");
@@ -347,7 +458,7 @@ async function getVideoConfigSummary() {
 }
 
 async function setVideoConfig(raw = {}) {
-  const apiKey = clean(raw.apiKey || raw.api_key);
+  const apiKey = clean(raw.apiKey || raw.api_key) || (await getVideoConfig()).apiKey;
   const model = clean(raw.model) || DEFAULT_VIDEO_MODEL;
   if (!apiKey) {
     throw new Error("生视频 API Key 不能为空");
@@ -420,6 +531,9 @@ module.exports = {
   DEFAULT_VIDEO_MODEL,
   // 纯逻辑
   normalizeApiBase,
+  normalizeEndpointCredentials,
+  modelListFromResponse,
+  discoverSupportedModels,
   normalizeEndpointInput,
   normalizeModelName,
   normalizeModelList,
@@ -433,15 +547,22 @@ module.exports = {
   listEndpoints,
   listEndpointsForDisplay,
   addEndpoint,
+  getEndpointCredentials,
+  updateEndpoint,
   updateEndpointModels,
+  refreshEndpointModels,
   deleteEndpoint,
   setEndpointEnabled,
   getEnabledEndpointById,
   listSelectableEndpoints,
+  selectableEndpoints,
   countEndpoints,
   assertConfigured,
   getSchedule,
   setSchedule,
+  resolveGlobalDefault,
+  getGlobalDefaultTarget,
+  setGlobalDefaultTarget,
   pickEndpoint,
   getDefaultImageModel,
   getPromptConfig,

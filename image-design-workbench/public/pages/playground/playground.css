@@ -1,17 +1,24 @@
 /* ============ 自由生图：赛博画布布局（中间画布 + 右侧面板），与 AI 修图同款 ============ */
 .pg-studio {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(300px, 26vw, 344px);
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 29vw, 380px);
   gap: 20px;
-  align-items: stretch;
+  align-items: start;
 }
 
 /* ---------- 中间画布 ---------- */
 .pg-canvas {
   display: flex;
   flex-direction: column;
-  min-height: 620px;
+  min-height: 560px;
+  height: calc(100dvh - 130px);
 }
+.pg-studio [hidden] { display: none !important; }
+.pg-compose-heading { margin-bottom: 18px; }
+.pg-compose-heading p { margin: 7px 0 0; color: var(--ink-mute); font-size: 12px; }
+.pg-panel .pg-prompt-field textarea { min-height: 170px; resize: vertical; font-size: 14px; line-height: 1.7; }
+.pg-panel .pg-reference-head { flex-direction: column; align-items: start; gap: 4px; }
+.pg-canvas .pg-stage { min-height: 0; }
 
 .pg-canvas-head {
   display: flex;
@@ -282,10 +289,14 @@
 }
 
 /* ---------- 右侧面板 ---------- */
-.pg-panel {
+.pg-studio > .card.pg-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: sticky;
+  top: 90px;
+  height: calc(100dvh - 130px);
+  min-height: 560px;
 }
 
 .pg-panel-scroll {
@@ -429,4 +440,8 @@
   .pg-studio {
     grid-template-columns: 1fr;
   }
+  .pg-studio > .card.pg-panel { position: static; height: auto; min-height: 0; order: -1; }
+  .pg-panel-scroll { overflow: visible; }
+  .pg-canvas { height: auto; min-height: 460px; }
+  .pg-canvas .pg-stage { min-height: 340px; }
 }

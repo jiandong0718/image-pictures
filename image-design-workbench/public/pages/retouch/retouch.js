@@ -8,6 +8,7 @@ import { apiGet, apiPost, apiUpload, downloadFile, pollTask } from "/shared/api.
 import { createLocalState } from "/shared/persistence.js";
 import { enableImagePaste } from "/shared/image-paste.js";
 import { takeReuse } from "/shared/reuse.js";
+import { mountImageTarget } from "/shared/image-target.js";
 
 const ICONS = {
   removeBg:
@@ -71,6 +72,7 @@ let previewUrl = "";
 let imageSet = null;
 let loading = false;
 let hasImageConfig = false;
+let imageTarget;
 let hintSeen = false;
 let pendingTask = null; // 进行中的任务 { taskId, before, label }：切走也持久化，回来续查把结果捞回
 
@@ -405,6 +407,7 @@ async function generate() {
     beforeUrl = uploaded.image.url;
 
     ({ taskId } = await apiPost("/api/playground/images", {
+      ...imageTarget.value(),
       mode: "edit",
       prompt,
       count: 1,
@@ -486,12 +489,8 @@ async function main() {
   });
   els.generateBtn.addEventListener("click", generate);
 
-  try {
-    const cfg = await apiGet("/api/image-config");
-    hasImageConfig = Boolean(cfg.config?.uploaded);
-  } catch {
-    hasImageConfig = false;
-  }
+  imageTarget = await mountImageTarget(document.getElementById("imageTarget"), { storageKey: "imageStudio:target:" + ctx.me.id + ":retouch" });
+  hasImageConfig = imageTarget.configured;
   renderState();
   renderCanvas();
 

@@ -23,9 +23,10 @@ interface SelectProps {
   disabled?: boolean
   className?: string
   onOpenChange?: (isOpen: boolean) => void
+  ariaLabel?: string
 }
 
-export default function Select({ value, onChange, onReorder, options, disabled, className, onOpenChange }: SelectProps) {
+export default function Select({ value, onChange, onReorder, options, disabled, className, onOpenChange, ariaLabel }: SelectProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [menuMaxHeight, setMenuMaxHeight] = useState(DEFAULT_DROPDOWN_MAX_HEIGHT)
   const [placement, setPlacement] = useState<'bottom' | 'top'>('bottom')
@@ -159,6 +160,23 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
     <div ref={containerRef} className="relative w-full">
       <div
         ref={triggerRef}
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-expanded={isOpen}
+        aria-disabled={disabled || undefined}
+        tabIndex={disabled ? -1 : 0}
+        onKeyDown={(event) => {
+          if (disabled) return
+          if (event.key === 'Escape') setIsOpen(false)
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setIsOpen((open) => !open) }
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            const choices = options.filter((option) => !option.variant)
+            const index = choices.findIndex((option) => option.value === value)
+            const next = Math.min(choices.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)))
+            if (choices[next]) onChange(choices[next].value)
+          }
+        }}
         onClick={handleToggle}
         className={`flex items-center justify-between gap-1 w-full cursor-pointer select-none ${className ?? ''} ${
           disabled ? '!opacity-50 !cursor-not-allowed !bg-gray-100/50 dark:!bg-white/[0.05]' : ''

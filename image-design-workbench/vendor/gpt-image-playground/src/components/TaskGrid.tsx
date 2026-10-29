@@ -28,6 +28,11 @@ export default function TaskGrid() {
   const startedWithCtrl = useRef(false)
   const initialSelection = useRef<string[]>([])
   const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(() => {
+    const saved = Number(localStorage.getItem('gpt-image-playground:task-page-size'))
+    return [12, 24, 48, 96].includes(saved) ? saved : 24
+  })
 
   const filteredTasks = useMemo(() => {
     const sorted = [...tasks].sort((a, b) => b.createdAt - a.createdAt)
@@ -47,6 +52,23 @@ export default function TaskGrid() {
       return prompt.includes(q) || paramStr.includes(q)
     })
   }, [tasks, searchQuery, filterStatus, filterFavorite, activeFavoriteCollectionId])
+
+  const totalPages = Math.max(1, Math.ceil(filteredTasks.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const visibleTasks = filteredTasks.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, filterStatus, filterFavorite, activeFavoriteCollectionId, pageSize])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const changePageSize = (value: number) => {
+    setPageSize(value)
+    try { localStorage.setItem('gpt-image-playground:task-page-size', String(value)) } catch { /* 存储不可用时只影响当前会话。 */ }
+  }
 
   const handleDelete = (task: typeof tasks[0]) => {
     setConfirmDialog({
@@ -290,8 +312,29 @@ export default function TaskGrid() {
       data-task-grid-root
       className="relative min-h-[50vh]"
     >
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+        <span>共 {filteredTasks.length} 条任务</span>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5">
+            <span>每页</span>
+            <select
+              value={pageSize}
+              onChange={(event) => changePageSize(Number(event.target.value))}
+              className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 outline-none transition focus:border-blue-400 dark:border-white/[0.12] dark:bg-white/[0.06] dark:text-gray-200"
+              aria-label="每页任务数"
+            >
+              {[12, 24, 48, 96].map((size) => <option key={size} value={size}>{size} 条</option>)}
+            </select>
+          </label>
+          <div className="flex items-center gap-1">
+            <button type="button" className="rounded-lg border border-gray-200 px-2 py-1 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/[0.12] dark:hover:bg-white/[0.06]" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={safePage <= 1}>上一页</button>
+            <span className="min-w-14 text-center tabular-nums">{safePage} / {totalPages}</span>
+            <button type="button" className="rounded-lg border border-gray-200 px-2 py-1 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/[0.12] dark:hover:bg-white/[0.06]" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={safePage >= totalPages}>下一页</button>
+          </div>
+        </div>
+      </div>
       <div ref={gridRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 pb-10">
-        {filteredTasks.map((task) => (
+        {visibleTasks.map((task) => (
           <div key={task.id} className="task-card-wrapper" data-task-id={task.id}>
             <TaskCard
               task={task}

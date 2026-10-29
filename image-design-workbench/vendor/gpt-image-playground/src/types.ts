@@ -73,6 +73,8 @@ export interface ApiProfile {
   baseUrl: string
   apiKey: string
   model: string
+  /** 宿主工作台选中的服务端节点；普通独立部署不使用。 */
+  endpointId?: string
   timeout: number
   apiMode: ApiMode
   codexCli: boolean

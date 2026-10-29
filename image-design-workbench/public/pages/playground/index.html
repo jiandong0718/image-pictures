@@ -6,20 +6,27 @@
     <title>自由生图 · AI 图像设计工作台</title>
     <link rel="stylesheet" href="/shared/theme.css" />
     <script src="/shared/theme-init.js?v=mystic-default-1"></script>
-    <link rel="stylesheet" href="/pages/playground/playground.css?v=img2img2" />
+    <link rel="stylesheet" href="/pages/playground/playground.css?v=right-composer-2" />
   </head>
   <body>
     <div id="page">
       <div class="pg-studio">
-        <!-- 中间画布：提示词 + 结果 -->
+        <!-- 左侧只展示作品 -->
         <div class="card pg-canvas">
           <div class="pg-canvas-head">
             <div>
-              <div class="section-label">自由生图</div>
-              <div class="card-title" id="modeTitle">文生图</div>
+              <div class="section-label">创作结果</div>
+              <div class="card-title">作品</div>
             </div>
             <span class="badge" id="canvasBadge">0 张结果</span>
           </div>
+          <div class="pg-stage" id="stage"></div>
+        </div>
+
+        <!-- 右侧统一管理文生图、图生图输入 -->
+        <div class="card pg-panel">
+          <div class="pg-panel-scroll">
+            <div class="pg-compose-heading"><div class="card-title" id="modeTitle">文生图</div><p>描述画面，调整参数，开始创作。</p></div>
           <div class="pg-mode-tabs" role="tablist" aria-label="生图模式">
             <button class="pg-mode-tab active" id="textMode" type="button" role="tab" aria-selected="true">文生图</button>
             <button class="pg-mode-tab" id="imageMode" type="button" role="tab" aria-selected="false">图生图</button>
@@ -31,14 +38,9 @@
           </div>
           <label class="field pg-prompt-field">
             <span>提示词</span>
-            <textarea class="textarea" id="prompt" rows="3" placeholder="描述你想生成的图像：主体、构图、材质、光线、风格…"></textarea>
+            <textarea class="textarea" id="prompt" rows="7" placeholder="描述你想生成的图像：主体、构图、材质、光线、风格…"></textarea>
           </label>
-          <div class="pg-stage" id="stage"></div>
-        </div>
 
-        <!-- 右侧：控制面板 -->
-        <div class="card pg-panel">
-          <div class="pg-panel-scroll">
             <div class="section-label">生成张数</div>
             <div class="pg-chips" id="counts"></div>
 
@@ -68,16 +70,6 @@
               </select>
             </label>
 
-            <label class="field" style="margin-top: 18px" id="modelField" hidden>
-              <span>生图模型</span>
-              <select class="select" id="modelSelect"></select>
-            </label>
-
-            <label class="field" style="margin-top: 18px" id="nodeField" hidden>
-              <span>生图节点</span>
-              <select class="select" id="nodeSelect"></select>
-            </label>
-
             <details class="pg-advanced">
               <summary>附加要求<span class="pg-adv-hint">（可选）</span></summary>
               <div class="pg-advanced-body">
@@ -87,6 +79,7 @@
           </div>
 
           <div class="pg-panel-foot">
+            <div id="imageTarget"></div>
             <p class="msg" id="msg"></p>
             <button class="btn primary full" id="generateBtn" type="button">开始生成</button>
             <p class="card-desc" id="configHint" style="margin-top: 10px"></p>

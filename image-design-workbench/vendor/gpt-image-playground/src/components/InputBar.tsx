@@ -14,6 +14,7 @@ import { useHintTooltip } from '../hooks/useHintTooltip'
 import { useTooltip } from '../hooks/useTooltip'
 import { downloadImageEntriesAsZip, downloadImageIds, formatExportFileTime, getTaskOutputImageZipEntries } from '../lib/downloadImages'
 import Select from './Select'
+import WorkbenchTargets from './WorkbenchTargets'
 import SizePickerModal from './SizePickerModal'
 import ViewportTooltip from './ViewportTooltip'
 import { CloseIcon } from './icons'
@@ -429,6 +430,7 @@ function AtImageOptionThumb({ option }: { option: AtImageOption }) {
 }
 
 export default function InputBar() {
+  const embeddedInWorkbench = window.parent !== window
   const prompt = useStore((s) => s.prompt)
   const appMode = useStore((s) => s.appMode)
   const setPrompt = useStore((s) => s.setPrompt)
@@ -1927,7 +1929,7 @@ export default function InputBar() {
   }
 
   const renderParams = (cols: string) => (
-    <div className={`grid ${cols} gap-2 text-xs flex-1`}>
+    <div className={embeddedInWorkbench ? 'generation-fields' : `grid ${cols} gap-2 text-xs flex-1`}>
       <label
         className="relative flex flex-col gap-0.5"
         onMouseEnter={sizeHint.show}
@@ -1962,6 +1964,7 @@ export default function InputBar() {
       >
         <span className="text-gray-400 dark:text-gray-500 ml-1">质量</span>
         <Select
+          ariaLabel="质量"
           value={settings.codexCli ? 'auto' : isFalProvider && params.quality === 'auto' ? 'high' : params.quality}
           onChange={(val) => {
             if (!settings.codexCli) setParams({ quality: val as any })
@@ -1980,6 +1983,7 @@ export default function InputBar() {
       <label className="flex flex-col gap-0.5">
         <span className="text-gray-400 dark:text-gray-500 ml-1">格式</span>
         <Select
+          ariaLabel="格式"
           value={params.output_format}
           onChange={(val) => {
             setParams({
@@ -1995,7 +1999,7 @@ export default function InputBar() {
           className={selectClass}
         />
       </label>
-      {showTransparentOutputControl ? (
+      {showTransparentOutputControl && !embeddedInWorkbench ? (
         <label
           className="relative flex flex-col gap-0.5"
           onMouseEnter={transparentOutputHint.show}
@@ -2067,6 +2071,7 @@ export default function InputBar() {
       >
         <span className="text-gray-400 dark:text-gray-500 ml-1">审核</span>
         <Select
+          ariaLabel="审核"
           value={moderationDisabled ? 'auto' : params.moderation}
           onChange={(val) => {
             if (!moderationDisabled) setParams({ moderation: val as any })
@@ -2129,6 +2134,14 @@ export default function InputBar() {
         <ButtonTooltip visible={nLimitHint.visible} text={nLimitHintText} />
         <ButtonTooltip visible={streamConcurrentByN && !nLimitHint.visible} text="数量大于 1 时会将多图生成拆分为并发单图" />
       </label>
+      {embeddedInWorkbench && (
+        <>
+          <label className="flex flex-col gap-0.5"><span className="text-gray-400 dark:text-gray-500 ml-1">背景</span>
+            <Select ariaLabel="背景" value={params.transparent_output ? 'transparent' : 'default'} onChange={(value) => setParams({ transparent_output: value === 'transparent', ...(value === 'transparent' ? { output_format: 'png', output_compression: null } : {}) })} options={[{label: '默认', value: 'default'}, {label: '透明（本地处理）', value: 'transparent'}]} className={selectClass} />
+          </label>
+          <label className="flex flex-col gap-0.5" title="当前工作台使用异步生成接口，暂不支持实时预览"><span className="text-gray-400 dark:text-gray-500 ml-1">生成预览</span><Select ariaLabel="生成预览" value="unsupported" onChange={() => {}} options={[{label: '暂不支持', value: 'unsupported'}]} disabled className={selectClass} /></label>
+        </>
+      )}
     </div>
   )
 
@@ -2443,12 +2456,14 @@ export default function InputBar() {
             )}
           </div>
 
+          <div className={embeddedInWorkbench ? 'generation-params' : 'mt-3'}>
+            {embeddedInWorkbench && <WorkbenchTargets />}
+            {renderParams('grid-cols-2 sm:grid-cols-3')}
+          </div>
           {/* 参数 + 按钮 */}
           <div className="mt-3">
             {/* 桌面端布局 */}
-            <div className="hidden sm:flex items-end justify-between gap-3">
-              {renderParams('grid-cols-6')}
-
+            <div className="hidden sm:flex items-center justify-end gap-2">
               <div className="flex gap-2 flex-shrink-0 mb-0.5">
                 <div
                   className="relative"
@@ -2504,13 +2519,6 @@ export default function InputBar() {
 
             {/* 移动端布局 */}
             <div className="sm:hidden flex flex-col gap-2">
-              <div className={`collapse-section${mobileCollapsed ? ' collapsed' : ''}`}>
-                <div className="collapse-inner">
-                  {renderParams('grid-cols-2')}
-                  <div className="h-2" />
-                </div>
-              </div>
-
               <div className="flex items-center gap-2">
                 <div
                   className="relative"

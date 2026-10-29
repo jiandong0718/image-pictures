@@ -2,6 +2,7 @@ import { mountLayout, setCredits } from "/shared/layout.js";
 import { apiGet, apiPost, downloadFile } from "/shared/api.js";
 import { escapeHtml, thumbHtml, setStatus, emptyHtml, openCreativePicker, createDialog, confirmRemoval, showAsset, consumeTransfer } from "/shared/creative-picker.js";
 import { readStored, writeStored, referenceToken, mergeBatch, cloneCreativeDraft } from "/shared/creative-utils.js";
+import { mountImageTargetDrawer } from "/shared/image-target.js";
 
 const $ = (id) => document.getElementById(id);
 let user;
@@ -10,12 +11,13 @@ let assetNames = {};
 let history = [];
 let schemes = [];
 let configured = false;
+let imageTarget;
 let submitting = false;
 let previewVersion = 0;
 const activePolls = new Set();
 const MAX_IMAGE_REQUEST_PIXELS = 8294400;
 
-function draft() { return cloneCreativeDraft({ prompt: $("prompt").value, assetIds, assetNames, model: $("model").value, count: Number($("count").value), resolution: $("resolution").value, ratio: $("ratio").value }); }
+function draft() { return cloneCreativeDraft({ prompt: $("prompt").value, assetIds, assetNames, ...imageTarget?.value(), count: Number($("count").value), resolution: $("resolution").value, ratio: $("ratio").value }); }
 function hasInFlightGeneration() { return history.some((batch) => ["pending", "paused"].includes(batch.status)); }
 function syncGenerateButton() {
   const button = $("generate");
@@ -47,10 +49,11 @@ function persistDraft() {
 }
 function applyDraft(value = {}) {
   value = cloneCreativeDraft(value);
+  imageTarget?.setValue(value);
   $("prompt").value = typeof value.prompt === "string" ? value.prompt : "";
   assetIds = Array.isArray(value.assetIds) ? [...new Set(value.assetIds.map(String))] : [];
   assetNames = value.assetNames && typeof value.assetNames === "object" ? value.assetNames : {};
-  for (const [key, fallback] of [["model", ""], ["count", "1"], ["resolution", "1k"], ["ratio", "1:1"]]) {
+  for (const [key, fallback] of [["count", "1"], ["resolution", "1k"], ["ratio", "1:1"]]) {
     const select = $(key); const saved = String(value[key] ?? fallback);
     select.value = [...select.options].some((option) => option.value === saved) ? saved : fallback;
   }
@@ -135,7 +138,7 @@ async function generate() {
   setStatus($("generateStatus"), "正在解析素材并提交任务…");
   try {
     const resolved = await resolveComposition(snapshot);
-    const response = await apiPost("/api/playground/images", { prompt: resolved.prompt, mode: resolved.imageIds?.length ? "edit" : "generate", referenceImageIds: resolved.imageIds || [], referenceImageId: resolved.imageIds?.[0] || "", model: snapshot.model, count: snapshot.count, imageSpec: spec });
+    const response = await apiPost("/api/playground/images", { prompt: resolved.prompt, mode: resolved.imageIds?.length ? "edit" : "generate", referenceImageIds: resolved.imageIds || [], referenceImageId: resolved.imageIds?.[0] || "", endpointId: snapshot.endpointId, model: snapshot.model, count: snapshot.count, imageSpec: spec });
     if (!response.taskId) throw new Error("接口没有返回任务编号，请检查我的图库后再操作");
     const batch = { id: String(response.taskId), taskId: response.taskId, createdAt: new Date().toISOString(), prompt: resolved.prompt, draft: snapshot, model: snapshot.model, count: snapshot.count, status: "pending", images: [] };
     updateBatch(batch); setStatus($("generateStatus"), ""); pollBatch(batch);
@@ -165,15 +168,15 @@ async function main() {
   schemes = readStored(user.id, "schemes", []); if (!Array.isArray(schemes)) schemes = [];
   renderHistory(); renderSchemes(); syncHistoryLink();
   try {
-    const data = await apiGet("/api/image-config"); configured = Boolean(data.config?.uploaded);
-    $("model").innerHTML = '<option value="">自动选择</option>' + (data.models || []).map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join("");
+    imageTarget = await mountImageTargetDrawer($("imageTarget"), { storageKey: `imageStudio:target:${user.id}:workbench` }); configured = imageTarget.configured;
     $("configHint").textContent = configured ? "每张图片按当前生图规则扣除积分，任务提交后将在生成记录中显示。" : "尚未配置可用生图服务，请联系管理员在配置中心设置。";
   } catch (error) { $("configHint").textContent = `生图配置加载失败：${error.message}，请刷新后重试。`; }
   applyDraft(saved);
+  $("imageTarget").addEventListener("change", persistDraft);
   const incoming = consumeTransfer(user.id);
   if (incoming?.item) { if (incoming.type === "asset") addAsset(incoming.item); else insertText(incoming.item.content || incoming.item.prompt || ""); }
   $("prompt").addEventListener("input", persistDraft);
-  ["model", "count", "resolution", "ratio"].forEach((id) => $(id).addEventListener("change", persistDraft));
+  ["count", "resolution", "ratio"].forEach((id) => $(id).addEventListener("change", persistDraft));
   $("pickPrompt").addEventListener("click", () => openCreativePicker({ type: "prompts", onSelect: (item) => insertText(item.content || item.prompt || "") }));
   $("pickAsset").addEventListener("click", () => openCreativePicker({ kinds: ["image", "text"], onSelect: addAsset }));
   $("references").addEventListener("click", (event) => { const button = event.target.closest("[data-remove]"); if (!button) return; const id = button.dataset.remove; assetIds = assetIds.filter((value) => value !== id); delete assetNames[id]; $("prompt").value = $("prompt").value.split(referenceToken(id)).join(""); renderReferences(); persistDraft(); });
