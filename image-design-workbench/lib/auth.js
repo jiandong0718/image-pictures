@@ -34,6 +34,7 @@ async function createSession(userId) {
     "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
     [token, userId, expiresAt],
   );
+  await require("./service-center").recordActivity(userId);
   return { token, expiresAt };
 }
 
@@ -65,6 +66,7 @@ async function getSessionUser(req) {
   if (!user) {
     return null;
   }
+  await require("./service-center").recordActivity(user.id, req);
   const result = publicUser(user);
   result.sessionToken = token;
   return result;

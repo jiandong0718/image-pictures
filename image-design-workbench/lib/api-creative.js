@@ -195,7 +195,7 @@ function createCreativeApi(deps) {
       asset = await resources.createAsset(user.id, { kind: "audio", title: Array.from(input.prompt).slice(0, 80).join(""), content: input.prompt, tags: [] }, { ...file, mime: generated.mime, taskId });
       result = { audio: publicAsset(asset), assets: [publicAsset(asset)], ...pricing };
       // 先保存已知输出；即使结算暂时失败，任务恢复仍有可定位的结果。
-      await tasks.updateTaskMetadata(taskId, { result });
+      await tasks.updateTaskMetadata(taskId, { result, outputCompletedAt: Date.now() });
       resultRecorded = true;
       await tasks.completeTask(taskId, result, pricing.estimatedCost, `语音生成 ${pricing.characterCount} 字符`);
       unsettled.delete(String(taskId));

@@ -26,6 +26,7 @@ const generationTasks = require("./lib/generation-tasks");
 const { createTracker } = require("./lib/legacy-task-tracker");
 const creativeResources = require("./lib/creative-resources");
 const { createCreativeApi } = require("./lib/api-creative");
+const serviceCenter = require("./lib/service-center");
 
 const ROOT_DIR = __dirname;
 const PROJECT_ROOT_DIR = path.resolve(ROOT_DIR, "..");
@@ -42,7 +43,7 @@ const OUTPUT_DIR = path.join(ROOT_DIR, "generated-images", "product-design");
 const THUMB_DIR = path.join(OUTPUT_DIR, ".thumbs");
 const THUMB_MAX_PX = 400;
 const previewCache = createPreviewCache({ directory: path.join(THUMB_DIR, 'webp-v1') });
-const legacyTaskTracker = createTracker({ tasks: generationTasks, directory: path.join(ROOT_DIR, 'generated-images', '.task-state') });
+const legacyTaskTracker = createTracker({ tasks: generationTasks, directory: path.join(ROOT_DIR, 'generated-images', '.task-state'), observe: serviceCenter.observeTask });
 const AVATAR_DIR = path.join(ROOT_DIR, "generated-images", "avatars");
 const CONTACT_QR_DIR = path.join(ROOT_DIR, "generated-images", "contact-qr");
 const EMBEDDED_SKILL_SCRIPT = path.join(
@@ -233,8 +234,11 @@ let imageSetAllocationQueue = Promise.resolve();
 // 所以生图接口不再同步等待完成，改为「提交任务 -> 后台生成 -> 前端轮询」。
 // 任务状态落库；重启后未知结果标记待确认，不自动重发上游。
 // 旧业务仍在成功后调用 consumeCredits；这里 maxCost=0 仅持久化任务，不改变扣费时机。
-async function createGenerationTask(userId, input = {}, kind = 'image') {
-  return legacyTaskTracker.create(userId, input, kind);
+async function createGenerationTask(userId, input = {}, kind = 'image', req) {
+  const analyticsModule = req ? serviceCenter.moduleFromRequest(req, kind, input) : serviceCenter.moduleFor(input, kind);
+  const id = await legacyTaskTracker.create(userId, { ...input, analyticsModule }, kind);
+  await legacyTaskTracker.metadata(id, { analyticsModule });
+  return id;
 }
 
 async function getGenerationTask(id, user) {
@@ -2345,6 +2349,7 @@ const PAGE_ROUTES = {
   "/user-center": { dir: "user-center", auth: "user" },
   "/contact": { dir: "contact", auth: "user" },
   "/admin": { dir: "admin", auth: "admin" },
+  "/service-center": { dir: "service-center", auth: "admin" },
 };
 
 async function servePage(req, res, pathname) {
@@ -2639,6 +2644,21 @@ async function createZip(ids) {
 }
 
 async function handleApi(req, res, pathname, searchParams) {
+  if (pathname.startsWith("/api/service-center/")) {
+    const admin = await accountApi.requireAdmin(req, res);
+    if (!admin) return;
+    if (req.method !== "GET") return sendError(res, 405, "仅支持查询");
+    try {
+      const options = Object.fromEntries(searchParams);
+      const handlers = { "/api/service-center/dashboard": serviceCenter.getDashboard, "/api/service-center/users": serviceCenter.listUsers, "/api/service-center/tasks": serviceCenter.listTasks };
+      if (!handlers[pathname]) return sendError(res, 404, "统计接口不存在");
+      sendJson(res, 200, { ok: true, ...await handlers[pathname](options) });
+    } catch (error) {
+      if (!error.statusCode) console.error("[服务中心] 查询失败", { code: error.code || error.name });
+      sendError(res, error.statusCode || 500, error.statusCode ? error.message : "统计暂时无法加载，请稍后重试");
+    }
+    return;
+  }
   // 账户 / 认证 / 管理员接口优先处理；命中即返回。
   if (await accountApi.handle(req, res, pathname)) {
     return;
@@ -2733,8 +2753,9 @@ async function handleApi(req, res, pathname, searchParams) {
     // 异步模式（?async=true）：立即返回 taskId，后台跑上游生图 + 落盘图库 + 扣费。
     // 前端（vendor React 自定义服务商）轮询 /api/full-playground-proxy/tasks/:id 取结果。
     // 这样单条请求秒回，彻底绕开 Cloudflare 100s 超时；即使前端断开，图也已落盘、扣费必对应真实可找回的图。
+    const proxyTaskId = await createGenerationTask(user.id, { prompt: requestPrompt, model: requestedModel, count: requestedCount }, "proxy-image", req);
     if (searchParams.get("async") === "true") {
-      const taskId = await createGenerationTask(user.id, { prompt: requestPrompt, model: requestedModel, count: requestedCount }, "proxy-image");
+      const taskId = proxyTaskId;
       sendJson(res, 200, { taskId });
       (async () => {
         try {
@@ -2779,6 +2800,7 @@ async function handleApi(req, res, pathname, searchParams) {
             await failGenerationTask(taskId, "绘图聚集地上游未返回可识别图片");
             return;
           }
+          for (const record of records) await pushGenerationTaskImage(taskId, record);
           const credits = await accounts.consumeCredits(
             user.id,
             records.length,
@@ -2808,12 +2830,14 @@ async function handleApi(req, res, pathname, searchParams) {
       });
       responseText = await upstreamResponse.text();
     } catch (error) {
+      await failGenerationTask(proxyTaskId, error.message);
       sendError(res, 502, "绘图聚集地生图请求失败", error.message);
       return;
     }
 
     const upstreamContentType = upstreamResponse.headers.get("content-type") || "application/json; charset=utf-8";
     if (!upstreamResponse.ok) {
+      await failGenerationTask(proxyTaskId, "绘图聚集地上游请求失败");
       res.writeHead(upstreamResponse.status, {
         "Content-Type": upstreamContentType,
         "Cache-Control": "no-store",
@@ -2826,6 +2850,7 @@ async function handleApi(req, res, pathname, searchParams) {
     try {
       payload = responseText ? JSON.parse(responseText) : {};
     } catch {
+      await failGenerationTask(proxyTaskId, "绘图聚集地返回了无法识别的结果");
       res.writeHead(200, {
         "Content-Type": upstreamContentType,
         "Cache-Control": "no-store",
@@ -2835,6 +2860,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     const generatedCount = countImagesInApiResponse(payload);
+    await legacyTaskTracker.metadata(proxyTaskId, { result: { generatedCount }, outputCompletedAt: Date.now() });
     if (generatedCount > 0) {
       try {
         payload.workbenchCredits = await accounts.consumeCredits(
@@ -2843,12 +2869,14 @@ async function handleApi(req, res, pathname, searchParams) {
           `绘图聚集地 ${generatedCount} 张`,
         );
       } catch (error) {
+        await failGenerationTask(proxyTaskId, error.message);
         sendError(res, error.statusCode || 402, error.message);
         return;
       }
     } else {
       payload.workbenchCredits = (await accounts.getUserById(user.id))?.credits ?? 0;
     }
+    await finishGenerationTask(proxyTaskId, { generatedCount });
     sendJson(res, 200, payload);
     return;
   }
@@ -3285,7 +3313,7 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = await createGenerationTask(user.id, payload, 'video');
+    const taskId = await createGenerationTask(user.id, payload, 'video', req);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
@@ -3305,6 +3333,7 @@ async function handleApi(req, res, pathname, searchParams) {
             ? payload.sourceImageIds
             : (payload.sourceImageId ? [payload.sourceImageId] : []),
         });
+        await legacyTaskTracker.metadata(taskId, { result: { video }, outputCompletedAt: Date.now() });
         const balance = await accounts.consumeCredits(user.id, cost, `生成${seconds}秒视频`);
         await finishGenerationTask(taskId, { video, credits: balance });
       } catch (error) {
@@ -3431,7 +3460,7 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = await createGenerationTask(user.id, payload);
+    const taskId = await createGenerationTask(user.id, payload, 'image', req);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
@@ -3443,6 +3472,7 @@ async function handleApi(req, res, pathname, searchParams) {
           model: payload.model,
           endpointId: payload.endpointId,
         });
+        await pushGenerationTaskImage(taskId, image);
         const balance = await accounts.consumeCredits(user.id, 1, "生成主图");
         await recordImageRecord(user.id, image);
         await finishGenerationTask(taskId, { image, credits: balance });
@@ -3500,7 +3530,7 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = await createGenerationTask(user.id, payload);
+    const taskId = await createGenerationTask(user.id, payload, 'image', req);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
@@ -3513,6 +3543,7 @@ async function handleApi(req, res, pathname, searchParams) {
           model: payload.model,
           endpointId: payload.endpointId,
         });
+        await pushGenerationTaskImage(taskId, image);
         const balance = await accounts.consumeCredits(user.id, 1, `生成${IMAGE_TYPES[payload.type].label}`);
         await recordImageRecord(user.id, image);
         await finishGenerationTask(taskId, { image, credits: balance });
@@ -3550,7 +3581,7 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = await createGenerationTask(user.id, payload);
+    const taskId = await createGenerationTask(user.id, payload, 'image', req);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
@@ -3581,6 +3612,7 @@ async function handleApi(req, res, pathname, searchParams) {
         }
       }
       const successCount = Object.keys(results).length;
+      for (const image of Object.values(results)) await pushGenerationTaskImage(taskId, image);
       let balance;
       if (successCount > 0) {
         balance = await accounts.consumeCredits(user.id, successCount, `批量生成 ${successCount} 张衍生图`);
@@ -3614,7 +3646,7 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, error.statusCode || 402, error.message);
       return;
     }
-    const taskId = await createGenerationTask(user.id, payload);
+    const taskId = await createGenerationTask(user.id, payload, 'image', req);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
       try {
@@ -3731,6 +3763,8 @@ if (require.main === module) {
     .then(() => gallery.init())
     .then(() => generationTasks.init())
     .then(() => creativeResources.init())
+    .then(() => serviceCenter.init())
+    .then(() => serviceCenter.backfill())
     .then(() => {
       server.listen(PORT, HOST, () => {
         console.log(`AI 图像设计工作台已启动：http://${HOST}:${PORT}`);

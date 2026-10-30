@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>服务中心 · AI 图像设计工作台</title>
+    <link rel="stylesheet" href="/shared/theme.css" />
+    <link rel="stylesheet" href="/pages/service-center/service-center.css" />
+    <script src="/shared/theme-init.js?v=mystic-default-1"></script>
+  </head>
+  <body>
+    <div id="page" class="sc-page">
+      <div class="sc-heading"><div><h2>使用情况，一目了然</h2><p>查看用户增长与创作服务使用情况，所有日期按北京时间统计。</p></div><button class="btn" id="refresh" type="button">刷新数据</button></div>
+      <p id="pageMessage" class="msg" role="status" aria-live="polite"></p>
+      <section aria-labelledby="overviewTitle">
+        <div class="sc-section-heading"><h3 id="overviewTitle">今日概览</h3><div class="sc-overview-meta"><span id="todayDate"></span><label class="sc-check"><input type="checkbox" id="includeAdmins" />包含管理员</label></div></div>
+        <div class="sc-metrics" id="metrics" aria-busy="true"></div>
+      </section>
+      <section class="card sc-panel" aria-labelledby="trendTitle">
+        <div class="sc-section-heading"><div><h3 id="trendTitle">每日趋势</h3><p class="sc-note">下方日期范围同时应用于趋势、服务统计和用户明细。</p></div><span class="sc-note" id="updatedAt"></span></div>
+        <form id="rangeForm" class="sc-filters">
+          <div class="sc-presets" role="group" aria-label="快捷日期范围"><button class="btn sm" data-days="7" type="button">近 7 天</button><button class="btn sm" data-days="30" type="button" aria-pressed="true">近 30 天</button></div>
+          <label class="sc-field">开始日期<input class="input" id="startDate" type="date" required /></label>
+          <label class="sc-field">结束日期<input class="input" id="endDate" type="date" required /></label>
+          <button class="btn primary" type="submit">应用日期</button>
+        </form>
+        <div class="sc-trend-toolbar"><p id="rangeSummary" class="sc-note"></p><label class="sc-field sc-chart-choice">查看指标<select class="select" id="chartMetric"><option value="activeUsers">活跃用户</option><option value="newUsers">新增用户</option><option value="image">生成图片</option><option value="video">生成视频</option><option value="audio">生成语音</option><option value="credits">消耗积分</option></select></label></div>
+        <div class="sc-chart" id="chart"></div>
+        <details class="sc-daily-details"><summary>查看每日数据表</summary><div class="table-scroll"><table class="table"><caption class="sc-sr-only">每日用户与创作数据</caption><thead><tr><th>日期</th><th>新增用户</th><th>活跃用户</th><th>图片 / 张</th><th>视频 / 条</th><th>语音 / 条</th><th>消耗积分</th></tr></thead><tbody id="dailyBody"></tbody></table></div></details>
+      </section>
+      <section class="card sc-panel" aria-labelledby="servicesTitle">
+        <div class="sc-section-heading"><div><h3 id="servicesTitle">服务使用统计</h3><p class="sc-note">任务按提交日统计，作品按完成日统计；成功率只计算完整成功的已结束任务。</p></div></div>
+        <div class="table-scroll"><table class="table sc-table"><caption class="sc-sr-only">所选期间各服务的任务与产出</caption><thead><tr><th>服务模块</th><th>提交任务</th><th>完整成功</th><th>部分成功</th><th>失败</th><th>进行中 / 中断</th><th>成功率</th><th>产出数量</th><th>明细</th></tr></thead><tbody id="serviceBody"></tbody></table></div>
+      </section>
+      <section class="card sc-panel" aria-labelledby="usersTitle">
+        <div class="sc-section-heading"><div><h3 id="usersTitle">用户明细</h3><p class="sc-note">生成量和消耗积分为所选期间数据；最近活跃为已记录的最近一次访问。</p></div><form id="userSearch" class="sc-search"><label class="sc-sr-only" for="keyword">搜索用户名</label><input class="input" id="keyword" maxlength="64" placeholder="搜索用户名" /><button class="btn" type="submit">搜索</button></form></div>
+        <div class="table-scroll"><table class="table sc-table"><caption class="sc-sr-only">用户注册、活跃和创作数据</caption><thead><tr><th>用户</th><th>注册时间</th><th>最近活跃</th><th>图片 / 张</th><th>视频 / 条</th><th>语音 / 条</th><th>消耗积分</th><th>积分余额</th><th>明细</th></tr></thead><tbody id="userBody"></tbody></table></div>
+        <div class="pagination" id="userPagination"></div>
+      </section>
+      <section class="card sc-panel" aria-labelledby="tasksTitle" id="taskSection" hidden>
+        <div class="sc-section-heading"><div><h3 id="tasksTitle">任务明细</h3><p class="sc-note" id="taskDescription"></p></div><button class="btn sm ghost" type="button" id="closeTasks">收起明细</button></div>
+        <div class="table-scroll"><table class="table sc-table"><caption class="sc-sr-only">筛选后的生成任务</caption><thead><tr><th>用户</th><th>服务模块</th><th>提交时间</th><th>最近更新</th><th>状态</th><th>产出数量</th></tr></thead><tbody id="taskBody"></tbody></table></div>
+        <div class="pagination" id="taskPagination"></div>
+      </section>
+      <aside class="sc-coverage" aria-label="统计口径"><h3>统计说明</h3><p id="coverage">正在加载统计范围…</p><p>活跃用户按账号每日去重，包含保持登录后访问的用户。上传素材不计入生成量；重复结果只计一次。删除作品不会减少已登记的历史生成量。</p><p>第一天活跃仅覆盖启用记录后的时段。已删除且没有可核实记录的历史产出无法还原；“未记录”不代表零活跃。</p></aside>
+    </div>
+    <script type="module" src="/pages/service-center/service-center.js"></script>
+  </body>
+</html>

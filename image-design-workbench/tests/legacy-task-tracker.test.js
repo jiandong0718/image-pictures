@@ -62,6 +62,17 @@ async function setup(t, overrides = {}) {
   return { directory, tasks, logs, options, tracker: createTracker(options), user: { id: 7, role: "user" } };
 }
 
+test("统计服务异常不改变原任务的成功结果或扣费链路", async (t) => {
+  const { tracker, user, tasks, logs } = await setup(t, { observe: async () => { throw new Error("统计服务暂不可用"); } });
+  const id = await tracker.create(user.id);
+  await tracker.pushImage(id, { id: "001/result.png" });
+  const result = await tracker.finish(id, { images: [{ id: "001/result.png" }], credits: 18 });
+  assert.equal(result.credits, 18);
+  assert.equal((await tracker.get(id, user)).status, "done");
+  assert.equal(tasks.calls.filter((call) => call.name === "completeTask").length, 1);
+  assert.ok(logs.length > 0);
+});
+
 test("进度和元数据数据库写失败不会阻止已生成图片或最终成功", async (t) => {
   const { tasks, logs, tracker, user } = await setup(t);
   const id = await tracker.create(user.id);

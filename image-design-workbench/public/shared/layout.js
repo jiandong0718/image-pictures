@@ -25,6 +25,7 @@ const ICONS = {
 };
 
 Object.assign(ICONS, { workbench: ICONS.playground, prompts: ICONS.prompt, assets: ICONS['my-images'], audio: ICONS.video });
+ICONS["service-center"] = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v17h17M8 16v-4m5 4V6m5 10V9"/></svg>';
 
 const NAV = [
   { group: "探索" },
@@ -54,6 +55,7 @@ const NAV = [
 // 仅管理员可见：配置中心（生图端点/提示词）+ 充值管理。
 const ADMIN_NAV = [
   { group: "管理" },
+  { href: "/service-center", label: "服务中心", key: "service-center" },
   { href: "/config", label: "配置中心", key: "config" },
   { href: "/admin", label: "充值管理", key: "admin" },
 ];

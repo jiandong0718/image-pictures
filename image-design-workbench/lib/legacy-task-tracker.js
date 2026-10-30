@@ -61,7 +61,7 @@ function owns(task, user) {
     && (user.role === "admin" || String(task.userId) === String(user.id)));
 }
 
-function createTracker({ tasks, directory, fsp = defaultFs, logger = console, now = Date.now }) {
+function createTracker({ tasks, directory, fsp = defaultFs, logger = console, now = Date.now, observe }) {
   if (!tasks || !directory) throw new Error("任务兼容层缺少持久化模块或日志目录");
   const root = path.resolve(directory);
   const memory = new Map();
@@ -112,15 +112,18 @@ function createTracker({ tasks, directory, fsp = defaultFs, logger = console, no
       report("序列化本地日志", task.id, error);
       return Promise.resolve();
     }
-    return enqueue(fileWrites, task.id, () => bestEffort("写入本地日志", task.id, async () => {
-      const destination = path.join(root, `${task.id}.json`);
-      const temporary = `${destination}.${crypto.randomUUID()}.tmp`;
-      try {
-        await fsp.mkdir(root, { recursive: true, mode: 0o700 });
-        await fsp.writeFile(temporary, contents, { encoding: "utf8", mode: 0o600 });
-        await fsp.rename(temporary, destination);
-      } finally { await fsp.unlink(temporary).catch(() => {}); }
-    }));
+    return enqueue(fileWrites, task.id, async () => {
+      await bestEffort("写入本地日志", task.id, async () => {
+        const destination = path.join(root, `${task.id}.json`);
+        const temporary = `${destination}.${crypto.randomUUID()}.tmp`;
+        try {
+          await fsp.mkdir(root, { recursive: true, mode: 0o700 });
+          await fsp.writeFile(temporary, contents, { encoding: "utf8", mode: 0o600 });
+          await fsp.rename(temporary, destination);
+        } finally { await fsp.unlink(temporary).catch(() => {}); }
+      });
+      if (observe) await bestEffort("记录服务统计", task.id, () => observe(JSON.parse(contents)));
+    });
   }
 
   function mirror(id, operation, work) {

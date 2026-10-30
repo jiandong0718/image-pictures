@@ -323,4 +323,16 @@ function createGenerationTaskStore({ pool, getPool = () => require("./db").getPo
   return { init, createTask, getTask, listTasks, setTotal, pushImage, updateTaskMetadata, completeTask, failTask };
 }
 
-module.exports = { ...createGenerationTaskStore(), createGenerationTaskStore, GenerationTaskError };
+const defaultStore = createGenerationTaskStore();
+// 统计写入在业务事务提交后执行，统计异常不改变任务结果或重复扣费。
+const observedStore = { ...defaultStore };
+for (const method of ["createTask", "completeTask", "failTask", "updateTaskMetadata"]) {
+  observedStore[method] = async (...args) => {
+    const result = await defaultStore[method](...args);
+    if (method !== "createTask" || args[0].kind === "audio") {
+      await require("./service-center").observeAudioTask(method === "createTask" ? result : args[0]);
+    }
+    return result;
+  };
+}
+module.exports = { ...observedStore, createGenerationTaskStore, GenerationTaskError };
