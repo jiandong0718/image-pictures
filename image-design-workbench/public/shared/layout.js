@@ -25,6 +25,7 @@ const ICONS = {
 };
 
 Object.assign(ICONS, { workbench: ICONS.playground, prompts: ICONS.prompt, assets: ICONS['my-images'], audio: ICONS.video });
+ICONS["product-sets"] = ICONS["studio-hat"];
 ICONS["service-center"] = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v17h17M8 16v-4m5 4V6m5 10V9"/></svg>';
 
 const NAV = [
@@ -32,6 +33,7 @@ const NAV = [
   { href: "/", label: "灵感首页", key: "home" },
   { group: "工具" },
   { href: "/workbench", label: "创作工作台", key: "workbench" },
+  { href: "/product-sets", label: "电商套图", key: "product-sets" },
   { href: "/prompts", label: "提示词中心", key: "prompts" },
   { href: "/assets", label: "素材库", key: "assets" },
   { href: "/audio", label: "音频生成", key: "audio" },

@@ -17,6 +17,29 @@ test("商品视频灵感覆盖文生和图生，包含完整内容与参考来�
   assert.ok(data.VIDEO_INSPIRATIONS.some(item => item.mode === "image"));
   assert.ok(data.VIDEO_INSPIRATIONS.some(item => item.mode === "text"));
   assert.ok(data.VIDEO_INSPIRATIONS.every(item => item.title && item.prompt.length > 60));
+  assert.ok(data.VIDEO_INSPIRATIONS.filter(item => item.mode === "image").length >= 15);
+  assert.ok(data.VIDEO_INSPIRATIONS.filter(item => item.mode === "text").length >= 8);
+  assert.equal(new Set(data.VIDEO_INSPIRATIONS.map(item => item.title)).size, data.VIDEO_INSPIRATIONS.length);
+});
+
+test("电商套图模板每张独立提示词保留商品参考，限定用户指定类型", async () => {
+  const source = await fs.readFile(path.join(__dirname, "../public/pages/product-sets/templates.js"), "utf8");
+  const data = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+  assert.equal(data.PRODUCT_SLOTS.length, 4);
+  assert.ok(data.PRODUCT_TEMPLATES.length >= 4);
+  for (const template of data.PRODUCT_TEMPLATES) {
+    const prompts = data.buildProductPrompts(template.id, "保温杯", "蓝色杯身", data.PRODUCT_SLOTS.map(slot => slot.id));
+    assert.equal(Object.keys(prompts).length, 4);
+    for (const prompt of Object.values(prompts)) {
+      assert.match(prompt, /上传的商品图片为唯一产品外观依据/);
+      assert.match(prompt, /蓝色杯身/);
+      assert.match(prompt, /不虚构配件/);
+    }
+    assert.equal(new Set(Object.values(prompts)).size, 4);
+  }
+  assert.throws(() => data.buildProductPrompts("unknown", "", "", ["detail"]), /模板/);
+  assert.throws(() => data.buildProductPrompts("clean", "", "", []), /选择/);
+  assert.throws(() => data.buildProductPrompts("clean", "", "", ["unknown"]), /选择/);
 });
 
 test("音频预计费用按 Unicode 字符计数，忽略首尾空白并向上取整", () => {

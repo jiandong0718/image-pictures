@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>电商套图 · AI 图像设计工作台</title>
+  <script src="/shared/theme-init.js?v=mystic-default-1"></script>
+  <link rel="stylesheet" href="/shared/theme.css" /><link rel="stylesheet" href="/shared/creative.css" />
+  <link rel="stylesheet" href="/pages/product-sets/product-sets.css" />
+</head>
+<body><div id="page" class="product-page">
+  <header class="product-heading">
+    <div><p class="product-eyebrow">COMMERCE STUDIO <span> / 商品影像</span></p><h2>一件商品，一整套好图。</h2><p>选择适合商品的视觉方向，上传参考图，一次生成主图、细节与场景。</p></div>
+    <a class="product-heading-link" href="/my-images">查看我的图库 <span aria-hidden="true">↗</span></a>
+  </header>
+  <div class="product-layout">
+    <main class="product-main">
+      <section class="product-templates" aria-labelledby="templateHeading">
+        <div class="product-section-head"><div><span class="product-step">01 / 选择方向</span><h3 id="templateHeading">从一套风格开始</h3></div><span class="product-helper">示例仅展示视觉方向，生成以你的商品为准</span></div>
+        <div class="product-template-grid" id="templateGrid"></div>
+        <p class="product-attribution">示例图来自 <a href="https://github.com/ecomimagelab/ecommerce-gpt-image-prompts" target="_blank" rel="noopener noreferrer">Ecommerce GPT Image Prompts Studio</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></p>
+      </section>
+      <section class="product-results" aria-labelledby="resultsHeading">
+        <div class="product-section-head"><div><span class="product-step">03 / 查看结果</span><h3 id="resultsHeading">你的商品套图</h3></div><div class="product-result-actions"><button class="btn sm" id="resumeTask" type="button" hidden>重新查询</button><button class="btn sm" id="clearTask" type="button" hidden>解除任务关联</button><button class="btn sm" id="downloadAll" type="button" disabled>下载整套</button></div></div>
+        <p class="product-status" id="taskStatus" role="status" aria-live="polite"></p>
+        <div class="product-result-grid" id="resultGrid"></div>
+      </section>
+    </main>
+    <aside class="product-setup" aria-labelledby="setupHeading">
+      <div class="product-setup-head"><div><span class="product-step">02 / 商品与设置</span><h3 id="setupHeading">准备你的商品</h3></div><div id="imageTarget"></div></div>
+      <div class="product-chosen" id="chosenTemplate"></div>
+      <input id="productFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+      <button type="button" class="product-upload" id="uploadButton"><span class="product-upload-icon">＋</span><strong>上传商品参考图</strong><span>支持 PNG、JPG、WEBP、GIF</span></button>
+      <div class="product-source" id="sourcePreview" hidden><img id="sourceImage" alt="已上传的商品参考图" /><div><strong>商品参考图</strong><span>生成时以此图为产品依据</span><button class="product-text-button" id="replaceSource" type="button">更换图片</button></div></div>
+      <label class="field product-field"><span>商品名称 <em>选填</em></span><input class="input" id="productName" maxlength="100" placeholder="例如：便携保温杯" /></label>
+      <label class="field product-field"><span>商品特点 <em>选填</em></span><textarea class="textarea" id="productNotes" rows="3" maxlength="800" placeholder="填写真实材质、用途或需要强调的细节"></textarea></label>
+      <div class="product-slot-head"><span>生成内容</span><span id="selectedCount"></span></div>
+      <div class="product-slots" id="slotList"></div>
+      <div class="product-options"><label class="field"><span>画面比例</span><select class="select" id="ratio"><option value="1:1">1:1 方形</option><option value="3:4">3:4 竖版</option><option value="4:3">4:3 横版</option><option value="9:16">9:16 竖屏</option><option value="16:9">16:9 横屏</option></select></label><label class="field"><span>分辨率</span><select class="select" id="resolution"><option value="1k">1K</option><option value="2k">2K</option></select></label></div>
+      <div class="product-generate"><div><span>预计消耗</span><strong id="costLabel">4 积分</strong></div><button class="btn primary full" id="generate" type="button" disabled>一键生成整套</button><p id="setupHint">正在读取生图服务…</p><p class="product-error" id="setupError" role="status" aria-live="polite"></p></div>
+    </aside>
+  </div>
+</div><script type="module" src="/pages/product-sets/product-sets.js"></script></body>
+</html>

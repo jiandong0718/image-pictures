@@ -8,6 +8,43 @@ const text = { mode: "text", prompt: "商品展示", ratio: "16:9", quality: "72
 const wan = { protocol: "wan26", model: "wan2.6-t2v", apiBase: "https://wan.example/api/v1", apiKey: "test-key" };
 const h3 = { protocol: "minimax_h3", model: "MiniMax-H3", apiBase: "https://minimax.example", apiKey: "test-key" };
 const grsai = { protocol: "grsai_veo", model: "veo3.1-fast", apiBase: "https://grsai.example", apiKey: "test-key" };
+const compat = { protocol: "openai_video", model: "custom-video-model", apiBase: "https://gateway.example/v1", apiKey: "test-key" };
+
+test("通用视频接口使用自定义模型、标准尺寸和参考图参数", () => {
+  const input = { ...text, mode: "image", duration: "8s", sourceImageIds: ["source"] };
+  assert.deepEqual(buildRequest(compat, input, ["data:image/png;base64,AA=="]), { model: "custom-video-model", prompt: input.prompt, seconds: "8", size: "1280x720", input_reference: { image_url: "data:image/png;base64,AA==" } });
+  assert.equal(buildRequest(compat, { ...text, duration: "4s", ratio: "9:16" }).size, "720x1280");
+  assert.throws(() => validateVideo(compat, { ...input, duration: "15s" }), /不支持该视频时长/);
+  assert.throws(() => validateVideo(compat, { ...input, sourceImageIds: ["a", "b"] }), /1 至 1/);
+  assert.throws(() => buildRequest(compat, input, []), /参考图/);
+});
+
+test("通用视频接口提交、查询和认证下载地址符合兼容格式", async () => {
+  const original = global.fetch;
+  const seen = [];
+  global.fetch = async (url, options) => {
+    seen.push({ url, options });
+    if (options.method === "POST") return Response.json({ id: "video_123", status: "queued", error: null });
+    if (seen.length === 2) return Response.json({ id: "video_123", status: "in_progress", error: null });
+    if (seen.length === 3) return Response.json({ id: "video_123", status: "completed", size: "1280x720", seconds: "8", error: null });
+    if (seen.length === 4) return Response.json({ id: "video_123", status: "completed", video_url: "https://cdn.example/video.mp4" });
+    return Response.json({ id: "video_123", status: "failed", error: { message: "failed" } });
+  };
+  try {
+    const submitted = await client.submitVideo(compat, { ...text, duration: "8s" }, []);
+    assert.equal(submitted.videoId, "video_123");
+    assert.equal(seen[0].url, "https://gateway.example/v1/videos");
+    assert.equal(seen[0].options.headers.Authorization, "Bearer test-key");
+    assert.equal((await client.fetchVideoStatus(compat, submitted.videoId)).status, "running");
+    const done = await client.fetchVideoStatus(compat, submitted.videoId);
+    assert.equal(done.url, "https://gateway.example/v1/videos/video_123/content");
+    assert.equal(done.authenticated, true);
+    const external = await client.fetchVideoStatus(compat, submitted.videoId);
+    assert.equal(external.url, "https://cdn.example/video.mp4");
+    assert.equal(external.authenticated, false);
+    assert.equal((await client.fetchVideoStatus(compat, submitted.videoId)).status, "failed");
+  } finally { global.fetch = original; }
+});
 
 test("万相文生和首帧图生按模型校验并构建官方协议", () => {
   assert.deepEqual(buildRequest(wan, text), { model: "wan2.6-t2v", input: { prompt: "商品展示" }, parameters: { duration: 10, prompt_extend: false, watermark: false, size: "1280*720" } });

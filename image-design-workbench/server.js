@@ -1914,6 +1914,7 @@ async function generateImage({
   // 所有生图入口共用同一套模型/节点约定：不传节点即按配置中心的调度策略选择。
   model = "",
   endpointId = "",
+  apiConfigOverride = null,
 }) {
   const normalizedSpec = normalizeImageSpec(imageSpec);
   const config = IMAGE_TYPES[type];
@@ -1936,9 +1937,9 @@ async function generateImage({
 
   const requestedModel = imageConfig.normalizeModelName(model);
   const requestedEndpointId = cleanPrompt(endpointId);
-  const apiConfig = requestedEndpointId
+  const apiConfig = apiConfigOverride || (requestedEndpointId
     ? await imageConfig.getEnabledEndpointById(requestedEndpointId, requestedModel)
-    : await imageConfig.pickEndpoint(requestedModel);
+    : await imageConfig.pickEndpoint(requestedModel));
   const args = buildImageGeneratorArgs({
     skillScript: SKILL_SCRIPT,
     prompt: normalizedPrompt,
@@ -2082,8 +2083,8 @@ async function readImageAsDataUrl(filePath) {
   return `data:${mime};base64,${data.toString("base64")}`;
 }
 
-async function downloadVideoFile(url, destPath) {
-  const res = await fetch(url);
+async function downloadVideoFile(url, destPath, authorization = "") {
+  const res = await fetch(url, authorization ? { headers: { Authorization: `Bearer ${authorization}` }, redirect: "error", signal: AbortSignal.timeout(120000) } : {});
   if (!res.ok) {
     throw new Error(`下载视频失败（HTTP ${res.status}）`);
   }
@@ -2125,6 +2126,11 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
       await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
       const sourcePath = resolveOutputFile(id);
       await fsp.access(sourcePath, fs.constants.R_OK);
+      if (spec.caps.imageSizeMustMatch) {
+        const dimensions = readImageDimensions(await fsp.readFile(sourcePath));
+        const expected = ratio === "16:9" ? { width: 1280, height: 720 } : { width: 720, height: 1280 };
+        if (!dimensions || dimensions.width !== expected.width || dimensions.height !== expected.height) throw new Error(`参考图尺寸需为 ${expected.width}x${expected.height}，请调整后重试`);
+      }
       images.push(await readImageAsDataUrl(sourcePath));
     }
   } else {
@@ -2185,7 +2191,7 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
   const prefix = mode === "image" ? "image-to-video" : "text-to-video";
   const { ymd, hms } = videoStamp();
   const destPath = path.join(outputDir, `${prefix}-${ymd}-${hms}-01.mp4`);
-  try { await downloadVideoFile(last.url, destPath); }
+  try { await downloadVideoFile(last.url, destPath, last.authenticated && config.protocol === "openai_video" ? config.apiKey : ""); }
   catch (error) { error.uncertain = true; throw error; }
 
   const record = makeVideoRecord({
@@ -2352,6 +2358,7 @@ const PAGE_ROUTES = {
   "/assets": { dir: "assets", auth: "user" },
   "/audio": { dir: "audio", auth: "user" },
   "/workbench": { dir: "workbench", auth: "user" },
+  "/product-sets": { dir: "product-sets", auth: "user" },
   "/playground": { dir: "playground", auth: "user" },
   "/video": { dir: "video", auth: "user" },
   "/retouch": { dir: "retouch", auth: "user" },
@@ -3286,7 +3293,7 @@ async function handleApi(req, res, pathname, searchParams) {
   }
 
   // 图生视频源图上传（先传图拿 id，再带 id 提交生成）。
-  if (req.method === "POST" && pathname === "/api/videos/source") {
+  if (req.method === "POST" && (pathname === "/api/videos/source" || pathname === "/api/product-sets/source")) {
     const user = await accountApi.requireUser(req, res);
     if (!user) {
       return;
@@ -3601,6 +3608,71 @@ async function handleApi(req, res, pathname, searchParams) {
         await finishGenerationTask(taskId, { image, credits: balance });
       } catch (error) {
         await failGenerationTask(taskId, error.message);
+      }
+    })();
+    return;
+  }
+
+  // 套图任务先预占全部所需积分，完成后按成功张数结算并返还其余积分。
+  if (req.method === "POST" && pathname === "/api/product-sets/generate") {
+    const user = await accountApi.requireUser(req, res);
+    if (!user) return;
+    const payload = await readJson(req);
+    let types, spec, target;
+    try {
+      const allowed = new Set(["whiteBackground", "detail", "scene", "sellingPoints"]);
+      types = normalizeBatchDerivedTypes(payload.types);
+      if (types.some(type => !allowed.has(type))) throw new Error("套图包含不支持的图片类型");
+      for (const type of types) {
+        const prompt = cleanPrompt(payload.prompts?.[type]);
+        if (!prompt || prompt.length > 12000) throw new Error("请检查每张套图的提示词");
+      }
+      spec = normalizeImageSpec(payload.imageSpec);
+      const imageSetId = normalizeImageSetId(payload.imageSetId);
+      if (!imageSetId || getImageSetIdFromImageId(payload.mainImageId) !== imageSetId) throw new Error("请先上传本次套图的商品参考图");
+      await assertOwnsImageSet(user, imageSetId);
+      await fsp.access(resolveOutputFile(payload.mainImageId), fs.constants.R_OK);
+      await imageConfig.assertConfigured();
+      target = payload.endpointId
+        ? await imageConfig.getEnabledEndpointById(payload.endpointId, payload.model)
+        : await imageConfig.pickEndpoint(payload.model);
+    } catch (error) {
+      sendError(res, error.statusCode || 400, error.message);
+      return;
+    }
+    let taskId;
+    try {
+      taskId = await generationTasks.createTask({ userId: user.id, kind: "image", maxCost: types.length, note: "电商套图", input: { analyticsModule: "product-sets", templateId: String(payload.templateId || "").slice(0, 100), imageSetId: payload.imageSetId, types } });
+      await generationTasks.setTotal(taskId, types.length);
+    } catch (error) {
+      if (taskId) await generationTasks.failTask(taskId, "创建任务失败", { actualCost: 0 }).catch(() => {});
+      sendError(res, error.statusCode || 500, error.message);
+      return;
+    }
+    const observe = async () => { try { const task = await generationTasks.getTask(taskId, user); if (task) await serviceCenter.observeTask(task); } catch { /* 统计失败不影响生成与结算 */ } };
+    await observe();
+    sendJson(res, 200, { ok: true, taskId, reservedCredits: types.length });
+    (async () => {
+      try {
+        const outcomes = await Promise.all(types.map(async type => {
+          let image;
+          try {
+            image = await generateImage({ type, prompt: payload.prompts[type], mainImageId: payload.mainImageId, imageSetId: payload.imageSetId, imageSpec: spec, apiConfigOverride: target });
+          } catch (error) { return { type, error: friendlyGenerationError(error.message) }; }
+          await recordImageRecord(user.id, image);
+          try { await generationTasks.pushImage(taskId, image); }
+          catch { return { type, image, trackingError: true }; }
+          await observe();
+          return { type, image };
+        }));
+        if (outcomes.some(item => item.trackingError)) throw new Error("套图结果已生成，任务状态待确认");
+        const results = Object.fromEntries(outcomes.filter(item => item.image).map(item => [item.type, item.image]));
+        const errors = Object.fromEntries(outcomes.filter(item => item.error).map(item => [item.type, item.error]));
+        await generationTasks.completeTask(taskId, { results, errors, imageSetId: payload.imageSetId }, Object.keys(results).length, "电商套图");
+        await observe();
+      } catch (error) {
+        await generationTasks.failTask(taskId, "套图结果或结算待确认，请查看图库并联系管理员，勿重复提交", { uncertain: true }).catch(() => {});
+        await observe();
       }
     })();
     return;

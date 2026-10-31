@@ -36,7 +36,7 @@ function isConfigured(kind) {
 }
 function rows() {
   if (category === "images") return endpoints.map((ep) => ({ ...ep, title: ep.label || "图像服务", enabled: ep.enabled !== false }));
-  if (category === "video") return videoEndpoints.map(ep => ({ ...ep, title: ep.label || `视频服务 #${ep.id}`, pricing: `${({ agnes: "Agnes 兼容", wan3: "阿里云万相 3.0", wan26: "阿里云万相 2.6", minimax_h3: "MiniMax H3", grsai_veo: "Grsai Veo 3.1" })[ep.protocol] || ep.protocol} · ${ep.creditsPerSecond ? `每${ep.protocol === "grsai_veo" ? "次" : "秒"} ${ep.creditsPerSecond} 积分` : ep.protocol === "grsai_veo" ? "每次使用全局积分数" : "使用全局每秒积分"}` }));
+  if (category === "video") return videoEndpoints.map(ep => ({ ...ep, title: ep.label || `视频服务 #${ep.id}`, pricing: `${({ openai_video: "通用视频接口", agnes: "Agnes 兼容", wan3: "阿里云万相 3.0", wan26: "阿里云万相 2.6", minimax_h3: "MiniMax H3", grsai_veo: "Grsai Veo 3.1" })[ep.protocol] || ep.protocol} · ${ep.creditsPerSecond ? `每${ep.protocol === "grsai_veo" ? "次" : "秒"} ${ep.creditsPerSecond} 积分` : ep.protocol === "grsai_veo" ? "每次使用全局积分数" : "使用全局每秒积分"}` }));
   if (category === "prompt" || category === "audio") return modelEndpoints[category].map(ep => ({ ...ep, title: ep.label || `${categories[category].title}服务 #${ep.id}`, pricing: category === "audio" ? `每 ${ep.charactersPerCredit} 字符 / ${ep.creditsPerUnit} 积分` : "" }));
   if (!isConfigured(category)) return [];
   const config = configs[category];
@@ -103,10 +103,10 @@ function openEditor(id) {
   modelVersion++;
   $("fetchModels").disabled = false;
   $("dialogTitle").textContent = `${editing ? "管理" : "添加"}${categories[category].title}服务`;
-  $("dialogDescription").textContent = category === "video" ? "选择对应协议并填写服务地址、模型和站内计费规则。" : "保存后，对应的创作模块将共用这份配置。";
+  $("dialogDescription").textContent = category === "video" ? "填写 API 地址和密钥后，可拉取模型或手动填写。" : "保存后，对应的创作模块将共用这份配置。";
   $("videoProtocolField").hidden = category !== "video";
   $("videoPricing").hidden = category !== "video";
-  $("videoProtocol").value = editing?.protocol || "agnes";
+  $("videoProtocol").value = editing?.protocol || "openai_video";
   $("videoPricing").querySelector("span").textContent = $("videoProtocol").value === "grsai_veo" ? "站内每次积分" : "站内每秒积分";
   $("videoCredits").value = editing?.creditsPerSecond ?? "";
   $("labelField").hidden = false;
@@ -114,13 +114,13 @@ function openEditor(id) {
   $("videoModelField").hidden = category === "images";
   $("audioPricing").hidden = category !== "audio";
   $("serviceLabel").value = editing?.label || "";
-  $("serviceUrl").value = editing?.apiBase || (category === "video" ? "https://apihub.agnes-ai.com/v1" : "");
+  $("serviceUrl").value = editing?.apiBase || "";
   $("serviceUrl").required = true;
   $("videoModel").value = category !== "images" ? editing?.model || "" : "";
   $("serviceKey").value = "";
   $("keyHint").textContent = editing ? "留空保留已保存的密钥。" : "仅用于连接当前服务。";
   setModels(editing?.models || [editing?.model], editing?.model);
-  $("modelHint").textContent = "从 API 获取模型列表后选择。模型能力以服务商说明为准。";
+  $("modelHint").textContent = "从 API 获取模型列表后选择；返回列表可能包含非视频模型，请按服务商说明选择。";
   $("charactersPerCredit").value = editing?.charactersPerCredit || 1000;
   $("creditsPerUnit").value = editing?.creditsPerUnit || 1;
   $("serviceDialog").showModal();
@@ -195,7 +195,7 @@ async function main() {
   $("fetchModels").addEventListener("click", discover);
   $("serviceModel").addEventListener("change", () => { if (category !== "images") $("videoModel").value = ""; });
   $("videoProtocol").addEventListener("change", () => {
-    const presets = { agnes: ["https://apihub.agnes-ai.com/v1", "agnes-video-v2.0"], wan3: ["https://dashscope.aliyuncs.com/api/v1", "wan3.0-video"], wan26: ["https://dashscope.aliyuncs.com/api/v1", "wan2.6-t2v"], minimax_h3: ["https://api.minimax.io", "MiniMax-H3"], grsai_veo: ["https://grsai.dakka.com.cn", "veo3.1-fast"] };
+    const presets = { openai_video: ["", ""], agnes: ["https://apihub.agnes-ai.com/v1", "agnes-video-v2.0"], wan3: ["https://dashscope.aliyuncs.com/api/v1", "wan3.0-video"], wan26: ["https://dashscope.aliyuncs.com/api/v1", "wan2.6-t2v"], minimax_h3: ["https://api.minimax.io", "MiniMax-H3"], grsai_veo: ["https://grsai.dakka.com.cn", "veo3.1-fast"] };
     const [base, model] = presets[$("videoProtocol").value];
     $("serviceUrl").value = base;
     $("videoModel").value = model;

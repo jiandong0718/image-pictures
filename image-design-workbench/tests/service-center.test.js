@@ -132,6 +132,7 @@ test("生图入口归类有白名单，无来源保留未知分类；轮询和�
   assert.equal(moduleFromRequest(request("/full-playground"), "proxy-image"), "full-playground");
   assert.equal(moduleFromRequest(request("/video"), "video", { mode: "image" }), "video-image");
   assert.equal(moduleFromRequest(request("/video"), "video", { mode: "text" }), "video-text");
+  assert.equal(moduleFromRequest(request("/product-sets"), "image", {}), "product-sets");
   assert.equal(moduleFromRequest({
     headers: {}
   }), "legacy-image");

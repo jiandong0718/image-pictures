@@ -30,7 +30,7 @@
     <form id="serviceForm">
       <div class="dialog-fields">
         <label class="field" id="labelField"><span>服务名称</span><input class="input" id="serviceLabel" placeholder="例如：主服务" maxlength="100" /></label>
-        <label class="field" id="videoProtocolField" hidden><span>视频接口协议</span><select class="select" id="videoProtocol"><option value="agnes">Agnes 兼容渠道</option><option value="wan3">阿里云百炼 · 万相 3.0</option><option value="wan26">阿里云百炼 · 万相 2.6</option><option value="minimax_h3">MiniMax · H3 官方</option><option value="grsai_veo">Grsai · Veo 3.1</option></select><small>请选择实际服务的接口协议，不同渠道不能只靠模型名互换。</small></label>
+        <label class="field" id="videoProtocolField" hidden><span>接入方式</span><select class="select" id="videoProtocol"><option value="openai_video">通用视频接口（OpenAI 格式）</option><option value="agnes">Agnes 兼容渠道</option><option value="wan3">阿里云百炼 · 万相 3.0</option><option value="wan26">阿里云百炼 · 万相 2.6</option><option value="minimax_h3">MiniMax · H3 官方</option><option value="grsai_veo">Grsai · Veo 3.1</option></select><small>通用方式适用于兼容 /videos 的服务；其他服务选择对应预设。</small></label>
         <label class="field" id="urlField"><span>API 地址</span><input class="input" id="serviceUrl" type="url" placeholder="https://api.example.com/v1" autocomplete="off" /></label>
         <label class="field"><span>API Key</span><input class="input" id="serviceKey" type="password" autocomplete="new-password" /><small id="keyHint">仅用于连接当前服务。</small></label>
         <div class="field" id="modelField"><div class="field-heading"><label for="serviceModel">默认模型</label><button class="text-button" id="fetchModels" type="button">拉取模型</button></div><select class="select" id="serviceModel"><option value="">请先拉取模型</option></select><small id="modelHint">从 API 获取模型列表后选择。模型能力以服务商说明为准。</small></div>
@@ -43,6 +43,6 @@
     </form>
   </dialog>
 </div>
-<script type="module" src="/pages/config/config.js?v=video-providers-1"></script>
+<script type="module" src="/pages/config/config.js?v=video-providers-2"></script>
 </body>
 </html>

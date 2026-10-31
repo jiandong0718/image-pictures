@@ -48,14 +48,18 @@ async function credentials(id) {
 }
 async function save(input, id) {
   const previous = id ? await raw(id) : null;
-  const apiBase = normalizeApiBase(input.apiBase || previous?.api_base || DEFAULT_BASE, "视频 API URL");
+  const protocol = clean(input.protocol) || previous?.protocol || "agnes";
+  const apiBase = normalizeApiBase(input.apiBase || previous?.api_base || (protocol === "openai_video" ? "" : DEFAULT_BASE), "视频 API URL");
   const suppliedKey = clean(input.apiKey);
   if (previous && !suppliedKey && apiBase !== previous.api_base) throw new Error("修改 API 地址时请重新输入密钥");
   const apiKey = suppliedKey || previous?.api_key;
   if (!apiKey) throw new Error("视频 API Key 不能为空");
-  const model = normalizeModelName(input.model || previous?.model || DEFAULT_MODEL);
+  const model = normalizeModelName(input.model || previous?.model || (protocol === "openai_video" ? "" : DEFAULT_MODEL));
   if (!model) throw new Error("请选择视频模型");
-  const protocol = clean(input.protocol) || previous?.protocol || "agnes";
+  if (protocol === "openai_video") {
+    const parsed = new URL(apiBase);
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("兼容视频 API 地址不能包含用户名、密码、查询参数或片段");
+  }
   capabilities(protocol, model);
   const rawPrice = input.creditsPerSecond === "" || input.creditsPerSecond === null ? null : input.creditsPerSecond ?? previous?.credits_per_second ?? null;
   const creditsPerSecond = rawPrice === null ? null : Number(rawPrice);

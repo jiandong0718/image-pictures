@@ -364,6 +364,8 @@ async function main() {
   let wanSubmission;
   let h3Submission;
   let grsaiSubmission;
+  let compatSubmission;
+  let compatDownloadAuth;
   let promptSubmission;
   let audioSubmission;
   upstream = http.createServer(async (req, res) => {
@@ -372,6 +374,8 @@ async function main() {
     if (req.url.startsWith("/agnesapi?")) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ status: "completed", url: "http://127.0.0.1:4188/mock.mp4", seconds: "15" })); return; }
     if (req.url === "/api/v1/tasks/wan-task") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ output: { task_status: "SUCCEEDED", video_url: "http://127.0.0.1:4188/mock.mp4" } })); return; }
     if (req.url === "/v2/query/video_generation/h3-task") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ task: { status: "succeeded", content: { url: "http://127.0.0.1:4188/mock.mp4" } } })); return; }
+    if (req.url === "/v1/videos/compat-task") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ id: "compat-task", status: "completed", seconds: "4", size: "1280x720", error: null })); return; }
+    if (req.url === "/v1/videos/compat-task/content") { compatDownloadAuth = req.headers.authorization; res.writeHead(200, { "Content-Type": "video/mp4" }); res.end(Buffer.alloc(32)); return; }
     if (req.url === "/mock.mp4") { res.writeHead(200, { "Content-Type": "video/mp4" }); res.end(Buffer.alloc(32)); return; }
     if (req.url === "/v1/models") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ data: [{ id: "mock-video" }] })); return; }
     if (req.url === "/v1/audio/speech") {
@@ -383,11 +387,17 @@ async function main() {
       res.end(wav);
       return;
     }
+    if (req.url === "/v1/images/edits") {
+      const body = Buffer.concat(chunks).toString();
+      if (body.includes("failure-case")) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: { message: "测试失败" } })); return; }
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ data: [{ b64_json: imageData.toString("base64") }] })); return;
+    }
     const input = JSON.parse(Buffer.concat(chunks).toString());
     if (req.url === "/v1/video/veo") { grsaiSubmission = input; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ code: 0, data: { id: "grsai-task" } })); return; }
     if (req.url === "/v1/draw/result") { assert.equal(input.id, "grsai-task"); res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ code: 0, data: { status: "succeeded", url: "http://127.0.0.1:4188/mock.mp4" } })); return; }
     if (req.url === "/api/v1/services/aigc/video-generation/video-synthesis") { wanSubmission = { input, asyncHeader: req.headers["x-dashscope-async"], auth: req.headers.authorization }; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ output: { task_id: "wan-task" } })); return; }
     if (req.url === "/v2/video_generation") { h3Submission = { input, auth: req.headers.authorization }; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ task_id: "h3-task" })); return; }
+    if (req.url === "/v1/videos" && input.seconds) { compatSubmission = { input, auth: req.headers.authorization }; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ id: "compat-task", status: "queued", error: null })); return; }
     if (req.url === "/v1/videos") { videoSubmission = { model: input.model, frames: input.num_frames, auth: req.headers.authorization }; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ video_id: "local-15s" })); return; }
     if (req.url === "/v1/chat/completions") { promptSubmission = { model: input.model, auth: req.headers.authorization }; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ choices: [{ message: { content: "本机模拟提示词" } }] })); return; }
     res.writeHead(200, {
@@ -413,7 +423,7 @@ async function main() {
       models: ["mock-image"]
     }
   })).response.status, 200);
-  async function waitTask(id, audio = false) {
+  async function waitTask(id, audio = false, allowError = false) {
     for (let attempt = 0; attempt < 200; attempt++) {
       const {
         data
@@ -421,7 +431,7 @@ async function main() {
         cookie: userCookie
       });
       if (data.status === "done") return data;
-      if (data.status === "error") throw new Error("本机模拟生成失败：" + data.error);
+      if (data.status === "error") { if (allowError) return data; throw new Error("本机模拟生成失败：" + data.error); }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     throw new Error("本机模拟任务超时");
@@ -598,6 +608,46 @@ async function main() {
   assert.equal(grsaiSubmission.firstFrameUrl, "https://example.com/first.png");
   assert.equal(grsaiSubmission.lastFrameUrl, "https://example.com/last.png");
   assert.equal(grsaiSubmission.webHook, "-1");
+  const discovery = await request("/api/image-config", { cookie: adminCookie, body: { action: "discover_models", sourceType: "video", apiBase: "http://127.0.0.1:4188/v1", apiKey: "compat-mock-key" } });
+  assert.equal(discovery.response.status, 200);
+  assert.ok(discovery.data.models.includes("mock-video"));
+  const compatNode = { action: "add", protocol: "openai_video", label: "通用视频", apiBase: "http://127.0.0.1:4188/v1", apiKey: "compat-mock-key", model: "mock-video", creditsPerSecond: 2 };
+  assert.equal((await request("/api/video-config", { cookie: adminCookie, body: compatNode })).response.status, 200);
+  const compat = (await request("/api/video-config", { cookie: userCookie })).data.nodes.find(item => item.protocol === "openai_video");
+  const incompatibleImage = await request("/api/videos", { cookie: userCookie, body: { endpointId: compat.id, mode: "image", prompt: "展示", quality: "720p", duration: "4s", ratio: "16:9", sourceImageIds: [source.id], expectedPricing: { endpointId: compat.id, creditsPerSecond: 2 } } });
+  assert.equal(incompatibleImage.response.status, 200);
+  const rejectedImage = await waitTask(incompatibleImage.data.taskId, false, true);
+  assert.equal(rejectedImage.status, "error");
+  assert.match(rejectedImage.error, /1280x720/);
+  const compatTask = await request("/api/videos", { cookie: userCookie, body: { endpointId: compat.id, mode: "text", prompt: "商品展示", quality: "720p", duration: "4s", ratio: "16:9", expectedPricing: { endpointId: compat.id, creditsPerSecond: 2 } } });
+  assert.equal(compatTask.response.status, 200, JSON.stringify(compatTask.data));
+  const compatResult = await waitTask(compatTask.data.taskId);
+  assert.equal(compatResult.result.video.seconds, "4");
+  assert.equal(compatSubmission.input.model, "mock-video");
+  assert.equal(compatSubmission.input.size, "1280x720");
+  assert.equal(compatDownloadAuth, "Bearer compat-mock-key");
+  const productUpload = new FormData();
+  productUpload.append("image", new Blob([imageData], { type: "image/jpeg" }), "product.jpg");
+  const productSourceResponse = await fetch(base + "/api/product-sets/source", { method: "POST", headers: { Cookie: userCookie }, body: productUpload });
+  assert.equal(productSourceResponse.status, 200);
+  const productSource = (await productSourceResponse.json()).image;
+  const productBody = { templateId: "clean", imageSetId: productSource.imageSetId, mainImageId: productSource.id, types: ["whiteBackground", "detail", "scene", "sellingPoints"], prompts: { whiteBackground: "独立白底主图", detail: "独立细节图", scene: "failure-case", sellingPoints: "独立卖点图" }, imageSpec: { sizeMode: "preset", sizePreset: "1k", ratioPreset: "1:1" } };
+  assert.equal((await request("/api/product-sets/generate", { body: productBody })).response.status, 401);
+  const [[beforeProduct]] = await pool.query("SELECT credits FROM users WHERE id=?", [userId]);
+  const productTask = await request("/api/product-sets/generate", { cookie: userCookie, headers: { Referer: base + "/product-sets" }, body: productBody });
+  assert.equal(productTask.response.status, 200, JSON.stringify(productTask.data));
+  const [[productReserved]] = await pool.query("SELECT reserved_cost FROM generation_tasks WHERE id=?", [productTask.data.taskId]);
+  assert.equal(productReserved.reserved_cost, 4);
+  const productResult = await waitTask(productTask.data.taskId);
+  assert.equal(Object.keys(productResult.result.results).length, 3);
+  assert.ok(productResult.result.errors.scene);
+  assert.equal(productResult.partial.total, 4);
+  assert.equal(productResult.partial.images.length, 3);
+  const [[afterProduct]] = await pool.query("SELECT credits FROM users WHERE id=?", [userId]);
+  assert.equal(beforeProduct.credits - afterProduct.credits, 3, "四张中三张成功，应结算三积分并退回一积分");
+  const [[productMetric]] = await pool.query("SELECT module FROM service_tasks WHERE id=?", [productTask.data.taskId]);
+  assert.equal(productMetric.module, "product-sets");
+  assert.equal((await request("/api/product-sets/generate", { cookie: userCookie, body: { ...productBody, imageSetId: "999999" } })).response.status, 400);
   await observe({ id: "same-second-restart", status: "running", updatedAt: Math.floor(now / 1000) * 1000 + 900 });
   await observe({ id: "same-second-restart", status: "interrupted", updatedAt: Math.floor(now / 1000) * 1000 });
   const [[interrupted]] = await pool.query("SELECT status FROM service_tasks WHERE id='same-second-restart'");

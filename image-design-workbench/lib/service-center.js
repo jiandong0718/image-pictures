@@ -7,6 +7,7 @@ const DAY = 86400000;
 const OFFSET = 8 * 3600000;
 const MODULES = Object.freeze({
   workbench: "创作工作台",
+  "product-sets": "电商套图",
   "text-image": "文生图",
   "image-image": "图生图",
   retouch: "AI 修图",
@@ -69,6 +70,7 @@ function moduleFromRequest(req, kind = "image", input = {}) {
   } catch {/* 无来源时保留未知分类。 */}
   const routes = {
     "/workbench": "workbench",
+    "/product-sets": "product-sets",
     "/retouch": "retouch",
     "/studio/hat": "studio-hat",
     "/studio/bag": "studio-bag",

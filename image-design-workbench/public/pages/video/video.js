@@ -143,7 +143,7 @@ function renderMode() {
   els.sourceGrid.hidden = Boolean(videoCaps.externalFrames);
   $("videoFrameUrls").hidden = !videoCaps.externalFrames;
   els.sourceCount.hidden = Boolean(videoCaps.externalFrames);
-  els.sourceTip.textContent = videoCaps.externalFrames ? "Grsai 需要可公开访问的图片 HTTPS 地址，提交时会将地址发送给 Grsai；请勿填写私密地址。" : ["minimax_h3", "wan3"].includes(videoCaps.protocol) ? "最多 2 张，按顺序作为首帧和尾帧。" : videoCaps.protocol === "wan26" ? "万相 2.6 使用 1 张首帧图片；视频比例跟随图片。" : "最多 5 张；1 张为普通图生，2–5 张按顺序作为关键帧。";
+  els.sourceTip.textContent = videoCaps.externalFrames ? "Grsai 需要可公开访问的图片 HTTPS 地址，提交时会将地址发送给 Grsai；请勿填写私密地址。" : videoCaps.imageSizeMustMatch ? "使用 1 张首帧，图片尺寸需匹配所选比例：横屏 1280×720，竖屏 720×1280。" : ["minimax_h3", "wan3"].includes(videoCaps.protocol) ? "最多 2 张，按顺序作为首帧和尾帧。" : videoCaps.protocol === "wan26" ? "万相 2.6 使用 1 张首帧图片；视频比例跟随图片。" : "最多 5 张；1 张为普通图生，2–5 张按顺序作为关键帧。";
   els.inspirations.replaceChildren(...VIDEO_INSPIRATIONS.filter(item => item.mode === mode).map(item => {
     const button = document.createElement("button");
     button.type = "button";
@@ -212,17 +212,17 @@ function renderStage() {
     return;
   }
   if (!result || !result.url) {
-    const ideas = ["缓慢推近的产品特写，柔光", "360° 环绕展示，纯色背景", "生活场景中自然使用，氛围感", "慢动作细节，光影流动"];
+    const ideas = ["柔光产品特写，镜头缓慢推近", "自然生活场景，光影缓慢移动", "材质细节，镜头平稳靠近", "简洁棚拍，轻微空间视差"];
     els.stage.innerHTML = `
       <div class="stage-empty">
         <div class="stage-empty-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/><path d="M22 8.5 16 12l6 3.5z"/></svg></div>
-        <div class="stage-empty-title">描述一段画面，生成视频</div>
-        <div class="stage-empty-sub">在上方输入提示词，或点选一个灵感快速开始</div>
+        <div class="stage-empty-title">你的下一段画面，从这里开始</div>
+        <div class="stage-empty-sub">选择创作方式，在右侧描述想要的画面与镜头</div>
         <div class="stage-empty-ideas">${ideas.map((s) => `<button class="stage-idea" type="button" data-idea="${s}">${s}</button>`).join("")}</div>
       </div>`;
     els.stage.querySelectorAll("[data-idea]").forEach((b) => {
       b.addEventListener("click", () => {
-        els.prompt.value = b.dataset.idea;
+        els.prompt.value = [els.prompt.value.trim(), b.dataset.idea].filter(Boolean).join("\n\n");
         els.prompt.dispatchEvent(new Event("input", { bubbles: true }));
         els.prompt.focus();
         renderState();

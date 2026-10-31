@@ -10,20 +10,24 @@
   </head>
   <body>
     <div id="page">
+      <header class="video-workspace-header">
+        <div><p class="video-kicker">VIDEO STUDIO <span>/ 视频创作</span></p><h2>让画面，开始流动。</h2><p>从文字或商品图片出发，选择模型，创作属于你的镜头。</p></div>
+        <a href="/my-images" class="video-gallery-link">我的作品 <span aria-hidden="true">↗</span></a>
+      </header>
       <div class="vid-studio">
         <!-- 中间画布：模式切换 + 提示词 + 结果 -->
         <div class="card vid-canvas">
           <div class="vid-canvas-head">
             <div>
-              <div class="section-label">AI 生视频</div>
+              <div class="video-kicker">PREVIEW / 预览画布</div>
               <div class="card-title" id="modeTitle">文生视频</div>
             </div>
             <span class="badge" id="canvasBadge">就绪</span>
           </div>
 
-          <div class="vid-modes" id="modes">
-            <button type="button" class="vid-mode active" data-mode="text">文生视频</button>
-            <button type="button" class="vid-mode" data-mode="image">图生视频</button>
+          <div class="vid-modes" id="modes" aria-label="视频创作方式">
+            <button type="button" class="vid-mode active" data-mode="text">✦ <span>文生视频</span></button>
+            <button type="button" class="vid-mode" data-mode="image">▧ <span>图生视频</span></button>
           </div>
 
           <!-- 图生视频：源图上传（仅图生模式显示） -->
@@ -40,6 +44,8 @@
 
           <div class="vid-stage" id="stage"></div>
 
+          <section class="video-ideas" aria-labelledby="videoIdeasTitle"><div class="video-ideas-head"><div><span class="video-kicker">SHOT IDEAS / 镜头灵感</span><h3 id="videoIdeasTitle">给画面一点灵感</h3></div><span>随创作方式切换 · 点击追加到提示词，可继续编辑</span></div><div id="videoInspirations" class="vid-inspiration-list"></div><p>中文提示词按商品创作场景改写，参考 <a href="https://github.com/yasuomang/ai-video-prompt-cookbook" target="_blank" rel="noopener noreferrer">AI Video Prompt Cookbook</a>、<a href="https://github.com/cliprise/awesome-ai-product-video-prompts" target="_blank" rel="noopener noreferrer">产品视频提示词库</a>及 <a href="https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5/blob/main/assets/HunyuanVideo_1_5_Prompt_Handbook_EN.md" target="_blank" rel="noopener noreferrer">混元视频运镜指南</a>。</p></section>
+
           <div class="vid-recent" id="recentBlock" hidden>
             <div class="section-label">最近生成</div>
             <div class="vid-recent-grid" id="recentGrid"></div>
@@ -49,12 +55,13 @@
         <!-- 右侧：控制面板 -->
         <div class="card vid-panel">
           <div class="vid-panel-scroll">
-            <label class="field"><span>视频服务</span><select class="select" id="videoService"><option value="">默认服务</option></select></label>
+            <div class="video-panel-title"><div><span class="video-kicker">CREATE / 创作设置</span><h3>设置你的镜头</h3></div><span class="video-panel-mark" aria-hidden="true">◈</span></div>
+            <label class="field"><span>选择视频服务</span><select class="select" id="videoService"><option value="">默认服务</option></select></label>
             <label class="field vid-prompt-field">
-              <span>提示词</span>
-              <textarea class="textarea" id="prompt" rows="4" placeholder="描述画面内容与镜头运动：主体、动作、环境、光线、运镜…"></textarea>
+              <span>描述画面</span>
+              <textarea class="textarea" id="prompt" rows="5" placeholder="描述主体、动作、环境与镜头运动。例如：商品置于柔光下，镜头缓慢推近…"></textarea>
             </label>
-            <details class="vid-inspirations"><summary>商品视频提示词灵感</summary><p>选择一条追加到提示词，可继续编辑；图生视频需上传商品图。</p><div id="videoInspirations" class="vid-inspiration-list"></div><p>结构参考 <a href="https://github.com/yasuomang/ai-video-prompt-cookbook" target="_blank" rel="noopener noreferrer">AI Video Prompt Cookbook</a>（MIT），示例已改写。</p></details>
+            <p class="video-prompt-hint">主体 + 动作 + 光线 + 运镜，描述越具体越容易控制画面。</p>
 
             <div class="section-label" style="margin-top: 18px">画面比例</div>
             <div class="vid-chips" id="ratios"></div>
@@ -96,6 +103,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/pages/video/video.js?v=inspiration-1"></script>
+    <script type="module" src="/pages/video/video.js?v=video-generic-1"></script>
   </body>
 </html>
