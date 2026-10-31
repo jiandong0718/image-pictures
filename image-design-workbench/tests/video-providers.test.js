@@ -9,6 +9,40 @@ const wan = { protocol: "wan26", model: "wan2.6-t2v", apiBase: "https://wan.exam
 const h3 = { protocol: "minimax_h3", model: "MiniMax-H3", apiBase: "https://minimax.example", apiKey: "test-key" };
 const grsai = { protocol: "grsai_veo", model: "veo3.1-fast", apiBase: "https://grsai.example", apiKey: "test-key" };
 const compat = { protocol: "openai_video", model: "custom-video-model", apiBase: "https://gateway.example/v1", apiKey: "test-key" };
+const gatewayH3 = { ...compat, protocol: "newapi_h3", model: "MiniMax-H3" };
+
+test("New API MiniMax-H3 使用 768P 与独立画幅，不套用 Sora 的 720P", () => {
+  const input = { ...text, duration: "12s", quality: "768p", ratio: "9:16" };
+  assert.deepEqual(buildRequest(gatewayH3, input), { model: "MiniMax-H3", prompt: input.prompt, seconds: "12", size: "768P", metadata: { ratio: "9:16" } });
+  const image = { ...input, mode: "image", sourceImageIds: ["source"] };
+  const request = buildRequest(gatewayH3, image, ["data:image/png;base64,AA=="]);
+  assert.equal(request.size, "768P");
+  assert.equal(request.metadata.ratio, "adaptive");
+  assert.equal(request.input_reference, "data:image/png;base64,AA==");
+  assert.equal(validateVideo(gatewayH3, image).caps.imageSizeMustMatch, undefined);
+  assert.throws(() => validateVideo(gatewayH3, { ...input, quality: "720p" }), /不支持该清晰度/);
+  assert.throws(() => capabilities("newapi_h3", "other"), /仅支持 MiniMax-H3/);
+});
+
+test("New API H3 通过兼容接口提交并使用带认证的内容下载", async () => {
+  const original = global.fetch;
+  try {
+    global.fetch = async (url, options) => {
+      if (options.method === "POST") {
+        const body = JSON.parse(options.body);
+        assert.equal(url, "https://gateway.example/v1/videos");
+        assert.equal(body.size, "768P");
+        assert.equal(body.metadata.ratio, "9:16");
+        return Response.json({ id: "h3-task", status: "queued" });
+      }
+      return Response.json({ id: "h3-task", status: "completed" });
+    };
+    const task = await client.submitVideo(gatewayH3, { ...text, duration: "12s", quality: "768p", ratio: "9:16" }, []);
+    const result = await client.fetchVideoStatus(gatewayH3, task.videoId);
+    assert.equal(result.authenticated, true);
+    assert.equal(result.url, "https://gateway.example/v1/videos/h3-task/content");
+  } finally { global.fetch = original; }
+});
 
 test("通用视频接口使用自定义模型、标准尺寸和参考图参数", () => {
   const input = { ...text, mode: "image", duration: "8s", sourceImageIds: ["source"] };

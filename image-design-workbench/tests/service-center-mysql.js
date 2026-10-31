@@ -639,6 +639,16 @@ async function main() {
   assert.equal((await waitTask(formTask.data.taskId)).status, "done");
   assert.match(compatFormSubmission.body, /name="model"\r\n\r\nmock-video/);
   assert.equal(compatFormSubmission.auth, "Bearer compat-mock-key");
+  assert.equal((await request("/api/video-config", { cookie: adminCookie, body: { ...compatNode, protocol: "newapi_h3", label: "网关 H3", model: "MiniMax-H3", creditsPerSecond: 1 } })).response.status, 200);
+  const gatewayH3 = (await request("/api/video-config", { cookie: userCookie })).data.nodes.find(item => item.protocol === "newapi_h3");
+  assert.deepEqual(gatewayH3.capabilities.qualities, ["768p"]);
+  await pool.query("UPDATE users SET credits=credits+50 WHERE id=?", [userId]);
+  const gatewayTask = await request("/api/videos", { cookie: userCookie, body: { endpointId: gatewayH3.id, mode: "text", prompt: "商品展示", quality: "768p", duration: "12s", ratio: "9:16", expectedPricing: { endpointId: gatewayH3.id, creditsPerSecond: 1 } } });
+  assert.equal(gatewayTask.response.status, 200, JSON.stringify(gatewayTask.data));
+  assert.equal((await waitTask(gatewayTask.data.taskId)).status, "done");
+  assert.equal(compatSubmission.input.size, "768P");
+  assert.equal(compatSubmission.input.metadata.ratio, "9:16");
+  assert.equal(compatDownloadAuth, "Bearer compat-mock-key");
   const productUpload = new FormData();
   productUpload.append("image", new Blob([imageData], { type: "image/jpeg" }), "product.jpg");
   const productSourceResponse = await fetch(base + "/api/product-sets/source", { method: "POST", headers: { Cookie: userCookie }, body: productUpload });

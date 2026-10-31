@@ -10,6 +10,10 @@ const WAN_SIZES = {
 };
 function capabilities(protocol = "agnes", model = "") {
   if (protocol === "agnes") return { protocol, modes: ["text", "image"], qualities: ["480p", "720p", "1080p"], durations: [3, 5, 10, 15], maxImages: 5, ratios: RATIOS, negativePrompt: true, seed: true, steps: true };
+  if (protocol === "newapi_h3") {
+    if (model !== "MiniMax-H3") throw new Error("New API H3 协议仅支持 MiniMax-H3 模型");
+    return { protocol, modes: ["text", "image"], qualities: ["768p"], durations: Array.from({ length: 12 }, (_, i) => i + 4), maxImages: 1, ratios: RATIOS, negativePrompt: false, seed: false, steps: false, imageRatio: true };
+  }
   if (["openai_video", "openai_video_form"].includes(protocol)) return { protocol, modes: ["text", "image"], qualities: ["720p"], durations: [4, 8, 12], maxImages: 1, ratios: ["16:9", "9:16"], negativePrompt: false, seed: false, steps: false, imageSizeMustMatch: true };
   if (protocol === "grsai_veo") {
     if (!["veo3.1-fast", "veo3.1-pro"].includes(model)) throw new Error("Grsai Veo 协议支持 veo3.1-fast 和 veo3.1-pro");
@@ -57,6 +61,10 @@ function validateVideo(config, input = {}) {
 }
 function buildRequest(config, input, images = []) {
   const { mode, duration, quality, ratio } = validateVideo(config, input);
+  if (config.protocol === "newapi_h3") {
+    if (mode === "image" && (!images[0] || images[0].length > 20971520)) throw new Error("参考图编码不能超过 20 MiB");
+    return { model: config.model, prompt: input.prompt, seconds: String(duration), size: "768P", metadata: { ratio: mode === "image" ? "adaptive" : ratio }, ...(mode === "image" ? { input_reference: images[0] } : {}) };
+  }
   if (["openai_video", "openai_video_form"].includes(config.protocol)) {
     if (mode === "image" && (!images[0] || images[0].length > 20971520)) throw new Error("兼容视频接口的参考图编码不能超过 20 MiB");
     return { model: config.model, prompt: input.prompt, seconds: String(duration), size: ratio === "16:9" ? "1280x720" : "720x1280", ...(mode === "image" ? { input_reference: { image_url: images[0] } } : {}) };

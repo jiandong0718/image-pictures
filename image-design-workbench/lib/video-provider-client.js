@@ -39,7 +39,7 @@ async function requestJson(url, options, queryOnly = false, allowJobError = fals
 async function submitVideo(config, input, images) {
   const root = apiRoot(config.apiBase);
   const isWan = ["wan26", "wan3"].includes(config.protocol);
-  const compatible = ["openai_video", "openai_video_form"].includes(config.protocol);
+  const compatible = ["openai_video", "openai_video_form", "newapi_h3"].includes(config.protocol);
   const url = compatible ? `${root}/videos` : config.protocol === "grsai_veo" ? `${root}/v1/video/veo` : isWan ? `${root}/services/aigc/video-generation/video-synthesis` : `${root}/v2/video_generation`;
   const body = buildRequest(config, input, images);
   let requestBody = JSON.stringify(body);
@@ -64,7 +64,7 @@ async function fetchVideoStatus(config, videoId) {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(String(videoId))) throw new Error("视频任务编号无效");
   const root = apiRoot(config.apiBase);
   const isWan = ["wan26", "wan3"].includes(config.protocol);
-  if (["openai_video", "openai_video_form"].includes(config.protocol)) {
+  if (["openai_video", "openai_video_form", "newapi_h3"].includes(config.protocol)) {
     const endpoint = `${root}/videos/${encodeURIComponent(videoId)}`;
     const info = await requestJson(endpoint, { method: "GET", headers: { Authorization: `Bearer ${config.apiKey}` } }, true, true);
     const status = String(info.status || "").toLowerCase();

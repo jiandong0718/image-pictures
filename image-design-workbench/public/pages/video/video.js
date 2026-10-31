@@ -144,7 +144,7 @@ function renderMode() {
   els.sourceGrid.hidden = Boolean(videoCaps.externalFrames);
   $("videoFrameUrls").hidden = !videoCaps.externalFrames;
   els.sourceCount.hidden = Boolean(videoCaps.externalFrames);
-  els.sourceTip.textContent = videoCaps.externalFrames ? "Grsai 需要可公开访问的图片 HTTPS 地址，提交时会将地址发送给 Grsai；请勿填写私密地址。" : videoCaps.imageSizeMustMatch ? "使用 1 张首帧，图片尺寸需匹配所选比例：横屏 1280×720，竖屏 720×1280。" : ["minimax_h3", "wan3"].includes(videoCaps.protocol) ? "最多 2 张，按顺序作为首帧和尾帧。" : videoCaps.protocol === "wan26" ? "万相 2.6 使用 1 张首帧图片；视频比例跟随图片。" : "最多 5 张；1 张为普通图生，2–5 张按顺序作为关键帧。";
+  els.sourceTip.textContent = videoCaps.externalFrames ? "Grsai 需要可公开访问的图片 HTTPS 地址，提交时会将地址发送给 Grsai；请勿填写私密地址。" : videoCaps.imageSizeMustMatch ? "使用 1 张首帧，图片尺寸需匹配所选比例：横屏 1280×720，竖屏 720×1280。" : videoCaps.protocol === "newapi_h3" ? "使用 1 张首帧图片，视频画面比例跟随图片。" : ["minimax_h3", "wan3"].includes(videoCaps.protocol) ? "最多 2 张，按顺序作为首帧和尾帧。" : videoCaps.protocol === "wan26" ? "万相 2.6 使用 1 张首帧图片；视频比例跟随图片。" : "最多 5 张；1 张为普通图生，2–5 张按顺序作为关键帧。";
   els.inspirations.replaceChildren(...VIDEO_INSPIRATIONS.filter(item => item.mode === mode).map(item => {
     const button = document.createElement("button");
     button.type = "button";

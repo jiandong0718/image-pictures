@@ -49,7 +49,7 @@ async function credentials(id) {
 async function save(input, id) {
   const previous = id ? await raw(id) : null;
   const protocol = clean(input.protocol) || previous?.protocol || "agnes";
-  const compatible = ["openai_video", "openai_video_form"].includes(protocol);
+  const compatible = ["openai_video", "openai_video_form", "newapi_h3"].includes(protocol);
   const apiBase = normalizeApiBase(input.apiBase || previous?.api_base || (compatible ? "" : DEFAULT_BASE), "视频 API URL");
   const suppliedKey = clean(input.apiKey);
   if (previous && !suppliedKey && apiBase !== previous.api_base) throw new Error("修改 API 地址时请重新输入密钥");
