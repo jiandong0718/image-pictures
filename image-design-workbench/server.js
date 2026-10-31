@@ -19,6 +19,10 @@ const images = require("./lib/images");
 const gallery = require("./lib/gallery");
 const videos = require("./lib/videos");
 const videoClient = require("./lib/video-client");
+const videoServices = require("./lib/video-services");
+const videoProviders = require("./lib/video-providers");
+const videoProviderClient = require("./lib/video-provider-client");
+const modelServices = require("./lib/model-services");
 const { createAccountApi } = require("./lib/api-accounts");
 const { createPreviewCache } = require("./lib/media-preview");
 const { sendMediaFile } = require("./lib/media-response");
@@ -142,8 +146,7 @@ const MAX_IMAGE_REQUEST_PIXELS = 8294400;
 const PLAYGROUND_IMAGE_COUNT_MIN = 1;
 const PLAYGROUND_IMAGE_COUNT_MAX = 4;
 const PROMPT_EXTRACT_CREDIT_COST = 1;
-// 生视频接入 Agnes AI：地址服务端固定，页面只填 Key（与生图端点解耦）。
-const FIXED_VIDEO_API_BASE = process.env.VIDEO_API_BASE || "https://apihub.agnes-ai.com/v1";
+// 生视频使用与生图端点独立的 Agnes 兼容服务配置。
 // 生视频按时长计费：每秒扣此积分数（默认 1 秒 = 1 积分，env 可覆盖）。总价 = 选中时长秒数 × 单价。
 const VIDEO_CREDIT_PER_SECOND = Number(process.env.VIDEO_CREDIT_PER_SECOND) || 1;
 const VIDEO_GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -371,7 +374,7 @@ const accountApi = createAccountApi({
 const creativeApi = createCreativeApi({
   accountApi, sendJson, sendError, readJson, readMultipartFile,
   inferUploadedImageExt, outputDir: OUTPUT_DIR, resolveOutputFile,
-  assertOwnsImageSet, tasks: generationTasks, previewCache,
+  assertOwnsImageSet, tasks: generationTasks, previewCache, modelServices,
 });
 
 function parseEnvLine(line) {
@@ -538,7 +541,7 @@ function buildImageGeneratorArgs({
     "--size",
     requestSize,
     "--timeout",
-    "180",
+    "360",
   ];
   // 每组端点自带的模型名；留空则不传 --model，脚本回退到全局默认（CUSTOM_IMAGE_MODEL/.env/内置）。
   if (cleanPrompt(model)) {
@@ -1984,18 +1987,19 @@ const VIDEO_MAX_FRAMES_BY_QUALITY = { "480p": 961, "720p": 481, "1080p": 241 };
 const VIDEO_FPS = 24;
 const VIDEO_MAX_SOURCE_IMAGES = 5; // 图生视频：1 张=普通图生；2–5 张=关键帧动画
 
-// 选中时长 -> 秒数（取标签里的数字，如 "10s" -> 10），再乘单价得本次积分。未知时长按 5s 兜底。
+// 没传时长兼容旧客户端；显式传入不支持的时长必须拒绝，避免悄悄生成和计费 5 秒。
 function videoDurationSeconds(duration) {
-  const n = parseInt(String(duration || ""), 10);
-  return VIDEO_DURATIONS[`${n}s`] ? n : 5;
+  const value = duration == null || duration === "" ? "5s" : String(duration);
+  if (!Object.hasOwn(VIDEO_DURATIONS, value)) throw new Error("当前支持 3、5、10、15 秒视频，请选择支持的时长");
+  return Number(value.slice(0, -1));
 }
 
-function videoCost(duration) {
-  return videoDurationSeconds(duration) * VIDEO_CREDIT_PER_SECOND;
+function videoCost(duration, creditsPerSecond = VIDEO_CREDIT_PER_SECOND) {
+  return videoDurationSeconds(duration) * creditsPerSecond;
 }
 
 function getVideoFrames(duration, quality) {
-  const normalizedDuration = VIDEO_DURATIONS[duration] ? duration : "5s";
+  const normalizedDuration = `${videoDurationSeconds(duration)}s`;
   const normalizedQuality = VIDEO_MAX_FRAMES_BY_QUALITY[quality] ? quality : "720p";
   const frames = VIDEO_DURATIONS[normalizedDuration];
   if (frames > VIDEO_MAX_FRAMES_BY_QUALITY[normalizedQuality]) {
@@ -2090,20 +2094,25 @@ async function downloadVideoFile(url, destPath) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 提交 -> 轮询 -> 下载 -> 落盘 -> 记库。返回视频记录。整个流程跑在后台任务里（见 /api/videos）。
-async function generateVideo({ user, mode, prompt, ratio, quality, duration, negativePrompt, seed, steps, sourceImageIds, taskId }) {
+async function generateVideo({ user, mode, prompt, ratio, quality, duration, negativePrompt, seed, steps, sourceImageIds, sourceImageUrls, taskId, config }) {
   const normalizedPrompt = cleanPrompt(prompt);
   if (!normalizedPrompt) {
     throw new Error("视频提示词不能为空");
   }
-  const config = await imageConfig.getRequiredVideoConfig();
+  config ||= await videoServices.required();
+  const request = { mode, prompt: normalizedPrompt, ratio, quality, duration, negativePrompt, seed, steps, sourceImageIds, sourceImageUrls };
+  const spec = videoProviders.validateVideo(config, request);
   const { width, height } = computeVideoSize(ratio, quality);
-  const numFrames = getVideoFrames(duration, quality);
+  const numFrames = config.protocol === "agnes" ? getVideoFrames(duration, quality) : 0;
 
   // 确定套图目录：图生视频落在第一张源图同套图，文生视频新分配一个。
   // 源图 1 张=普通图生视频；2–5 张=关键帧动画（按顺序当关键帧）。
   let imageSetId;
   let images = [];
-  if (mode === "image") {
+  if (mode === "image" && spec.caps.externalFrames) {
+    imageSetId = (await allocateImageSet(user.id)).folderName;
+    images = spec.ids;
+  } else if (mode === "image") {
     const ids = (Array.isArray(sourceImageIds) ? sourceImageIds : []).filter(Boolean);
     if (!ids.length) {
       throw new Error("图生视频需要先上传源图");
@@ -2125,8 +2134,9 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
   const outputDir = resolveImageSetDir(imageSetId);
   await fsp.mkdir(outputDir, { recursive: true });
 
-  const { videoId } = await videoClient.submitVideo({
-    apiBase: FIXED_VIDEO_API_BASE,
+  if (config.protocol !== "agnes" && !spec.caps.externalFrames && images.some(image => !/^data:image\/(png|jpeg|webp);base64,/i.test(image))) throw new Error("该视频模型仅支持 PNG、JPG 或 WEBP 图片");
+  const { videoId } = config.protocol === "agnes" ? await videoClient.submitVideo({
+    apiBase: config.apiBase,
     apiKey: config.apiKey,
     model: config.model,
     prompt: normalizedPrompt,
@@ -2138,22 +2148,23 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
     negativePrompt: cleanPrompt(negativePrompt),
     seed: Number.isFinite(Number(seed)) && String(seed).trim() !== "" ? Number(seed) : undefined,
     steps: Number.isFinite(Number(steps)) && String(steps).trim() !== "" ? Number(steps) : undefined,
-  });
+  }) : await videoProviderClient.submitVideo(config, request, images);
 
   if (taskId) await legacyTaskTracker.metadata(taskId, { upstreamVideoId: videoId, model: config.model, imageSetId, phase: "polling" });
-  const deadline = Date.now() + VIDEO_GENERATION_TIMEOUT_MS;
+  const deadline = Date.now() + (config.protocol === "agnes" ? VIDEO_GENERATION_TIMEOUT_MS : 30 * 60 * 1000);
   let last;
   let backoff = 0; // 撞到 429/网关抖动时，在基础间隔上叠加的退避（递增，最多 +30s）
   while (true) {
     await sleep(VIDEO_POLL_INTERVAL_MS + backoff);
     try {
-      last = await videoClient.fetchVideoStatus({ apiBase: FIXED_VIDEO_API_BASE, apiKey: config.apiKey, videoId });
+      last = config.protocol === "agnes" ? await videoClient.fetchVideoStatus({ apiBase: config.apiBase, apiKey: config.apiKey, videoId }) : await videoProviderClient.fetchVideoStatus(config, videoId);
     } catch (error) {
       // 限频/网关抖动：退避后继续轮询（视频还在生成），不把整个任务判失败。硬错误才抛出。
       if (error.retryable && Date.now() <= deadline) {
         backoff = Math.min(backoff + VIDEO_POLL_INTERVAL_MS, 30000);
         continue;
       }
+      error.uncertain = true;
       throw error;
     }
     backoff = 0;
@@ -2164,24 +2175,25 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
       throw new Error(last.error || "视频生成失败");
     }
     if (Date.now() > deadline) {
-      throw new Error("视频生成超时，请稍后重试");
+      throw Object.assign(new Error("视频结果待确认，请勿重复提交"), { uncertain: true });
     }
   }
   if (!last.url) {
-    throw new Error("视频已完成但未返回下载地址");
+    throw Object.assign(new Error("视频已完成但下载地址待确认"), { uncertain: true });
   }
 
   const prefix = mode === "image" ? "image-to-video" : "text-to-video";
   const { ymd, hms } = videoStamp();
   const destPath = path.join(outputDir, `${prefix}-${ymd}-${hms}-01.mp4`);
-  await downloadVideoFile(last.url, destPath);
+  try { await downloadVideoFile(last.url, destPath); }
+  catch (error) { error.uncertain = true; throw error; }
 
   const record = makeVideoRecord({
     filePath: destPath,
     mode,
     prompt: normalizedPrompt,
-    seconds: last.seconds,
-    size: last.size || `${width}x${height}`,
+    seconds: last.seconds || (spec.caps.providerParameters ? "" : String(spec.duration)),
+    size: last.size || (spec.caps.providerParameters ? "" : config.protocol === "agnes" ? `${width}x${height}` : quality?.toUpperCase() || ""),
   });
   try {
     await videos.recordVideo({
@@ -2283,7 +2295,7 @@ function runProcess(command, args, cwd, env = process.env) {
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
       reject(new Error("生图请求超时"));
-    }, 210000);
+    }, 360000);
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -2914,7 +2926,7 @@ async function handleApi(req, res, pathname, searchParams) {
       defaultImageSpec: normalizeImageSpec(),
       defaultImageRatio: normalizeImageSpec().ratio,
       imageEndpoints: await imageConfig.countEndpoints(),
-      promptApiConfig: await imageConfig.getPromptConfigSummary(),
+      promptApiConfig: { uploaded: Boolean(await modelServices.defaultId("prompt")) },
     });
     return;
   }
@@ -2967,10 +2979,10 @@ async function handleApi(req, res, pathname, searchParams) {
         const type = payload.sourceType || "images";
         let previous = {};
         if (type === "images" && payload.id) previous = await imageConfig.getEndpointCredentials(payload.id);
-        else if (type === "prompt") previous = await imageConfig.getPromptConfig();
-        else if (type === "video") previous = { ...await imageConfig.getVideoConfig(), apiBase: FIXED_VIDEO_API_BASE };
-        else if (type === "audio") previous = await creativeResources.getAudioConfig();
-        const apiBase = type === "video" ? FIXED_VIDEO_API_BASE : cleanPrompt(payload.apiBase) || previous.apiBase;
+        else if (type === "prompt" && payload.id) previous = await modelServices.credentials("prompt", payload.id);
+        else if (type === "video" && payload.id) previous = await videoServices.credentials(payload.id);
+        else if (type === "audio" && payload.id) previous = await modelServices.credentials("audio", payload.id);
+        const apiBase = cleanPrompt(payload.apiBase) || previous.apiBase;
         // 已保存密钥只可用于原来的地址，修改地址时必须重新输入。
         const apiKey = cleanPrompt(payload.apiKey) || (apiBase === previous.apiBase ? previous.apiKey : "");
         const models = await imageConfig.discoverSupportedModels({ apiBase, apiKey });
@@ -3004,9 +3016,14 @@ async function handleApi(req, res, pathname, searchParams) {
     if (!user) {
       return;
     }
+    const nodes = await modelServices.selectable("prompt");
+    const defaultId = await modelServices.defaultId("prompt");
+    const selected = nodes.find(node => node.id === defaultId);
     sendJson(res, 200, {
       ok: true,
-      config: await imageConfig.getPromptConfigSummary(),
+      config: { uploaded: Boolean(selected), hasApiKey: Boolean(selected), model: selected?.model || "" },
+      nodes, defaultId,
+      ...(user.role === "admin" ? { endpoints: await modelServices.list("prompt") } : {}),
     });
     return;
   }
@@ -3019,7 +3036,10 @@ async function handleApi(req, res, pathname, searchParams) {
     const payload = await readJson(req);
     let config;
     try {
-      config = await imageConfig.setPromptConfig(payload);
+      await modelServices.action("prompt", payload);
+      const id = await modelServices.defaultId("prompt");
+      const selected = (await modelServices.selectable("prompt")).find(node => node.id === id);
+      config = { uploaded: Boolean(selected), hasApiKey: Boolean(selected), model: selected?.model || "" };
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -3036,9 +3056,14 @@ async function handleApi(req, res, pathname, searchParams) {
     if (!user) {
       return;
     }
+    const nodes = await videoServices.selectable();
+    const defaultId = await videoServices.defaultId();
+    const selected = nodes.find(node => node.id === defaultId);
     sendJson(res, 200, {
       ok: true,
-      config: await imageConfig.getVideoConfigSummary(),
+      config: { uploaded: Boolean(selected), model: selected?.model || "", hasApiKey: Boolean(selected) },
+      nodes, defaultId,
+      ...(user.role === "admin" ? { endpoints: await videoServices.list() } : {}),
       costPerSecond: VIDEO_CREDIT_PER_SECOND,
     });
     return;
@@ -3052,7 +3077,19 @@ async function handleApi(req, res, pathname, searchParams) {
     const payload = await readJson(req);
     let config;
     try {
-      config = await imageConfig.setVideoConfig(payload);
+      if (payload.action === "delete") await videoServices.remove(payload.id);
+      else if (payload.action === "toggle") await videoServices.toggle(payload.id, Boolean(payload.enabled));
+      else if (payload.action === "set_default") await videoServices.setDefault(payload.id);
+      else if (payload.action === "add") await videoServices.save(payload);
+      else if (payload.action === "update") await videoServices.save(payload, payload.id);
+      else if (!payload.action) {
+        // 兼容旧客户端的单组配置接口。
+        const id = await videoServices.defaultId();
+        await videoServices.save(payload, id || undefined);
+      } else throw new Error("未知视频服务操作");
+      const defaultId = await videoServices.defaultId();
+      const selected = (await videoServices.selectable()).find(node => node.id === defaultId);
+      config = { uploaded: Boolean(selected), hasApiKey: Boolean(selected), model: selected?.model || "" };
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -3146,7 +3183,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
     let apiConfig;
     try {
-      apiConfig = await imageConfig.getRequiredPromptConfig();
+      apiConfig = await modelServices.required("prompt", searchParams.get("endpointId"));
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -3159,11 +3196,14 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
 
+    const metricTask = { id: crypto.randomUUID(), userId: user.id, kind: "prompt", status: "running", createdAt: Date.now(), updatedAt: Date.now() };
+    await serviceCenter.observeTask(metricTask);
     try {
       const upload = await readMultipartFile(req, "image");
       const result = await callPromptExtractionApi({ upload, apiConfig });
       // 成功才扣费（失败不扣），返回新余额供顶栏更新。
       const credits = await accounts.consumeCredits(user.id, PROMPT_EXTRACT_CREDIT_COST, "提示词提取");
+      await serviceCenter.observeTask({ ...metricTask, status: "done", updatedAt: Date.now() });
       sendJson(res, 200, {
         ok: true,
         prompt: result.prompt,
@@ -3171,6 +3211,7 @@ async function handleApi(req, res, pathname, searchParams) {
         credits,
       });
     } catch (error) {
+      await serviceCenter.observeTask({ ...metricTask, status: "error", updatedAt: Date.now() });
       console.error("提示词提取失败：", error.message); // 完整错误留服务端
       const message = error.message || "";
       // 用户可纠正的（上传格式等）原样提示；其余上游/技术错误统一给友好提示，不泄露细节。
@@ -3289,8 +3330,9 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
     const payload = await readJson(req);
+    let videoConfig;
     try {
-      await imageConfig.getRequiredVideoConfig();
+      videoConfig = await videoServices.required(payload.endpointId);
     } catch (error) {
       sendError(res, 400, error.message);
       return;
@@ -3299,14 +3341,20 @@ async function handleApi(req, res, pathname, searchParams) {
       sendError(res, 400, "视频提示词不能为空");
       return;
     }
+    let spec;
     try {
-      getVideoFrames(payload.duration, payload.quality);
+      spec = videoProviders.validateVideo(videoConfig, payload);
     } catch (error) {
       sendError(res, 400, error.message);
       return;
     }
-    const cost = videoCost(payload.duration); // 按选中时长计费：秒数 × 单价
-    const seconds = videoDurationSeconds(payload.duration);
+    const seconds = spec.duration;
+    const rate = videoConfig.creditsPerSecond ?? VIDEO_CREDIT_PER_SECOND;
+    if (payload.expectedPricing && (String(payload.expectedPricing.endpointId) !== videoConfig.id || Number(payload.expectedPricing.creditsPerSecond) !== rate)) {
+      sendError(res, 409, "视频服务或计费规则已变更，请刷新页面确认价格后重试");
+      return;
+    }
+    const cost = spec.caps.billingUnit === "task" ? rate : seconds * rate;
     try {
       await accounts.assertEnoughCredits(user.id, cost);
     } catch (error) {
@@ -3316,10 +3364,12 @@ async function handleApi(req, res, pathname, searchParams) {
     const taskId = await createGenerationTask(user.id, payload, 'video', req);
     sendJson(res, 200, { ok: true, taskId });
     (async () => {
+      let producedVideo = null;
       try {
-        const video = await generateVideo({
+        const video = producedVideo = await generateVideo({
           user,
           taskId,
+          config: videoConfig,
           mode: payload.mode === "image" ? "image" : "text",
           prompt: payload.prompt,
           ratio: payload.ratio,
@@ -3328,16 +3378,18 @@ async function handleApi(req, res, pathname, searchParams) {
           negativePrompt: payload.negativePrompt,
           seed: payload.seed,
           steps: payload.steps,
+          sourceImageUrls: spec.caps.externalFrames ? spec.ids : [],
           // 兼容旧前端的单张 sourceImageId；新前端传 sourceImageIds 数组。
           sourceImageIds: Array.isArray(payload.sourceImageIds)
             ? payload.sourceImageIds
             : (payload.sourceImageId ? [payload.sourceImageId] : []),
         });
         await legacyTaskTracker.metadata(taskId, { result: { video }, outputCompletedAt: Date.now() });
-        const balance = await accounts.consumeCredits(user.id, cost, `生成${seconds}秒视频`);
+        const balance = await accounts.consumeCredits(user.id, cost, spec.caps.billingUnit === "task" ? "生成视频" : `生成${seconds}秒视频`);
         await finishGenerationTask(taskId, { video, credits: balance });
       } catch (error) {
-        await failGenerationTask(taskId, error.message);
+        if (error.uncertain || producedVideo) await legacyTaskTracker.interrupt(taskId, "视频任务结果或账单待确认，请勿重复提交；请联系管理员检查任务");
+        else await failGenerationTask(taskId, error.message);
       }
     })();
     return;
@@ -3754,6 +3806,7 @@ if (require.main === module) {
         promptModel: getPromptExtractModel(),
       }),
     )
+    .then(() => videoServices.init())
     // 套图归属表建好；磁盘上已有但表里还没记录的旧套图目录全部划给管理员账号。
     .then(async () => imageSets.init(await listExistingImageSetIds()))
     // 图库元数据表建好。
@@ -3763,6 +3816,7 @@ if (require.main === module) {
     .then(() => gallery.init())
     .then(() => generationTasks.init())
     .then(() => creativeResources.init())
+    .then(() => modelServices.init())
     .then(() => serviceCenter.init())
     .then(() => serviceCenter.backfill())
     .then(() => {
@@ -3770,7 +3824,9 @@ if (require.main === module) {
         console.log(`AI 图像设计工作台已启动：http://${HOST}:${PORT}`);
       });
       // 历史图回填放到监听之后异步跑，不拖慢启动；已记录的套图会跳过。
-      backfillImageRecords().catch((error) => console.error("图库回填失败：", error.message));
+      backfillImageRecords()
+        .then(() => serviceCenter.backfillMedia())
+        .catch((error) => console.error("图库或服务统计回填失败：", error.message));
     })
     .catch((error) => {
       console.error("数据库初始化失败，请检查 .env 中的 DB_* 配置与 MySQL 服务：");

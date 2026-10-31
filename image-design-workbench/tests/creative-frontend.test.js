@@ -10,6 +10,15 @@ test.before(async () => {
   utils = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 });
 
+test("商品视频灵感覆盖文生和图生，包含完整内容与参考来源", async () => {
+  const source = await fs.readFile(path.join(__dirname, "../public/pages/video/video-inspiration.js"), "utf8");
+  const data = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+  assert.match(data.VIDEO_INSPIRATION_SOURCE, /^https:\/\/github\.com\//);
+  assert.ok(data.VIDEO_INSPIRATIONS.some(item => item.mode === "image"));
+  assert.ok(data.VIDEO_INSPIRATIONS.some(item => item.mode === "text"));
+  assert.ok(data.VIDEO_INSPIRATIONS.every(item => item.title && item.prompt.length > 60));
+});
+
 test("音频预计费用按 Unicode 字符计数，忽略首尾空白并向上取整", () => {
   assert.deepEqual(utils.audioCost(`  ${"😀".repeat(1000)}  `), { characterCount: 1000, estimatedCost: 1, charactersPerCredit: 1000, creditsPerUnit: 1 });
   assert.equal(utils.audioCost(`${"中".repeat(1000)}文`).estimatedCost, 2);

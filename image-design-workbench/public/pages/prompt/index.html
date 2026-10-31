@@ -27,6 +27,7 @@
         <div class="card">
           <div class="section-label">提取结果</div>
           <div class="card-title" style="margin-bottom: 14px">详细提示词</div>
+          <label class="field"><span>视觉理解服务</span><select class="select" id="promptService"><option value="">默认服务</option></select></label>
           <textarea class="textarea" id="output" rows="16" readonly placeholder="提取后的中文详细提示词会显示在这里"></textarea>
           <p class="msg" id="msg"></p>
           <div style="display: flex; gap: 10px; margin-top: 12px">
@@ -37,6 +38,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/pages/prompt/prompt.js"></script>
+    <script type="module" src="/pages/prompt/prompt.js?v=service-selection-1"></script>
   </body>
 </html>

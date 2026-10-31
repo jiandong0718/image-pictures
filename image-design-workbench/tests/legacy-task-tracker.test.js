@@ -48,7 +48,7 @@ function fakeTasks() {
     },
     async failTask(id, message, options) {
       call("failTask", [id, message, options]);
-      Object.assign(records.get(id), { status: "error", error: message });
+      Object.assign(records.get(id), { status: options?.uncertain ? "interrupted" : "error", error: message });
     },
   };
 }
@@ -71,6 +71,18 @@ test("统计服务异常不改变原任务的成功结果或扣费链路", async
   assert.equal((await tracker.get(id, user)).status, "done");
   assert.equal(tasks.calls.filter((call) => call.name === "completeTask").length, 1);
   assert.ok(logs.length > 0);
+});
+
+test("上游视频结果未知时保留待确认状态和任务编号", async (t) => {
+  const { tracker, tasks, user, options } = await setup(t);
+  const id = await tracker.create(user.id, {}, "video");
+  await tracker.metadata(id, { upstreamVideoId: "upstream-1" });
+  await tracker.interrupt(id, "结果待确认，请勿重复提交");
+  assert.equal((await tracker.get(id, user)).status, "interrupted");
+  assert.equal(tasks.calls.find(call => call.name === "failTask").args[2].uncertain, true);
+  const restarted = createTracker(options);
+  assert.equal((await restarted.get(id, user)).metadata.upstreamVideoId, "upstream-1");
+  assert.equal((await restarted.get(id, user)).status, "interrupted");
 });
 
 test("进度和元数据数据库写失败不会阻止已生成图片或最终成功", async (t) => {

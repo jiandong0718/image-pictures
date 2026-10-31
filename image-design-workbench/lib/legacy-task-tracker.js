@@ -248,7 +248,19 @@ function createTracker({ tasks, directory, fsp = defaultFs, logger = console, no
     return snapshot(task);
   }
 
-  return { create, get, setTotal, pushImage, finish, fail, metadata };
+  async function interrupt(id, message) {
+    evictCompleted();
+    const task = memory.get(id);
+    if (!task || TERMINAL.has(task.status)) return task?.result || null;
+    task.status = "interrupted";
+    task.error = message || "视频任务结果待确认，请勿重复提交";
+    task.updatedAt = now();
+    await persist(task);
+    await mirror(id, "同步数据库待确认状态", () => tasks.failTask(id, task.error, { uncertain: true }));
+    return snapshot(task);
+  }
+
+  return { create, get, setTotal, pushImage, finish, fail, interrupt, metadata };
 }
 
 module.exports = { createTracker };

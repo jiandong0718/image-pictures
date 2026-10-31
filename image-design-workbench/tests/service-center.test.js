@@ -73,6 +73,11 @@ test("批次结果和进度中的同一张图只算一次，失败仍保留已�
     }
   }).length, 2);
 });
+test("提示词提取按成功次数统计，不作为图片产出", () => {
+  const task = { kind: "prompt", status: "done", result: {} };
+  assert.deepEqual(taskOutputs(task), []);
+  assert.equal(taskState(task, 0), "done");
+});
 test("代理输出可幂等计数，视频和语音不会混入图片；外部签名链接不落库", () => {
   assert.equal(taskOutputs({
     id: "sync",
@@ -122,6 +127,11 @@ test("生图入口归类有白名单，无来源保留未知分类；轮询和�
   }), "image-image");
   assert.equal(moduleFromRequest(request("/retouch")), "retouch");
   assert.equal(moduleFromRequest(request("/studio/print")), "studio-print");
+  for (const [route, expected] of [["/workbench", "workbench"], ["/studio/hat", "studio-hat"], ["/studio/bag", "studio-bag"], ["/studio/3d", "studio-3d"]]) assert.equal(moduleFromRequest(request(route)), expected);
+  assert.equal(moduleFromRequest(request("/playground"), "image", { mode: "generate" }), "text-image");
+  assert.equal(moduleFromRequest(request("/full-playground"), "proxy-image"), "full-playground");
+  assert.equal(moduleFromRequest(request("/video"), "video", { mode: "image" }), "video-image");
+  assert.equal(moduleFromRequest(request("/video"), "video", { mode: "text" }), "video-text");
   assert.equal(moduleFromRequest({
     headers: {}
   }), "legacy-image");

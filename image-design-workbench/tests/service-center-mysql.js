@@ -83,6 +83,10 @@ async function request(route, {
 async function main() {
   admin = await mysql.createConnection(config);
   await admin.query("CREATE DATABASE `" + database + "` CHARACTER SET utf8mb4");
+  await admin.query("CREATE TABLE `" + database + "`.app_settings (k VARCHAR(64) PRIMARY KEY, v TEXT NOT NULL)");
+  await admin.query("INSERT INTO `" + database + "`.app_settings (k,v) VALUES ('video_api_key','legacy-local-key'),('video_model','legacy-video'),('prompt_api_base','http://127.0.0.1:4188/v1'),('prompt_api_key','legacy-prompt-key'),('prompt_model','legacy-vision')");
+  await admin.query("CREATE TABLE `" + database + "`.creative_audio_config (id TINYINT UNSIGNED PRIMARY KEY, api_base VARCHAR(500) NOT NULL DEFAULT '', api_key VARCHAR(1000) NOT NULL DEFAULT '', model VARCHAR(100) NOT NULL DEFAULT '', characters_per_credit INT NOT NULL DEFAULT 1000, credits_per_unit INT NOT NULL DEFAULT 1)");
+  await admin.query("INSERT INTO `" + database + "`.creative_audio_config VALUES (1,'http://127.0.0.1:4188/v1','legacy-audio-key','legacy-speech',20,3)");
   directory = await fs.mkdtemp(path.join(os.tmpdir(), "service-center-http-"));
   await fs.copyFile(path.join(appRoot, "server.js"), path.join(directory, "server.js"));
   for (const name of ["lib", "public", "node_modules", "skills", "vendor"]) await fs.symlink(path.join(appRoot, name), path.join(directory, name));
@@ -97,7 +101,8 @@ async function main() {
       ADMIN_PASSWORD: "service-center-local-only",
       CUSTOM_IMAGE_API_KEY: "",
       CUSTOM_PROMPT_API_KEY: "",
-      CUSTOM_VIDEO_API_KEY: ""
+      CUSTOM_VIDEO_API_KEY: "",
+      VIDEO_API_BASE: "http://127.0.0.1:4188/v1"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -136,6 +141,17 @@ async function main() {
   assert.equal(signup.response.status, 200);
   const userCookie = signup.cookie;
   const userId = signup.data.user.id;
+  const migratedVideo = (await request("/api/video-config", { cookie: adminCookie })).data;
+  assert.equal(migratedVideo.endpoints.length, 1, "旧单组视频配置应自动迁移");
+  assert.equal(migratedVideo.endpoints[0].model, "legacy-video");
+  assert.doesNotMatch(JSON.stringify(migratedVideo), /legacy-local-key/);
+  for (const [kind, model] of [["prompt", "legacy-vision"], ["audio", "legacy-speech"]]) {
+    const data = (await request(`/api/${kind}-config`, { cookie: adminCookie })).data;
+    assert.equal(data.endpoints.length, 1, `${kind} 旧配置应自动迁移`);
+    assert.equal(data.endpoints[0].model, model);
+    assert.doesNotMatch(JSON.stringify(data), /legacy-(prompt|audio)-key/);
+    if (kind === "audio") { assert.equal(data.endpoints[0].charactersPerCredit, 20); assert.equal(data.endpoints[0].creditsPerUnit, 3); }
+  }
   const center = createServiceCenter({
     getPool: () => pool
   });
@@ -257,6 +273,12 @@ async function main() {
   await pool.query("DELETE FROM service_metrics_meta WHERE k='media_backfilled'");
   await center.backfill();
   await center.backfill();
+  await pool.query("INSERT INTO images (id,owner_user_id,filename) VALUES (?,?,?)", ["001/late.png", userId, "generated-late.png"]);
+  await center.backfillMedia();
+  await observe({ id: "late-attribution", metadata: { analyticsModule: "retouch" }, result: { image: { id: "001/late.png" } } });
+  const [[recovered]] = await pool.query("SELECT module,task_id FROM service_outputs WHERE output_id='001/late.png'");
+  assert.equal(recovered.module, "retouch", "晚到的任务应修正可确认的历史入口");
+  assert.equal(recovered.task_id, "late-attribution");
   await center.getDashboard({
     start: yesterday,
     end: today
@@ -267,7 +289,7 @@ async function main() {
   assert.equal(dashboard.response.status, 200, JSON.stringify(dashboard.data));
   assert.equal(dashboard.data.today.users, 1);
   assert.equal(dashboard.data.today.activeUsers, 1);
-  assert.equal(dashboard.data.today.image, 6); // 跨日1 + 部分成功1 + 失败产出1 + 同步代理3。
+  assert.equal(dashboard.data.today.image, 7); // 另含第二次回填发现的历史图片。
   assert.equal(dashboard.data.today.video, 1);
   assert.equal(dashboard.data.today.audio, 1);
   assert.equal(dashboard.data.today.credits, 12);
@@ -280,7 +302,7 @@ async function main() {
     cookie: adminCookie
   })).data;
   assert.equal(include.today.users, 2);
-  assert.equal(include.today.image, 7);
+  assert.equal(include.today.image, 8);
   assert.equal(include.today.activeUsers, 2);
   await request("/api/auth/me", {
     cookie: userCookie
@@ -292,7 +314,7 @@ async function main() {
     cookie: adminCookie
   })).data;
   assert.equal(users.pagination.page, 1);
-  assert.equal(users.items[0].image, 7, "两天合计包含零点前图片");
+  assert.equal(users.items[0].image, 8, "两天合计包含零点前图片");
   assert.equal(users.items[0].audio, 1);
   assert.equal(users.items[0].consumed, 12);
   const tasks = (await request("/api/service-center/tasks?" + range + "&module=full-playground", {
@@ -320,7 +342,7 @@ async function main() {
   await pool.query("DELETE FROM images");
   assert.equal((await request("/api/service-center/dashboard?" + range, {
     cookie: adminCookie
-  })).data.today.image, 6, "删除作品不抹掉统计");
+  })).data.today.image, 7, "删除作品不抹掉统计");
 
   // 实际走图片任务、同步代理和语音任务的 HTTP 生命周期；上游仅为本地模拟，无付费请求。
   const imageData = await fs.readFile(path.join(appRoot, "public/assets/editorial-crimson.jpg"));
@@ -338,10 +360,23 @@ async function main() {
   wav.writeUInt16LE(16, 34);
   wav.write("data", 36);
   wav.writeUInt32LE(4, 40);
+  let videoSubmission;
+  let wanSubmission;
+  let h3Submission;
+  let grsaiSubmission;
+  let promptSubmission;
+  let audioSubmission;
   upstream = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
+    if (req.url.startsWith("/agnesapi?")) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ status: "completed", url: "http://127.0.0.1:4188/mock.mp4", seconds: "15" })); return; }
+    if (req.url === "/api/v1/tasks/wan-task") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ output: { task_status: "SUCCEEDED", video_url: "http://127.0.0.1:4188/mock.mp4" } })); return; }
+    if (req.url === "/v2/query/video_generation/h3-task") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ task: { status: "succeeded", content: { url: "http://127.0.0.1:4188/mock.mp4" } } })); return; }
+    if (req.url === "/mock.mp4") { res.writeHead(200, { "Content-Type": "video/mp4" }); res.end(Buffer.alloc(32)); return; }
+    if (req.url === "/v1/models") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ data: [{ id: "mock-video" }] })); return; }
     if (req.url === "/v1/audio/speech") {
+      const payload = JSON.parse(Buffer.concat(chunks).toString());
+      audioSubmission = { model: payload.model, auth: req.headers.authorization };
       res.writeHead(200, {
         "Content-Type": "audio/wav"
       });
@@ -349,6 +384,12 @@ async function main() {
       return;
     }
     const input = JSON.parse(Buffer.concat(chunks).toString());
+    if (req.url === "/v1/video/veo") { grsaiSubmission = input; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ code: 0, data: { id: "grsai-task" } })); return; }
+    if (req.url === "/v1/draw/result") { assert.equal(input.id, "grsai-task"); res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ code: 0, data: { status: "succeeded", url: "http://127.0.0.1:4188/mock.mp4" } })); return; }
+    if (req.url === "/api/v1/services/aigc/video-generation/video-synthesis") { wanSubmission = { input, asyncHeader: req.headers["x-dashscope-async"], auth: req.headers.authorization }; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ output: { task_id: "wan-task" } })); return; }
+    if (req.url === "/v2/video_generation") { h3Submission = { input, auth: req.headers.authorization }; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ task_id: "h3-task" })); return; }
+    if (req.url === "/v1/videos") { videoSubmission = { model: input.model, frames: input.num_frames, auth: req.headers.authorization }; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ video_id: "local-15s" })); return; }
+    if (req.url === "/v1/chat/completions") { promptSubmission = { model: input.model, auth: req.headers.authorization }; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ choices: [{ message: { content: "本机模拟提示词" } }] })); return; }
     res.writeHead(200, {
       "Content-Type": "application/json"
     });
@@ -430,14 +471,133 @@ async function main() {
   const afterLive = (await request("/api/service-center/dashboard?" + range, {
     cookie: adminCookie
   })).data;
-  assert.equal(afterLive.today.image, 9, "图片任务新增2张，同步代理新增1张");
+  assert.equal(afterLive.today.image, 10, "图片任务新增2张，同步代理新增1张");
   assert.equal(afterLive.today.audio, 2, "语音真实任务的统计钩子新增1条");
   assert.equal(afterLive.today.credits, 16, "业务消费仍由原结算逻辑记录");
   assert.equal(afterLive.services.find(s => s.id === "text-image").succeeded, 1);
   await center.backfill();
   assert.equal((await request("/api/service-center/dashboard?" + range, {
     cookie: adminCookie
-  })).data.today.image, 9, "任务回填不能重复统计实时记录");
+  })).data.today.image, 10, "任务回填不能重复统计实时记录");
+  const videoInput = { action: "add", apiBase: "http://127.0.0.1:4188/v1", apiKey: "second-local-key", label: "第二节点", model: "mock-video" };
+  assert.equal((await request("/api/video-config", { cookie: userCookie, body: videoInput })).response.status, 403);
+  assert.equal((await request("/api/video-config", { cookie: adminCookie, body: videoInput })).response.status, 200);
+  const videoSettings = (await request("/api/video-config", { cookie: adminCookie })).data;
+  const node = videoSettings.endpoints.find(item => item.label === "第二节点");
+  assert.ok(node);
+  assert.doesNotMatch(JSON.stringify(videoSettings), /second-local-key/);
+  assert.equal((await request("/api/video-config", { cookie: adminCookie, body: { action: "set_default", id: node.id } })).response.status, 200);
+  assert.equal((await request("/api/video-config", { cookie: adminCookie, body: { action: "update", id: node.id, apiBase: "http://127.0.0.1:9999/v1", model: "mock-video" } })).response.status, 400, "修改地址不能沿用密钥");
+  const publicVideo = (await request("/api/video-config", { cookie: userCookie })).data;
+  assert.equal(publicVideo.defaultId, String(node.id));
+  assert.equal(publicVideo.endpoints, undefined);
+  assert.doesNotMatch(JSON.stringify(publicVideo), /127\.0\.0\.1|local-key/);
+  assert.equal((await request("/api/videos", { cookie: userCookie, body: { endpointId: String(node.id), prompt: "超出时长", quality: "720p", duration: "30s" } })).response.status, 400, "不支持的时长不能静默变为 5 秒");
+  const submittedVideo = await request("/api/videos", { cookie: userCookie, body: { endpointId: String(node.id), mode: "text", prompt: "隔离视频", quality: "720p", duration: "15s" } });
+  assert.equal(submittedVideo.response.status, 200, JSON.stringify(submittedVideo.data));
+  await waitTask(submittedVideo.data.taskId);
+  assert.deepEqual(videoSubmission, { model: "mock-video", frames: 361, auth: "Bearer second-local-key" });
+  const videoDashboard = (await request("/api/service-center/dashboard?" + range, { cookie: adminCookie })).data;
+  assert.equal(videoDashboard.today.video, 2);
+  assert.equal(videoDashboard.services.find(s => s.id === "video-text").succeeded, 2);
+  assert.equal((await request("/api/video-config", { cookie: adminCookie, body: { action: "toggle", id: node.id, enabled: false } })).response.status, 200);
+  assert.equal((await request("/api/videos", { cookie: userCookie, body: { endpointId: String(node.id), prompt: "拒绝停用节点" } })).response.status, 400);
+  const [legacyCredit] = await pool.query("INSERT INTO credit_transactions (user_id,amount,balance_after,type,note) VALUES (?, -1, 0, 'consume','提示词提取')", [userId]);
+  await pool.query("UPDATE service_metrics_meta SET v=? WHERE k='prompt_credit_cutoff'", [String(legacyCredit.insertId)]);
+  await center.backfill();
+  assert.equal((await request("/api/prompt-config", { cookie: adminCookie, body: { apiBase: "http://127.0.0.1:4188/v1", apiKey: "prompt-local-key", model: "mock-vision" } })).response.status, 200);
+  const invalidForm = new FormData();
+  invalidForm.append("image", new Blob(["bad"], { type: "text/plain" }), "bad.txt");
+  assert.equal((await fetch(base + "/api/prompts/extract", { method: "POST", headers: { Cookie: userCookie }, body: invalidForm })).status, 400);
+  const form = new FormData();
+  form.append("image", new Blob([imageData], { type: "image/png" }), "source.png");
+  assert.equal((await fetch(base + "/api/prompts/extract", { method: "POST", headers: { Cookie: userCookie }, body: form })).status, 200);
+  await center.backfill();
+  const promptStats = (await request("/api/service-center/dashboard?" + range, { cookie: adminCookie })).data.services.find(s => s.id === "prompt-extract");
+  assert.equal(promptStats.succeeded, 2, "历史扣费和实时成功各计一次");
+  assert.equal(promptStats.failed, 1);
+  await pool.query("UPDATE users SET credits=100 WHERE id=?", [userId]);
+  for (const [kind, model, key] of [["prompt", "other-vision", "other-prompt-key"], ["audio", "other-speech", "other-audio-key"]]) {
+    const body = { action: "add", apiBase: "http://127.0.0.1:4188/v1", apiKey: key, label: `第二${kind}节点`, model, charactersPerCredit: 2, creditsPerUnit: 3 };
+    assert.equal((await request(`/api/${kind}-config`, { cookie: userCookie, body })).response.status, 403);
+    assert.equal((await request(`/api/${kind}-config`, { cookie: adminCookie, body })).response.status, 200);
+    const listed = (await request(`/api/${kind}-config`, { cookie: adminCookie })).data;
+    assert.equal(listed.endpoints.length, 2);
+    assert.doesNotMatch(JSON.stringify(listed), new RegExp(key));
+    const selected = listed.endpoints.find(item => item.model === model);
+    const visible = (await request(`/api/${kind}-config`, { cookie: userCookie })).data;
+    assert.equal(visible.endpoints, undefined);
+    assert.doesNotMatch(JSON.stringify(visible), /127\.0\.0\.1|other-(prompt|audio)-key/);
+    assert.equal((await request(`/api/${kind}-config`, { cookie: adminCookie, body: { action: "update", id: selected.id, apiBase: "http://127.0.0.1:9999/v1", model } })).response.status, 400);
+    if (kind === "prompt") {
+      const upload = new FormData();
+      upload.append("image", new Blob([imageData], { type: "image/png" }), "source.png");
+      assert.equal((await fetch(`${base}/api/prompts/extract?endpointId=${selected.id}`, { method: "POST", headers: { Cookie: userCookie }, body: upload })).status, 200);
+      assert.deepEqual(promptSubmission, { model, auth: `Bearer ${key}` });
+    } else {
+      const payload = { endpointId: selected.id, prompt: "四个汉字", voice: "alloy", format: "wav", speed: 1, expectedPricing: { endpointId: selected.id, charactersPerCredit: 2, creditsPerUnit: 1 } };
+      const [[before]] = await pool.query("SELECT credits FROM users WHERE id=?", [userId]);
+      const [[beforeTasks]] = await pool.query("SELECT COUNT(*) n FROM generation_tasks WHERE kind='audio' AND user_id=?", [userId]);
+      assert.equal((await request("/api/audio", { cookie: userCookie, body: payload })).response.status, 409, "计费变化必须在创建任务前拒绝");
+      const [[after]] = await pool.query("SELECT credits FROM users WHERE id=?", [userId]);
+      const [[afterTasks]] = await pool.query("SELECT COUNT(*) n FROM generation_tasks WHERE kind='audio' AND user_id=?", [userId]);
+      assert.equal(after.credits, before.credits);
+      assert.equal(afterTasks.n, beforeTasks.n);
+      payload.expectedPricing.creditsPerUnit = 3;
+      const submitted = await request("/api/audio", { cookie: userCookie, body: payload });
+      assert.equal(submitted.response.status, 202, JSON.stringify(submitted.data));
+      assert.equal(submitted.data.estimatedCost, 6);
+      await waitTask(submitted.data.taskId, true);
+      assert.deepEqual(audioSubmission, { model, auth: `Bearer ${key}` });
+    }
+    assert.equal((await request(`/api/${kind}-config`, { cookie: adminCookie, body: { action: "set_default", id: selected.id } })).response.status, 200);
+    assert.equal((await request(`/api/${kind}-config`, { cookie: userCookie })).data.defaultId, String(selected.id));
+    assert.equal((await request(`/api/${kind}-config`, { cookie: adminCookie, body: { action: "toggle", id: selected.id, enabled: false } })).response.status, 200);
+  }
+  const wanNode = { action: "add", protocol: "wan3", label: "本机万相", apiBase: "http://127.0.0.1:4188/api/v1", apiKey: "wan-mock-key", model: "wan3.0-video", creditsPerSecond: 2 };
+  const h3Node = { action: "add", protocol: "minimax_h3", label: "本机 H3", apiBase: "http://127.0.0.1:4188", apiKey: "h3-mock-key", model: "MiniMax-H3", creditsPerSecond: 3 };
+  const grsaiNode = { action: "add", protocol: "grsai_veo", label: "本机 Grsai", apiBase: "http://127.0.0.1:4188", apiKey: "grsai-mock-key", model: "veo3.1-fast", creditsPerSecond: 7 };
+  for (const body of [wanNode, h3Node, grsaiNode]) assert.equal((await request("/api/video-config", { cookie: adminCookie, body })).response.status, 200);
+  const available = (await request("/api/video-config", { cookie: userCookie })).data.nodes;
+  const wan = available.find(item => item.protocol === "wan3");
+  const h3 = available.find(item => item.protocol === "minimax_h3");
+  const grsai = available.find(item => item.protocol === "grsai_veo");
+  assert.ok(wan.capabilities.durations.includes(30));
+  assert.deepEqual(h3.capabilities.qualities, ["768p", "2k"]);
+  const upload = new FormData();
+  upload.append("image", new Blob([imageData], { type: "image/png" }), "product.png");
+  const sourceResponse = await fetch(base + "/api/videos/source", { method: "POST", headers: { Cookie: userCookie }, body: upload });
+  assert.equal(sourceResponse.status, 200);
+  const source = (await sourceResponse.json()).image;
+  const wanBody = { endpointId: wan.id, mode: "image", prompt: "商品展示", quality: "720p", duration: "20s", ratio: "16:9", sourceImageIds: [source.id], expectedPricing: { endpointId: wan.id, creditsPerSecond: 1 } };
+  assert.equal((await request("/api/videos", { cookie: userCookie, body: wanBody })).response.status, 409);
+  wanBody.expectedPricing.creditsPerSecond = 2;
+  const wanTask = await request("/api/videos", { cookie: userCookie, body: wanBody });
+  assert.equal(wanTask.response.status, 200, JSON.stringify(wanTask.data));
+  const wanResult = await waitTask(wanTask.data.taskId);
+  assert.equal(wanResult.result.video.seconds, "20");
+  assert.equal(wanSubmission.input.model, "wan3.0-video");
+  assert.equal(wanSubmission.input.parameters.duration, 20);
+  assert.equal(wanSubmission.input.input.media[0].type, "first_frame");
+  assert.match(wanSubmission.input.input.media[0].url, /^data:image\/png;base64,/);
+  assert.equal(wanSubmission.asyncHeader, "enable");
+  const h3Task = await request("/api/videos", { cookie: userCookie, body: { endpointId: h3.id, mode: "text", prompt: "产品展示", quality: "768p", duration: "8s", ratio: "16:9", expectedPricing: { endpointId: h3.id, creditsPerSecond: 3 } } });
+  assert.equal(h3Task.response.status, 200, JSON.stringify(h3Task.data));
+  await waitTask(h3Task.data.taskId);
+  assert.equal(h3Submission.input.model, "MiniMax-H3");
+  assert.equal(h3Submission.input.resolution, "768P");
+  assert.equal(h3Submission.input.duration, 8);
+  assert.equal(h3Submission.auth, "Bearer h3-mock-key");
+  const [[beforeGrsai]] = await pool.query("SELECT credits FROM users WHERE id=?", [userId]);
+  const grsaiTask = await request("/api/videos", { cookie: userCookie, body: { endpointId: grsai.id, mode: "image", prompt: "产品展示", quality: "auto", duration: "8s", ratio: "16:9", sourceImageUrls: ["https://example.com/first.png", "https://example.com/last.png"], expectedPricing: { endpointId: grsai.id, creditsPerSecond: 7 } } });
+  assert.equal(grsaiTask.response.status, 200, JSON.stringify(grsaiTask.data));
+  const grsaiResult = await waitTask(grsaiTask.data.taskId);
+  const [[afterGrsai]] = await pool.query("SELECT credits FROM users WHERE id=?", [userId]);
+  assert.equal(beforeGrsai.credits - afterGrsai.credits, 7, "Grsai 计价应按次而非时长乘价");
+  assert.equal(grsaiResult.result.video.seconds, "");
+  assert.equal(grsaiSubmission.firstFrameUrl, "https://example.com/first.png");
+  assert.equal(grsaiSubmission.lastFrameUrl, "https://example.com/last.png");
+  assert.equal(grsaiSubmission.webHook, "-1");
   await observe({ id: "same-second-restart", status: "running", updatedAt: Math.floor(now / 1000) * 1000 + 900 });
   await observe({ id: "same-second-restart", status: "interrupted", updatedAt: Math.floor(now / 1000) * 1000 });
   const [[interrupted]] = await pool.query("SELECT status FROM service_tasks WHERE id='same-second-restart'");
@@ -449,7 +609,7 @@ async function main() {
   assert.doesNotMatch(log, /统计记录失败|请求处理异常|数据库初始化失败/);
   console.log(JSON.stringify({
     passed: true,
-    checks: ["真实MySQL聚合", "北京时间跨日", "批量与部分成功", "历史回填去重", "上传排除", "管理员筛选", "每日活跃去重", "分页", "权限", "不返回生成输入", "删除作品后保留统计", "实际生图任务钩子", "同步代理钩子", "实际语音任务钩子", "原结算逻辑", "重启状态同步", "确认终态保留"],
+    checks: ["真实MySQL聚合", "北京时间跨日", "历史回填与归类修正", "上传排除", "管理员筛选", "活跃去重", "权限", "实际图片与语音统计", "提示词成功失败统计", "旧服务迁移", "视频视觉语音多服务与密钥隔离", "Agnes与万相3及MiniMax H3模拟任务", "20秒首帧图生", "语音和视频按节点计价及价格变更拒绝", "重启状态同步"],
     base
   }));
   if (process.argv.includes("--serve")) {

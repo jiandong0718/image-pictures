@@ -31,7 +31,11 @@
             <div class="section-label">源图 <span class="vid-source-count" id="sourceCount"></span></div>
             <input type="file" id="sourceInput" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
             <div class="vid-source-grid" id="sourceGrid"></div>
-            <div class="vid-source-tip">点「＋」可一次多选（最多 5 张）。传 1 张＝图生视频；传 2 张及以上＝关键帧动画，按顺序过渡。</div>
+            <div id="videoFrameUrls" hidden>
+              <label class="field"><span>首帧图片 HTTPS 地址</span><input class="input" type="url" id="videoFirstFrame" placeholder="https://example.com/first.png" /></label>
+              <label class="field"><span>尾帧图片 HTTPS 地址（选填）</span><input class="input" type="url" id="videoLastFrame" placeholder="https://example.com/last.png" /></label>
+            </div>
+            <div class="vid-source-tip" id="sourceTip">参考图数量取决于所选模型。</div>
           </div>
 
           <div class="vid-stage" id="stage"></div>
@@ -45,33 +49,33 @@
         <!-- 右侧：控制面板 -->
         <div class="card vid-panel">
           <div class="vid-panel-scroll">
+            <label class="field"><span>视频服务</span><select class="select" id="videoService"><option value="">默认服务</option></select></label>
             <label class="field vid-prompt-field">
               <span>提示词</span>
               <textarea class="textarea" id="prompt" rows="4" placeholder="描述画面内容与镜头运动：主体、动作、环境、光线、运镜…"></textarea>
             </label>
+            <details class="vid-inspirations"><summary>商品视频提示词灵感</summary><p>选择一条追加到提示词，可继续编辑；图生视频需上传商品图。</p><div id="videoInspirations" class="vid-inspiration-list"></div><p>结构参考 <a href="https://github.com/yasuomang/ai-video-prompt-cookbook" target="_blank" rel="noopener noreferrer">AI Video Prompt Cookbook</a>（MIT），示例已改写。</p></details>
 
             <div class="section-label" style="margin-top: 18px">画面比例</div>
             <div class="vid-chips" id="ratios"></div>
 
-            <div class="section-label" style="margin-top: 18px">清晰度</div>
-            <div class="vid-chips" id="qualities"></div>
+            <div id="videoQualityField"><div class="section-label" style="margin-top: 18px">清晰度</div><div class="vid-chips" id="qualities"></div></div>
+            <div id="videoDurationField"><div class="section-label" style="margin-top: 18px">时长</div><div class="vid-chips" id="durations"></div></div>
+            <p class="vid-note" id="videoCapabilityHint">参数根据所选模型调整。</p>
 
-            <div class="section-label" style="margin-top: 18px">时长</div>
-            <div class="vid-chips" id="durations"></div>
-
-            <details class="vid-advanced">
+            <details class="vid-advanced" id="videoAdvanced">
               <summary>高级参数<span class="vid-adv-hint">（可选）</span></summary>
               <div class="vid-advanced-body">
-                <label class="field">
+                <label class="field" id="negativeField">
                   <span>负向提示词</span>
                   <textarea class="textarea" id="negative" rows="2" placeholder="要规避的内容，如：模糊、畸变、文字水印"></textarea>
                 </label>
                 <div class="field-grid-2">
-                  <label class="field">
+                  <label class="field" id="seedField">
                     <span>种子（seed）</span>
                     <input class="input" id="seed" type="number" step="1" placeholder="留空随机" />
                   </label>
-                  <label class="field">
+                  <label class="field" id="stepsField">
                     <span>推理步数</span>
                     <input class="input" id="steps" type="number" step="1" min="1" placeholder="默认" />
                   </label>
@@ -79,17 +83,19 @@
               </div>
             </details>
 
-            <p class="vid-note">生成的是<strong>无声视频</strong>（接口不含音频），配音配乐需后期合成。</p>
+            <p class="vid-note">是否生成声音由所选模型与服务决定，实际输出请以生成结果为准。</p>
           </div>
 
           <div class="vid-panel-foot">
             <p class="msg" id="msg"></p>
             <button class="btn primary full" id="generateBtn" type="button">生成视频</button>
+            <button class="btn full" id="resumeVideoTask" type="button" hidden>查询上次任务</button>
+            <button class="btn full" id="unlinkVideoTask" type="button" hidden>解除本地任务关联</button>
             <p class="card-desc" id="configHint" style="margin-top: 10px"></p>
           </div>
         </div>
       </div>
     </div>
-    <script type="module" src="/pages/video/video.js?v=gallery-1"></script>
+    <script type="module" src="/pages/video/video.js?v=inspiration-1"></script>
   </body>
 </html>

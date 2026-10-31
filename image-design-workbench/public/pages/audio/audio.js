@@ -14,8 +14,17 @@ let taskState = "unknown";
 let historyVersion = 0;
 let audioPage = 1;
 let items = [];
+let audioNodes = [];
+let audioDefaultId = "";
 
-function audioDraft() { const data = Object.fromEntries(new FormData($("audioForm"))); return { prompt: data.prompt, instructions: data.instructions, voice: data.voice, format: data.format, speed: Number(data.speed) }; }
+function audioDraft() { const data = Object.fromEntries(new FormData($("audioForm"))); return { prompt: data.prompt, instructions: data.instructions, voice: data.voice, format: data.format, speed: Number(data.speed), endpointId: data.endpointId, expectedPricing: config.configured ? { endpointId: config.id, charactersPerCredit: config.charactersPerCredit, creditsPerUnit: config.creditsPerUnit } : undefined }; }
+
+function selectAudioConfig() {
+  const node = audioNodes.find(item => item.id === ($("audioService").value || audioDefaultId));
+  config = node ? { ...node, configured: true } : { configured: false };
+  $("configHint").textContent = config.configured ? `当前模型：${config.model}。音色以当前服务支持范围为准。` : user.role === "admin" ? "音频服务尚未配置，请到配置中心的语音生成类别添加服务。" : "音频服务尚未配置，请联系管理员设置后再生成。";
+  updateEstimate();
+}
 
 function updateEstimate() {
   const { characterCount: count, estimatedCost: cost, charactersPerCredit: unit, creditsPerUnit } = audioCost($("prompt").value, config);
@@ -29,10 +38,14 @@ function persistDraft() {
 }
 
 async function loadConfig() {
-  const data = await apiGet("/api/audio-config"); config = data.config || {};
-  $("configHint").textContent = config.configured ? `当前模型：${config.model}。音色以当前服务支持范围为准。` : user.role === "admin" ? "音频服务尚未配置，请到配置中心的语音生成类别添加服务。" : "音频服务尚未配置，请联系管理员设置后再生成。";
+  const data = await apiGet("/api/audio-config");
+  audioNodes = Array.isArray(data.nodes) ? data.nodes : [];
+  audioDefaultId = data.defaultId || "";
+  const savedId = readStored(user.id, "audioDraft", {}).endpointId || "";
+  $("audioService").replaceChildren(new Option("默认服务", ""), ...audioNodes.map(node => new Option(`${node.name} · ${node.model}`, node.id)));
+  $("audioService").value = audioNodes.some(node => node.id === savedId) ? savedId : "";
   $("audioSettingsLink").hidden = user.role !== "admin";
-  updateEstimate();
+  selectAudioConfig();
 }
 
 async function loadAudio() {
@@ -115,6 +128,7 @@ async function main() {
   for (const [name, value] of Object.entries(saved)) { const field = $("audioForm").elements[name]; if (field && typeof value !== "object") field.value = String(value); }
   pendingTask = readStored(user.id, "audioTask", null); renderTaskActions();
   $("audioForm").addEventListener("input", persistDraft); $("audioForm").addEventListener("change", persistDraft);
+  $("audioService").addEventListener("change", selectAudioConfig);
   $("pickText").addEventListener("click", () => openCreativePicker({ kinds: ["text"], onSelect: (item) => { $("prompt").value = [$("prompt").value.trim(), item.content].filter(Boolean).join("\n\n"); persistDraft(); } }));
   $("audioForm").addEventListener("submit", async (event) => {
     event.preventDefault(); if (submitting || polling || recovering || pendingTask || !config.configured) return;

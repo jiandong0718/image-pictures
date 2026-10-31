@@ -1,4 +1,8 @@
 /* ============ AI 生视频：赛博画布布局（中间画布 + 右侧面板），与自由生图同款视觉语言 ============ */
+.vid-studio [hidden] {
+  display: none !important;
+}
+
 .vid-studio {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(300px, 26vw, 344px);
@@ -376,6 +380,12 @@
 }
 
 /* 折叠的高级参数 */
+.vid-inspirations { margin-top: 12px; color: var(--ink-soft); font-size: 12px; }
+.vid-inspirations summary { cursor: pointer; font-weight: 600; }
+.vid-inspirations p { color: var(--ink-mute); line-height: 1.5; }
+.vid-inspiration-list { display: flex; flex-wrap: wrap; gap: 7px; }
+.vid-inspiration-button { border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink-soft); padding: 7px 10px; cursor: pointer; }
+.vid-inspiration-button:hover { border-color: var(--accent); color: var(--accent); }
 .vid-advanced {
   margin-top: 18px;
   border-top: 1px solid var(--line);

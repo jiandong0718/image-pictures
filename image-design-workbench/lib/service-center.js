@@ -18,6 +18,7 @@ const MODULES = Object.freeze({
   "video-text": "文生视频",
   "video-image": "图生视频",
   audio: "语音生成",
+  "prompt-extract": "提示词提取",
   "legacy-image": "生图（入口未知）",
   "legacy-video": "视频（模式未知）"
 });
@@ -54,6 +55,7 @@ function moduleFor(input = {}, kind = "image", metadata = {}) {
   const specified = metadata.analyticsModule || input.analyticsModule;
   if (Object.hasOwn(MODULES, specified)) return specified;
   if (kind === "audio") return "audio";
+  if (kind === "prompt") return "prompt-extract";
   if (kind === "proxy-image") return "full-playground";
   if (kind === "video") return input.mode === "text" ? "video-text" : input.mode === "image" ? "video-image" : "legacy-video";
   return "legacy-image";
@@ -101,6 +103,7 @@ function outputId(item, kind) {
   return id.length <= 255 ? id : "";
 }
 function taskOutputs(task) {
+  if (task.kind === "prompt") return [];
   const kind = task.kind === "video" ? "video" : task.kind === "audio" ? "audio" : "image";
   const result = { ...(task.metadata?.result || {}), ...(task.result || {}) };
   const items = kind === "video" ? [result.video] : kind === "audio" ? [result.audio] : [result.image, ...(Array.isArray(result.images) ? result.images : []), ...Object.values(result.results || {}), ...(Array.isArray(task.partial?.images) ? task.partial.images : [])];
@@ -127,6 +130,7 @@ function taskOutputs(task) {
 }
 function taskState(task, count) {
   if (task.status !== "done") return task.status;
+  if (task.kind === "prompt") return "done";
   if (!count) return "error";
   return Object.keys(task.result?.errors || {}).length ? "partial" : "done";
 }
@@ -207,7 +211,7 @@ function createServiceCenter({
     const [[user]] = await db().query("SELECT role FROM users WHERE id = ?", [task.userId]);
     const role = user?.role || "user";
     const module = moduleFor(task.input, task.kind, task.metadata);
-    const kind = task.kind === "audio" ? "audio" : task.kind === "video" ? "video" : "image";
+    const kind = ["audio", "video", "prompt"].includes(task.kind) ? task.kind : "image";
     const outputs = taskOutputs(task);
     const updated = Number(task.updatedAt) || now();
     await db().query(`INSERT INTO service_tasks (id, user_id, user_role, module, kind, status, created_ms, updated_ms, output_count)
@@ -220,7 +224,10 @@ function createServiceCenter({
       module = IF(module LIKE 'legacy-%', VALUES(module), module), updated_ms = GREATEST(updated_ms, VALUES(updated_ms))`, [task.id, task.userId, role, module, kind, taskState(task, outputs.length), Number(task.createdAt) || updated, updated, outputs.length]);
     for (const output of outputs) {
       const at = Number.isFinite(output.at) && output.at > 0 ? output.at : updated;
-      await db().query(`INSERT IGNORE INTO service_outputs (kind, output_id, user_id, user_role, module, task_id, completed_ms, day, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [output.kind, output.id, task.userId, role, module, task.id, at, dayOf(at), source]);
+      await db().query(`INSERT INTO service_outputs (kind, output_id, user_id, user_role, module, task_id, completed_ms, day, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+        module = IF(user_id = VALUES(user_id) AND module LIKE 'legacy-%' AND VALUES(module) NOT LIKE 'legacy-%', VALUES(module), module),
+        task_id = IF(user_id = VALUES(user_id) AND task_id IS NULL, VALUES(task_id), task_id)`, [output.kind, output.id, task.userId, role, module, task.id, at, dayOf(at), source]);
     }
   }
   async function observeTask(task) {
@@ -246,6 +253,17 @@ function createServiceCenter({
       if (rows[0]) await recordTask(fromRow(rows[0]));
     });
   }
+  async function backfillMedia() {
+    await init();
+    const daySql = "DATE_ADD('1970-01-01', INTERVAL FLOOR((UNIX_TIMESTAMP(m.created_at)+28800)/86400) DAY)";
+    for (const [table, kind, module] of [["images", "image", "legacy-image"], ["videos", "video", "legacy-video"]]) {
+      await db().query(`INSERT IGNORE INTO service_outputs (kind, output_id, user_id, user_role, module, completed_ms, day, source)
+        SELECT ?, m.id, m.owner_user_id, COALESCE(u.role,'user'), ?, UNIX_TIMESTAMP(m.created_at)*1000, ${daySql}, 'historical-media'
+        FROM ${table} m LEFT JOIN users u ON u.id = m.owner_user_id
+        WHERE m.owner_user_id IS NOT NULL ${kind === "image" ? "AND COALESCE(m.filename, '') NOT LIKE 'uploaded-%'" : ""}`, [kind, module]);
+    }
+    await db().query("INSERT INTO service_metrics_meta (k,v) VALUES ('media_backfilled', ?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [String(now())]);
+  }
   // 初始化时回填可核实的记录；主键去重，既不回填活跃，也不依赖积分推算作品数量。
   async function backfill() {
     await init();
@@ -256,17 +274,14 @@ function createServiceCenter({
       if (rows.length < 200) break;
       cursor = rows[rows.length - 1].id;
     }
-    const [meta] = await db().query("SELECT v FROM service_metrics_meta WHERE k = 'media_backfilled'");
-    if (!meta.length) {
-      const daySql = "DATE_ADD('1970-01-01', INTERVAL FLOOR((UNIX_TIMESTAMP(m.created_at)+28800)/86400) DAY)";
-      for (const [table, kind, module] of [["images", "image", "legacy-image"], ["videos", "video", "legacy-video"]]) {
-        await db().query(`INSERT IGNORE INTO service_outputs (kind, output_id, user_id, user_role, module, completed_ms, day, source)
-          SELECT ?, m.id, m.owner_user_id, COALESCE(u.role,'user'), ?, UNIX_TIMESTAMP(m.created_at)*1000, ${daySql}, 'historical-media'
-          FROM ${table} m LEFT JOIN users u ON u.id = m.owner_user_id
-          WHERE m.owner_user_id IS NOT NULL ${kind === "image" ? "AND COALESCE(m.filename, '') NOT LIKE 'uploaded-%'" : ""}`, [kind, module]);
-      }
-      await db().query("INSERT IGNORE INTO service_metrics_meta (k,v) VALUES ('media_backfilled', ?)", [String(now())]);
-    }
+    await backfillMedia();
+    // 以首次迁移时的流水 ID 为界，避免以后同时记录实时任务和流水而重复统计。
+    await db().query("INSERT IGNORE INTO service_metrics_meta (k,v) SELECT 'prompt_credit_cutoff', COALESCE(MAX(id),0) FROM credit_transactions");
+    await db().query(`INSERT IGNORE INTO service_tasks (id,user_id,user_role,module,kind,status,created_ms,updated_ms,output_count)
+      SELECT CONCAT('prompt-credit:', c.id), c.user_id, COALESCE(u.role,'user'), 'prompt-extract', 'prompt', 'done',
+      UNIX_TIMESTAMP(c.created_at)*1000, UNIX_TIMESTAMP(c.created_at)*1000, 0
+      FROM credit_transactions c LEFT JOIN users u ON u.id=c.user_id
+      WHERE c.type='consume' AND c.note='提示词提取' AND c.id <= CAST((SELECT v FROM service_metrics_meta WHERE k='prompt_credit_cutoff') AS UNSIGNED)`);
   }
   const roleFilter = (includeAdmins, alias = "u") => includeAdmins ? "1=1" : `${alias}.role = 'user'`;
   const retainedRole = (includeAdmins, alias) => includeAdmins ? "1=1" : `COALESCE(u.role, ${alias}.user_role) = 'user'`;
@@ -427,6 +442,7 @@ function createServiceCenter({
   return {
     init,
     backfill,
+    backfillMedia,
     recordActivity,
     observeTask,
     observeAudioTask,

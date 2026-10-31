@@ -52,26 +52,26 @@ test("未知比例/清晰度回退默认，不抛错", () => {
   assert.equal(fallback.height, 720);
 });
 
-test("所有时长档的帧数满足 Agnes 的 8n+1 规则且不超上限 441", () => {
+test("当前时长档的帧数满足 8n+1 规则", () => {
   for (const [label, frames] of Object.entries(VIDEO_DURATIONS)) {
     assert.equal((frames - 1) % 8, 0, `${label}=${frames} 不满足 8n+1`);
-    assert.ok(frames <= 441, `${label}=${frames} 超过最大帧数 441`);
   }
   assert.equal(VIDEO_DURATIONS["15s"], 361); // 15s 支持
-  assert.equal(VIDEO_DURATIONS["30s"], undefined); // 30s 超帧数上限，不支持
+  assert.equal(VIDEO_DURATIONS["30s"], undefined); // 当前应用未提供 30 秒
 });
 
 test("视频帧数遵守各清晰度的上游限制", () => {
   assert.equal(getVideoFrames("15s", "720p"), 361);
   assert.equal(getVideoFrames("10s", "1080p"), 241);
   assert.throws(() => getVideoFrames("15s", "1080p"), /1080p 最长支持 10 秒/);
-  assert.equal(getVideoFrames("unknown", "1080p"), 121);
+  assert.throws(() => getVideoFrames("unknown", "1080p"), /当前支持/);
 });
 
-test("按时长计费：1 秒 1 积分，未知时长兜底 5s", () => {
+test("按时长计费：1 秒 1 积分，未知时长明确拒绝", () => {
   assert.equal(videoDurationSeconds("3s"), 3);
   assert.equal(videoDurationSeconds("15s"), 15);
-  assert.equal(videoDurationSeconds("99s"), 5); // 不在预设里，兜底
+  assert.throws(() => videoDurationSeconds("99s"), /当前支持/);
+  assert.equal(videoDurationSeconds(undefined), 5);
   assert.equal(videoCost("3s"), 3);
   assert.equal(videoCost("10s"), 10);
   assert.equal(videoCost("15s"), 15);

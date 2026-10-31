@@ -69,12 +69,8 @@ export function createStudio(config) {
     if (saved.imageSet && typeof saved.imageSet === "object") {
       state.imageSet = saved.imageSet;
     }
-    if (saved.spec && typeof saved.spec === "object") {
-      state.spec = {
-        sizePreset: saved.spec.sizePreset || state.spec.sizePreset,
-        ratioPreset: saved.spec.ratioPreset || state.spec.ratioPreset,
-      };
-    }
+    // 分辨率/比例不做跨访问记忆：本入口每次进入固定默认 1024x1024（1k + 1:1），
+    // 当次会话内仍可切换；上次选过 2K/4K 不会带回来。
     if (saved.prompts && typeof saved.prompts === "object") {
       state.prompts = { ...state.prompts, ...saved.prompts };
     }

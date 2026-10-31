@@ -106,7 +106,7 @@ function renderDashboard(data) {
   const sum = key => data.days.reduce((total, day) => total + (day[key] || 0), 0);
   $("rangeSummary").textContent = `所选期间：新增 ${number(sum("newUsers"))} 人 · 图片 ${number(sum("image"))} 张 · 视频 ${number(sum("video"))} 条 · 语音 ${number(sum("audio"))} 条 · 消耗 ${number(sum("credits"))} 积分`;
   $("dailyBody").innerHTML = data.days.map(d => `<tr><td>${d.day}</td>${["newUsers", "activeUsers", "image", "video", "audio", "credits"].map(k => `<td>${number(d[k])}</td>`).join("")}</tr>`).join("");
-  $("serviceBody").innerHTML = data.services.map(s => `<tr><td>${escapeHtml(s.label)}</td><td>${number(s.submitted)}</td><td>${number(s.succeeded)}</td><td>${number(s.partial)}</td><td>${number(s.failed)}</td><td>${number(s.running)} / ${number(s.interrupted)}</td><td>${s.successRate === null ? "—" : (s.successRate * 100).toFixed(1) + "%"}</td><td>${s.id.includes("video") ? number(s.video) + " 条视频" : s.id === "audio" ? number(s.audio) + " 条语音" : number(s.image) + " 张图片"}</td><td><button class="btn sm ghost" type="button" data-module="${s.id}">查看</button></td></tr>`).join("");
+  $("serviceBody").innerHTML = data.services.map(s => `<tr><td>${escapeHtml(s.label)}</td><td>${number(s.submitted)}</td><td>${number(s.succeeded)}</td><td>${number(s.partial)}</td><td>${number(s.failed)}</td><td>${number(s.running)} / ${number(s.interrupted)}</td><td>${s.successRate === null ? "—" : (s.successRate * 100).toFixed(1) + "%"}</td><td>${s.id === "prompt-extract" ? "—" : s.id.includes("video") ? number(s.video) + " 条视频" : s.id === "audio" ? number(s.audio) + " 条语音" : number(s.image) + " 张图片"}</td><td><button class="btn sm ghost" type="button" data-module="${s.id}">查看</button></td></tr>`).join("");
   $("coverage").textContent = `活跃记录自 ${dateTime(data.coverage.activitySince)} 起启用。${data.coverage.historicalOutputs}`;
   if (data.coverage.lastErrorAt) message("部分统计记录曾写入失败，最近一次发生于 " + dateTime(data.coverage.lastErrorAt) + "；统计可能不完整。", true);
   renderChart();
@@ -170,7 +170,7 @@ async function loadTasks() {
       error: "失败",
       interrupted: "已中断"
     };
-    $("taskBody").innerHTML = data.items.map(t => `<tr><td>${escapeHtml(t.username)}</td><td>${escapeHtml(t.moduleLabel)}</td><td>${dateTime(t.createdAt)}</td><td>${dateTime(t.updatedAt)}</td><td><span class="sc-status sc-status-${escapeHtml(t.status)}">${labels[t.status] || escapeHtml(t.status)}</span></td><td>${number(t.outputCount)} ${t.kind === "image" ? "张" : "条"}</td></tr>`).join("") || '<tr><td colspan="6">所选期间没有可核实的任务记录。历史作品记录可能早于任务记录。</td></tr>';
+    $("taskBody").innerHTML = data.items.map(t => `<tr><td>${escapeHtml(t.username)}</td><td>${escapeHtml(t.moduleLabel)}</td><td>${dateTime(t.createdAt)}</td><td>${dateTime(t.updatedAt)}</td><td><span class="sc-status sc-status-${escapeHtml(t.status)}">${labels[t.status] || escapeHtml(t.status)}</span></td><td>${t.kind === "prompt" ? "—" : number(t.outputCount) + (t.kind === "image" ? " 张" : " 条")}</td></tr>`).join("") || '<tr><td colspan="6">所选期间没有可核实的任务记录。历史作品记录可能早于任务记录。</td></tr>';
     state.tasks = {
       page: data.pagination.page,
       pageSize: data.pagination.pageSize

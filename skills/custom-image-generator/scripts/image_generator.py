@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import http.client
 import json
 import mimetypes
 import os
@@ -278,6 +279,16 @@ def extract_error_message(raw: bytes) -> str:
     return text[:400]
 
 
+# 网络层异常（连接被对端断开、读超时、SSL 中断等）不一定以 urllib.error.URLError 形态抛出
+# （如 socket.timeout / http.client.RemoteDisconnected），不接住会直接炸出 traceback。
+# 统一转成 status=None 的 ApiCallError，让上层按"瞬时网络故障"重试。
+def describe_network_error(exc: BaseException) -> str:
+    reason = getattr(exc, "reason", None)
+    if reason is not None:
+        return f"{type(exc).__name__}: {reason}"
+    return f"{type(exc).__name__}: {exc}"
+
+
 def post_json(url: str, api_key: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
     headers = {
         "Content-Type": "application/json",
@@ -293,8 +304,8 @@ def post_json(url: str, api_key: str, payload: dict[str, Any], timeout: int) -> 
             raw = response.read()
     except error.HTTPError as exc:
         raise ApiCallError(url, exc.code, extract_error_message(exc.read())) from exc
-    except error.URLError as exc:
-        raise ApiCallError(url, None, str(exc.reason)) from exc
+    except (error.URLError, http.client.HTTPException, OSError) as exc:
+        raise ApiCallError(url, None, describe_network_error(exc)) from exc
 
     try:
         decoded = json.loads(raw.decode("utf-8"))
@@ -367,8 +378,8 @@ def post_multipart(
             raw = response.read()
     except error.HTTPError as exc:
         raise ApiCallError(url, exc.code, extract_error_message(exc.read())) from exc
-    except error.URLError as exc:
-        raise ApiCallError(url, None, str(exc.reason)) from exc
+    except (error.URLError, http.client.HTTPException, OSError) as exc:
+        raise ApiCallError(url, None, describe_network_error(exc)) from exc
 
     try:
         decoded = json.loads(raw.decode("utf-8"))
@@ -379,8 +390,7 @@ def post_multipart(
     return decoded
 
 
-def execute_request(endpoint: str, prompt: str, args: argparse.Namespace) -> dict[str, Any]:
-    url = make_url(args.api_base, endpoint)
+def execute_request_at_url(url: str, endpoint: str, prompt: str, args: argparse.Namespace) -> dict[str, Any]:
     payload = build_payload(endpoint, prompt, args)
     if endpoint == "edits":
         sources = list(dict.fromkeys([args.image, *getattr(args, "reference_image", [])]))
@@ -394,6 +404,20 @@ def execute_request(endpoint: str, prompt: str, args: argparse.Namespace) -> dic
             timeout=args.timeout,
         )
     return post_json(url, args.api_key, payload, args.timeout)
+
+
+def execute_request(endpoint: str, prompt: str, args: argparse.Namespace) -> dict[str, Any]:
+    # 请求地址完全按配置的 api_base 拼接，不做任何自动改写或补 /v1。
+    url = make_url(args.api_base, endpoint)
+    for attempt in range(2):
+        try:
+            return execute_request_at_url(url, endpoint, prompt, args)
+        except ApiCallError as exc:
+            # 网络层异常（连接被断开、读超时等）多为瞬时故障，原地址立即重试一次；
+            # HTTP 状态错误（401/429/5xx 等）说明上游已明确回应，不重试。
+            if exc.status is None and attempt == 0:
+                continue
+            raise
 
 
 def looks_like_image_url(value: Any) -> bool:
@@ -523,12 +547,12 @@ def download_image(url: str, api_key: str, timeout: int) -> ImagePayload:
                 raw, mime = _fetch(with_auth=True)
             except error.HTTPError as exc2:
                 raise ApiCallError(url, exc2.code, extract_error_message(exc2.read())) from exc2
-            except error.URLError as exc2:
-                raise ApiCallError(url, None, str(exc2.reason)) from exc2
+            except (error.URLError, http.client.HTTPException, OSError) as exc2:
+                raise ApiCallError(url, None, describe_network_error(exc2)) from exc2
         else:
             raise ApiCallError(url, exc.code, extract_error_message(exc.read())) from exc
-    except error.URLError as exc:
-        raise ApiCallError(url, None, str(exc.reason)) from exc
+    except (error.URLError, http.client.HTTPException, OSError) as exc:
+        raise ApiCallError(url, None, describe_network_error(exc)) from exc
 
     ext = mime_to_ext(mime) if mime else infer_ext(raw)
     if ext == "png" and mime == "application/octet-stream":
@@ -553,7 +577,15 @@ def parse_images(response_payload: dict[str, Any], api_key: str, timeout: int) -
     urls: list[str] = []
     collect_image_candidates(response_payload, images, urls)
     for url in urls:
-        images.append(download_image(url, api_key=api_key, timeout=timeout))
+        for attempt in range(2):
+            try:
+                images.append(download_image(url, api_key=api_key, timeout=timeout))
+                break
+            except ApiCallError as exc:
+                # 网络层异常多为瞬时故障，重试一次；HTTP 状态错误（如链接过期 404）不重试。
+                if exc.status is None and attempt == 0:
+                    continue
+                raise
     deduped = dedupe_images(images)
     if not deduped:
         raise NoImageFoundError("响应里没找到图片数据")

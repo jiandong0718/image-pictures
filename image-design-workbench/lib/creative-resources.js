@@ -29,6 +29,30 @@ function nanoBananaTitle(item, index) {
   return ["Nano Banana", category, style, `案例 ${identity}`].filter(Boolean).join(" · ");
 }
 
+// 上游的每个 variant 才是一张独立电商图的完整提示词。仅收录仓库自有、明确采用 CC BY 4.0 的内容。
+function ecommerceVariants(value) {
+  if (Array.isArray(value)) return value; // 兼容标准 JSON 来源和现有测试桩。
+  if (!Array.isArray(value?.prompts)) return value;
+  return value.prompts.flatMap((entry) => {
+    if (entry?.source?.permission !== "repository-authored" || entry.license !== "CC-BY-4.0" || !Array.isArray(entry.variants)) return [];
+    return entry.variants.filter((variant) => variant?.prompt && variant?.id).map((variant) => {
+      const imagePath = variant.sample?.license === "CC-BY-4.0" && /^assets\/[a-zA-Z0-9_./-]+$/.test(variant.sample?.after || "") && !variant.sample.after.split("/").includes("..") ? variant.sample.after : "";
+      return {
+        id: `${entry.id}:${variant.id}`,
+        title: `${sourceText(entry.title, 110)} · ${sourceText(variant.title, 45)}`.slice(0, 160),
+        prompt: variant.prompt,
+        description: entry.translations?.zh?.description || entry.description,
+        author: sourceText(entry.author?.name, 100) || "ecommerce-gpt-image-prompts contributors",
+        tags: [...new Set(["电商套图", entry.category, variant.assetPurpose, ...(variant.platforms || []), ...(entry.styles || [])].filter((tag) => typeof tag === "string" && tag.length <= 40))].slice(0, 20),
+        coverUrl: imagePath ? `https://raw.githubusercontent.com/ecomimagelab/ecommerce-gpt-image-prompts/main/${imagePath}` : "",
+        sourceUrl: "https://github.com/ecomimagelab/ecommerce-gpt-image-prompts",
+        license: "CC BY 4.0",
+        licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+      };
+    });
+  });
+}
+
 // 创作卡片页使用 12/18 条，独立于旧图库的 10/20/50 分页规则。
 function normalizePagination(rawPage, rawPageSize) {
   const page = Number.isSafeInteger(Number(rawPage)) && Number(rawPage) > 0 && Number(rawPage) <= 1000000 ? Number(rawPage) : 1;
@@ -52,6 +76,7 @@ const PROMPT_SOURCES = Object.freeze([
     "https://raw.githubusercontent.com/ImgEdify/awesome-nano-banana-pro-prompts/main/data/prompts.json",
     { maxItems: 1000, maxBytes: MAX_TRUSTED_SOURCE_BYTES, timeoutMs: 60000, formatTitle: nanoBananaTitle, filter: isAllowedNanoBananaPrompt },
   ],
+  ["ecommerce-gpt-image-prompts", "电商商品套图 · GitHub", "https://raw.githubusercontent.com/ecomimagelab/ecommerce-gpt-image-prompts/main/data/prompts.json", { transform: ecommerceVariants, maxBytes: MAX_TRUSTED_SOURCE_BYTES, bundled: require("./data/ecommerce-prompts.json") }],
 ].map(([id, title, url, options = {}]) => Object.freeze({
   id,
   title,
@@ -125,9 +150,10 @@ function publicSourcePrompt(item, source) {
 }
 
 function normalizeSourcePrompts(value, sourceId, sourceInfo) {
-  const items = Array.isArray(value) ? value : value?.prompts || value?.items || value?.data;
-  if (!Array.isArray(items) || !items.length || items.length > 10000) throw inputError("来源必须是非空的标准 JSON 提示词数组，最多 10000 条", 502);
   const source = sourceInfo || PROMPT_SOURCES.find((item) => item.id === sourceId) || { id: sourceId, title: sourceId };
+  const transformed = typeof source.transform === "function" ? source.transform(value) : value;
+  const items = Array.isArray(transformed) ? transformed : transformed?.prompts || transformed?.items || transformed?.data;
+  if (!Array.isArray(items) || !items.length || items.length > 10000) throw inputError("来源必须是非空的标准 JSON 提示词数组，最多 10000 条", 502);
   const accepted = typeof source.filter === "function" ? items.filter((item) => source.filter(item)) : items;
   const bounded = accepted.slice(0, Number.isSafeInteger(source.maxItems) ? source.maxItems : 10000);
   if (!bounded.length) throw inputError("来源没有可用的提示词", 502);
@@ -138,7 +164,7 @@ function normalizeSourcePrompts(value, sourceId, sourceInfo) {
     // 同样的文案可以对应不同案例/封面；以源内 ID 识别，不能按正文合并。
     const identity = originalId || `item-${index + 1}-${crypto.createHash("sha256").update(JSON.stringify(item)).digest("hex").slice(0, 20)}`;
     const tags = [...(Array.isArray(item?.tags) ? item.tags : []), item?.category, item?.style].filter(Boolean);
-    return publicSourcePrompt({ id: `${sourceId}:${identity}`, originalId, title, content, tags: normalizeTags(tags), description: item?.description, author: item?.author, coverUrl: source.useRemoteImages === false ? "" : item?.coverUrl || item?.images?.[0], referenceImageUrls: source.useRemoteImages === false ? [] : item?.referenceImageUrls || item?.images, sourceUrl: item?.sourceUrl || item?.source_url }, source);
+    return publicSourcePrompt({ id: `${sourceId}:${identity}`, originalId, title, content, tags: normalizeTags(tags), description: item?.description, author: item?.author, license: sourceText(item?.license, 100), licenseUrl: sourceUrl(item?.licenseUrl), coverUrl: source.useRemoteImages === false ? "" : item?.coverUrl || item?.images?.[0], referenceImageUrls: source.useRemoteImages === false ? [] : item?.referenceImageUrls || item?.images, sourceUrl: item?.sourceUrl || item?.source_url }, source);
   });
   return [...new Map(normalized.map((item) => [item.id, item])).values()];
 }
@@ -197,14 +223,14 @@ function createCreativeResources({ getPool = () => require("./db").getPool(), fe
       const loaded = await Promise.all(selected.map(async (definition) => {
         let cache = await readSourceCache(definition.id);
         let refresh;
-        if (!cache) {
+        if (!cache && !definition.bundled) {
           try { refresh = await refreshPromptSource(definition.id); }
           catch (error) { refresh = { success: false, error: error.message, warning: error.message }; }
           cache = await readSourceCache(definition.id);
         }
-        const items = parseJson(cache?.items, []).map((item) => publicSourcePrompt(item, definition));
+        const items = cache ? parseJson(cache.items, []).map((item) => publicSourcePrompt(item, definition)) : definition.bundled ? normalizeSourcePrompts(definition.bundled, definition.id, definition) : [];
         const last = refresh || refreshAttempts.get(definition.id)?.result;
-        return { items, source: { id: definition.id, title: definition.title, count: items.length, cachedAt: cache?.updated_at || null, success: last?.success !== false && Boolean(cache), error: last?.error || "", stale: last?.success === false && Boolean(cache) } };
+        return { items, source: { id: definition.id, title: definition.title, count: items.length, cachedAt: cache?.updated_at || null, bundled: !cache && Boolean(definition.bundled), success: last?.success !== false && Boolean(cache || definition.bundled), error: last?.error || "", stale: last?.success === false && Boolean(cache || definition.bundled) } };
       }));
       const allItems = loaded.flatMap((item) => item.items);
       const items = allItems.filter((item) => (!q || [item.title, item.content, item.description, item.author, item.sourceName, ...item.tags].join("\n").toLowerCase().includes(q.toLowerCase())) && (!tag || item.tags.some((value) => String(value).toLowerCase() === tag.toLowerCase())));
@@ -248,7 +274,7 @@ function createCreativeResources({ getPool = () => require("./db").getPool(), fe
     return sources.map((source) => {
       const cache = rows.find((row) => row.source_id === source.id);
       const last = refreshAttempts.get(source.id)?.result;
-      return { id: source.id, title: source.title, url: source.url, cachedAt: cache?.updated_at || null, lastRefreshedAt: cache?.updated_at || null, count: Number(cache?.item_count) || 0, lastError: last?.error || "" };
+      return { id: source.id, title: source.title, url: source.url, cachedAt: cache?.updated_at || null, lastRefreshedAt: cache?.updated_at || null, count: cache ? Number(cache.item_count) || 0 : source.bundled ? normalizeSourcePrompts(source.bundled, source.id, source).length : 0, bundled: !cache && Boolean(source.bundled), lastError: last?.error || "" };
     });
   }
 
@@ -297,9 +323,10 @@ function createCreativeResources({ getPool = () => require("./db").getPool(), fe
         return result;
       } catch (error) {
         const reason = error.statusCode ? error.message : error instanceof SyntaxError ? "来源 JSON 格式不正确" : controller.signal.aborted ? "来源请求超时" : "来源同步失败";
-        const result = { sourceId, sourceName: source.title, count: parseJson(existing?.items, []).length, cachedAt: existing?.updated_at || null, stale: Boolean(existing), success: false, error: reason, warning: existing ? `${reason}，已保留上次缓存` : `${reason}，当前还没有缓存，请稍后重试` };
+        const fallbackCount = source.bundled ? normalizeSourcePrompts(source.bundled, source.id, source).length : 0;
+        const result = { sourceId, sourceName: source.title, count: existing ? parseJson(existing.items, []).length : fallbackCount, cachedAt: existing?.updated_at || null, stale: Boolean(existing || fallbackCount), success: false, error: reason, warning: existing ? `${reason}，已保留上次缓存` : fallbackCount ? `${reason}，已保留内置参考数据` : `${reason}，当前还没有缓存，请稍后重试` };
         refreshAttempts.set(sourceId, { at: attemptedAt, result });
-        if (existing) return result;
+        if (existing || fallbackCount) return result;
         throw inputError(result.warning, 502);
       } finally { clearTimeout(timer); }
     })();

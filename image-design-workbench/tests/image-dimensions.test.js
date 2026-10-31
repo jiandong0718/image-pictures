@@ -405,7 +405,7 @@ test("builds image generator args with optional playground parameters", () => {
       "--size",
       "1024x1024",
       "--timeout",
-      "180",
+      "360",
       "--background",
       "transparent",
       "--system",
@@ -562,7 +562,7 @@ test("injects uploaded API config through process env instead of command args", 
     "--size",
     "1024x1024",
     "--timeout",
-    "180",
+    "360",
   ]);
   assert.equal(env.CUSTOM_IMAGE_API_BASE, "https://unit.test/v1");
   assert.equal(env.CUSTOM_IMAGE_API_KEY, "uploaded-key");

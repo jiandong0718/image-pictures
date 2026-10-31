@@ -100,6 +100,7 @@ async function readAssetUpload(req, readMultipartFile) {
 function createCreativeApi(deps) {
   const { accountApi, sendJson, sendError, readJson, readMultipartFile, outputDir, resolveOutputFile, assertOwnsImageSet, tasks } = deps;
   const resources = deps.resources || defaultResources;
+  const services = deps.modelServices;
   const generateSpeech = deps.generateSpeech || audio.generateSpeech;
   const jobs = new Map();
   // 仅在后台工作已经停止但结算尚未确认时，允许本进程继续核对。
@@ -362,9 +363,23 @@ function createCreativeApi(deps) {
       } else if (pathname === "/api/compositions/resolve" && req.method === "POST") {
         sendJson(res, 200, { ok: true, ...await resources.resolveComposition(user.id, await readJson(req)) });
       } else if (pathname === "/api/audio-config" && req.method === "GET") {
-        sendJson(res, 200, { ok: true, config: audio.publicAudioConfig(await resources.getAudioConfig()) });
+        if (!services) sendJson(res, 200, { ok: true, config: audio.publicAudioConfig(await resources.getAudioConfig()) });
+        else {
+          const nodes = await services.selectable("audio");
+          const defaultId = await services.defaultId("audio");
+          const selected = nodes.find(node => node.id === defaultId);
+          const config = selected ? { configured: true, hasKey: true, model: selected.model, charactersPerCredit: selected.charactersPerCredit, creditsPerUnit: selected.creditsPerUnit } : { configured: false, hasKey: false, model: "", charactersPerCredit: 1000, creditsPerUnit: 1 };
+          sendJson(res, 200, { ok: true, config, nodes, defaultId, ...(user.role === "admin" ? { endpoints: await services.list("audio") } : {}) });
+        }
       } else if (pathname === "/api/audio-config" && req.method === "POST") {
-        sendJson(res, 200, { ok: true, config: audio.publicAudioConfig(await resources.saveAudioConfig(await readJson(req))) });
+        const payload = await readJson(req);
+        if (!services) sendJson(res, 200, { ok: true, config: audio.publicAudioConfig(await resources.saveAudioConfig(payload)) });
+        else {
+          await services.action("audio", payload);
+          const id = await services.defaultId("audio");
+          const selected = (await services.selectable("audio")).find(node => node.id === id);
+          sendJson(res, 200, { ok: true, config: selected ? { configured: true, hasKey: true, model: selected.model, charactersPerCredit: selected.charactersPerCredit, creditsPerUnit: selected.creditsPerUnit } : { configured: false, hasKey: false } });
+        }
       } else if (audioTaskMatch && req.method === "GET") {
         sendJson(res, 200, { ok: true, ...await audioTaskStatus(user, audioTaskMatch[1]) });
       } else if (recoverMatch && req.method === "POST") {
@@ -372,9 +387,11 @@ function createCreativeApi(deps) {
         if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).length) throw audio.inputError("核对任务不接受费用、输出或生成参数");
         sendJson(res, 200, await recoverAudioTask(user, recoverMatch[1]));
       } else if (pathname === "/api/audio" && req.method === "POST") {
-        const input = audio.normalizeAudioInput(await readJson(req));
-        const config = await resources.getAudioConfig();
+        const payload = await readJson(req);
+        const input = audio.normalizeAudioInput(payload);
+        const config = services ? await services.required("audio", payload.endpointId) : await resources.getAudioConfig();
         if (!audio.isConfigured(config)) throw audio.inputError("请先由管理员配置音频 API 地址、密钥和模型", 503);
+        if (services && payload.expectedPricing && (String(payload.expectedPricing.endpointId) !== config.id || Number(payload.expectedPricing.charactersPerCredit) !== config.charactersPerCredit || Number(payload.expectedPricing.creditsPerUnit) !== config.creditsPerUnit)) throw audio.inputError("语音服务或计费规则已变更，请刷新页面确认价格后重试", 409);
         const pricing = audio.calculateAudioCost(input.prompt, config);
         const task = await tasks.createTask({ userId: user.id, kind: "audio", input: { ...input, model: config.model, ...pricing }, maxCost: pricing.estimatedCost, note: `语音生成 ${pricing.characterCount} 字符` });
         const taskId = task.id || task.taskId || task;

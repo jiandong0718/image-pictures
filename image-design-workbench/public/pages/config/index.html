@@ -30,16 +30,19 @@
     <form id="serviceForm">
       <div class="dialog-fields">
         <label class="field" id="labelField"><span>服务名称</span><input class="input" id="serviceLabel" placeholder="例如：主服务" maxlength="100" /></label>
+        <label class="field" id="videoProtocolField" hidden><span>视频接口协议</span><select class="select" id="videoProtocol"><option value="agnes">Agnes 兼容渠道</option><option value="wan3">阿里云百炼 · 万相 3.0</option><option value="wan26">阿里云百炼 · 万相 2.6</option><option value="minimax_h3">MiniMax · H3 官方</option><option value="grsai_veo">Grsai · Veo 3.1</option></select><small>请选择实际服务的接口协议，不同渠道不能只靠模型名互换。</small></label>
         <label class="field" id="urlField"><span>API 地址</span><input class="input" id="serviceUrl" type="url" placeholder="https://api.example.com/v1" autocomplete="off" /></label>
         <label class="field"><span>API Key</span><input class="input" id="serviceKey" type="password" autocomplete="new-password" /><small id="keyHint">仅用于连接当前服务。</small></label>
         <div class="field" id="modelField"><div class="field-heading"><label for="serviceModel">默认模型</label><button class="text-button" id="fetchModels" type="button">拉取模型</button></div><select class="select" id="serviceModel"><option value="">请先拉取模型</option></select><small id="modelHint">从 API 获取模型列表后选择。模型能力以服务商说明为准。</small></div>
+        <label class="field" id="videoModelField" hidden><span>或手动填写模型</span><input class="input" id="videoModel" maxlength="100" placeholder="填写该服务支持的模型名" /><small>手动填写优先；具体模型能力以服务商支持为准。</small></label>
         <div class="audio-pricing" id="audioPricing" hidden><label class="field"><span>每档字符数</span><input class="input" type="number" min="1" max="100000" id="charactersPerCredit" value="1000" /></label><label class="field"><span>每档积分</span><input class="input" type="number" min="1" max="100000" id="creditsPerUnit" value="1" /></label></div>
+        <label class="field" id="videoPricing" hidden><span>站内每秒积分</span><input class="input" type="number" min="1" max="100000" id="videoCredits" placeholder="留空使用全局默认" /><small>站内积分由管理员配置，供应商实际费用请在其平台确认。</small></label>
         <p class="settings-message" id="formMessage" role="status" aria-live="polite"></p>
       </div>
       <footer class="dialog-actions"><button class="btn" id="cancelDialog" type="button">取消</button><button class="btn primary" id="saveService" type="submit">保存服务</button></footer>
     </form>
   </dialog>
 </div>
-<script type="module" src="/pages/config/config.js?v=global-default-10"></script>
+<script type="module" src="/pages/config/config.js?v=video-providers-1"></script>
 </body>
 </html>

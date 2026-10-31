@@ -125,7 +125,8 @@ async function extract() {
   try {
     const fd = new FormData();
     fd.append("image", file);
-    const data = await apiUpload("/api/prompts/extract", fd);
+    const endpoint = els.promptService.value;
+    const data = await apiUpload("/api/prompts/extract" + (endpoint ? `?endpointId=${encodeURIComponent(endpoint)}` : ""), fd);
     els.output.value = data.prompt || "";
     saveDraft();
     if (typeof data.credits === "number") {
@@ -171,6 +172,7 @@ async function main() {
     extractBtn: document.getElementById("extractBtn"),
     copyBtn: document.getElementById("copyBtn"),
     configHint: document.getElementById("configHint"),
+    promptService: document.getElementById("promptService"),
   });
 
   els.selectBtn.addEventListener("click", () => els.fileInput.click());
@@ -197,6 +199,7 @@ async function main() {
   try {
     const cfg = await apiGet("/api/prompt-config");
     hasPromptConfig = Boolean(cfg.config?.uploaded);
+    els.promptService.replaceChildren(new Option("默认服务", ""), ...(cfg.nodes || []).map(node => new Option(`${node.name} · ${node.model}`, node.id)));
   } catch {
     hasPromptConfig = false;
   }

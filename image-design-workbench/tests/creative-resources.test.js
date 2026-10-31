@@ -97,8 +97,8 @@ test("编排按标记出现顺序替换、合并引用且同一图片不重复�
   await assert.rejects(resources.resolveComposition(10, { text: "@[asset:6]" }), /仅支持文本和图片/);
 });
 
-test("八个标准 JSON 来源来自固定 registry，刷新禁止任意 URL 和重定向", async () => {
-  assert.equal(PROMPT_SOURCES.length, 8);
+test("公共 JSON 来源来自固定 registry，刷新禁止任意 URL 和重定向", async () => {
+  assert.ok(PROMPT_SOURCES.some(source => source.id === "ecommerce-gpt-image-prompts"));
   const { pool, cache } = fixture();
   const calls = [];
   const resources = createCreativeResources({ getPool: () => pool, fetchImpl: async (url, options) => {
@@ -128,6 +128,37 @@ test("网络错误或无效源数据保留上次缓存", async () => {
     assert.equal(cache.get(sourceId), old);
   }
   assert.throws(() => normalizeSourcePrompts([{ title: "x", prompt: "x", tags: ["x".repeat(41)] }], "test"));
+});
+
+test("电商套图按独立成图变体导入，保留来源和授权并排除未授权条目", () => {
+  const source = PROMPT_SOURCES.find(item => item.id === "ecommerce-gpt-image-prompts");
+  const payload = { prompts: [{ id: "ec-1", title: "商品", description: "场景", category: "beauty", license: "CC-BY-4.0", source: { permission: "repository-authored" }, author: { name: "作者" }, variants: [
+    { id: "one", title: "主图", prompt: "第一张完整提示词", platforms: ["amazon"], sample: { after: "assets/p/one.png", license: "CC-BY-4.0" } },
+    { id: "two", title: "详情", prompt: "第二张完整提示词", sample: { after: "assets/../private.png", license: "CC-BY-4.0" } }
+  ] }, { id: "ec-2", source: { permission: "community" }, license: "unknown", variants: [{ id: "x", prompt: "不应导入" }] }] };
+  const entries = normalizeSourcePrompts(payload, source.id);
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0].content, "第一张完整提示词");
+  assert.equal(entries[0].author, "作者");
+  assert.equal(entries[0].license, "CC BY 4.0");
+  assert.match(entries[0].coverUrl, /^https:\/\/raw\.githubusercontent\.com\//);
+  assert.equal(entries[1].coverUrl, "");
+  assert.ok(entries.every(item => item.sourceUrl.includes("github.com/ecomimagelab")));
+});
+
+test("电商套图内置参考无需联网，手动同步失败保留内容", async () => {
+  const { pool } = fixture();
+  const definition = PROMPT_SOURCES.find(item => item.id === "ecommerce-gpt-image-prompts");
+  let calls = 0;
+  const resources = createCreativeResources({ getPool: () => pool, sources: [definition], fetchImpl: async () => { calls++; throw new Error("network"); } });
+  const before = await resources.listPrompts(1, { source: definition.id });
+  assert.equal(before.total, 284);
+  assert.equal(calls, 0);
+  const refreshed = await resources.refreshPromptSource(definition.id, { force: true });
+  assert.equal(refreshed.success, false);
+  assert.equal(refreshed.stale, true);
+  assert.equal(refreshed.count, 284);
+  assert.equal((await resources.listPrompts(1, { source: definition.id })).total, 284);
 });
 
 test("创作资源分页支持前端 12/18 条，不能沿用旧图库规则截断", async () => {
@@ -242,12 +273,12 @@ test("全部公共库只聚合七源缓存，跨源搜索标签后全局分页�
   await resources.savePrompt(10, { title: "私有", content: "私人正文", tags: [] });
   const privateQueries = queries.length;
   const result = await resources.listPrompts(10, { source: "all", q: "光影说明", tag: "商品", page: 2, pageSize: 3 });
-  assert.equal(result.total, 8);
-  assert.equal(result.totalAvailable, 16);
+  assert.equal(result.total, PROMPT_SOURCES.length);
+  assert.equal(result.totalAvailable, PROMPT_SOURCES.length * 2);
   assert.equal(result.items.length, 3);
   assert.equal(result.items[0].sourceId, PROMPT_SOURCES[3].id);
   assert.equal(result.items.every((item) => item.readOnly), true);
-  assert.equal(result.sources.length, 8);
+  assert.equal(result.sources.length, PROMPT_SOURCES.length);
   assert.deepEqual(result.tags, ["人物", "商品"]);
   assert.equal(queries.slice(privateQueries).some(({ sql }) => sql.includes("creative_prompts")), false);
   assert.equal((await resources.listPrompts(10, { source: "all", q: "私人正文" })).total, 0);
@@ -268,13 +299,15 @@ test("首次公共读取自动同步缺失来源，多用户并发只拉取一�
     return new Response(JSON.stringify([{ id: "one", title: "公开内容", prompt: "测试正文" }]));
   } });
   const [first, second] = await Promise.all([resources.listPrompts(10, { source: "all" }), resources.listPrompts(20, { source: "all" })]);
-  assert.equal(first.total, 7);
-  assert.equal(second.total, 7);
+  const bundled = PROMPT_SOURCES.find(item => item.id === "ecommerce-gpt-image-prompts");
+  const bundledCount = normalizeSourcePrompts(bundled.bundled, bundled.id, bundled).length;
+  assert.equal(first.total, PROMPT_SOURCES.length - 2 + bundledCount);
+  assert.equal(second.total, PROMPT_SOURCES.length - 2 + bundledCount);
   assert.equal(first.warnings.length, 1);
-  assert.equal(calls.length, 8);
-  assert.equal(new Set(calls).size, 8);
+  assert.equal(calls.length, PROMPT_SOURCES.length - 1);
+  assert.equal(new Set(calls).size, PROMPT_SOURCES.length - 1);
   await resources.listPrompts(10, { source: "all" });
-  assert.equal(calls.length, 8);
+  assert.equal(calls.length, PROMPT_SOURCES.length - 1);
 });
 
 test("强制全同步绕过新鲜旧缓存补齐 metadata，失败来源保留原记录并返回逐源结果", async () => {
@@ -290,10 +323,10 @@ test("强制全同步绕过新鲜旧缓存补齐 metadata，失败来源保留�
   await resources.refreshAllSources();
   assert.equal(calls, 0);
   const result = await resources.refreshAllSources({ force: true });
-  assert.equal(calls, 8);
-  assert.equal(result.successCount, 7);
+  assert.equal(calls, PROMPT_SOURCES.length);
+  assert.equal(result.successCount, PROMPT_SOURCES.length - 1);
   assert.equal(result.failureCount, 1);
-  assert.equal(result.count, 8);
+  assert.equal(result.count, PROMPT_SOURCES.length);
   assert.equal(result.results[0].stale, true);
   assert.match(result.results[0].error, /503/);
   assert.equal(cache.get(PROMPT_SOURCES[0].id), old);
@@ -312,11 +345,11 @@ test("并发全部同步复用每个来源的同一请求，强制同步不会�
     return new Response(JSON.stringify([{ id: "fresh", title: "同步", prompt: "完整正文" }]));
   } });
   await Promise.all([resources.refreshAllSources({ force: true }), resources.refreshAllSources({ force: true })]);
-  assert.equal(calls, 8);
+  assert.equal(calls, PROMPT_SOURCES.length);
   const first = PROMPT_SOURCES[0].id;
   assert.ok(cache.has(first));
   await Promise.all([resources.refreshPromptSource(first), resources.refreshPromptSource(first, { force: true })]);
-  assert.equal(calls, 9);
+  assert.equal(calls, PROMPT_SOURCES.length + 1);
 });
 
 test("缺失来源处于失败冷却时，用户强制同步仍可绕过并补齐缓存", async () => {

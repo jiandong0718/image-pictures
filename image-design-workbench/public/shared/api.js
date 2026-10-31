@@ -40,7 +40,8 @@ export async function downloadJsonFile(url, body, fallbackFilename = "download")
 
 // 生图接口只同步返回 taskId（避免单个请求挂太久撞上 Cloudflare 100s 超时），
 // 真正的生成结果通过这里轮询 /api/tasks/:id 拿到。
-export async function pollTask(taskId, { interval = 2000, timeoutMs = 5 * 60 * 1000 } = {}) {
+// 后端生图最多等待 360 秒，前端额外留一分钟接收结果或超时状态。
+export async function pollTask(taskId, { interval = 2000, timeoutMs = 7 * 60 * 1000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (true) {
     const data = await apiGet(`/api/tasks/${encodeURIComponent(taskId)}`);
