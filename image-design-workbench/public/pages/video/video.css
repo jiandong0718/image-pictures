@@ -470,6 +470,12 @@
 .vid-prompt-field textarea { min-height: 122px; resize: vertical; line-height: 1.65; }
 .vid-inspirations { margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .vid-inspiration-list { max-height: 170px; overflow-y: auto; }
+.vid-options-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px 12px; align-items: start; }
+.vid-options-grid > * { min-width: 0; }
+.vid-options-grid .vid-service-field { margin: 0; }
+.vid-options-grid .vid-service-field .select { width: 100%; min-width: 0; }
+.vid-service-field small { display: block; margin-top: 6px; color: var(--ink-mute); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.vid-options-grid #videoDurationField { grid-column: 1 / -1; }
 .vid-chip { border-radius: 7px; letter-spacing: 0; padding: 7px 12px; }
 .vid-note { padding: 0; border: 0; background: transparent; margin: 14px 0 0; }
 .vid-panel-foot .btn.primary, .vid-panel-foot .btn.primary:hover:not(:disabled) { box-shadow: none; }
@@ -494,4 +500,8 @@
   .vid-panel, .vid-canvas { padding: 16px; }
   .vid-stage { min-height: 230px; aspect-ratio: auto; }
   .vid-recent-item { flex-basis: 132px; }
+}
+@media (max-width: 340px) {
+  .vid-options-grid { grid-template-columns: 1fr; }
+  .vid-options-grid #videoDurationField { grid-column: auto; }
 }

@@ -42,18 +42,18 @@
           </div>
 
 
-            <label class="field"><span>视频服务</span><select class="select" id="videoService"><option value="">默认服务</option></select></label>
             <label class="field vid-prompt-field">
               <span>提示词</span>
               <textarea class="textarea" id="prompt" rows="4" placeholder="描述画面内容与镜头运动：主体、动作、环境、光线、运镜…"></textarea>
             </label>
             <details class="vid-inspirations"><summary>商品视频提示词灵感</summary><p>选择一条追加到提示词，可继续编辑；图生视频需上传商品图。</p><div id="videoInspirations" class="vid-inspiration-list"></div><p>中文提示词按商品创作场景改写，参考 <a href="https://github.com/yasuomang/ai-video-prompt-cookbook" target="_blank" rel="noopener noreferrer">AI Video Prompt Cookbook</a>、<a href="https://github.com/cliprise/awesome-ai-product-video-prompts" target="_blank" rel="noopener noreferrer">产品视频提示词库</a>及 <a href="https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5/blob/main/assets/HunyuanVideo_1_5_Prompt_Handbook_EN.md" target="_blank" rel="noopener noreferrer">混元视频运镜指南</a>。</p></details>
 
-            <div class="section-label" style="margin-top: 18px">画面比例</div>
-            <div class="vid-chips" id="ratios"></div>
-
-            <div id="videoQualityField"><div class="section-label" style="margin-top: 18px">清晰度</div><div class="vid-chips" id="qualities"></div></div>
-            <div id="videoDurationField"><div class="section-label" style="margin-top: 18px">时长</div><div class="vid-chips" id="durations"></div></div>
+            <div class="vid-options-grid">
+              <div class="vid-ratio-field"><div class="section-label">画面比例</div><div class="vid-chips" id="ratios"></div></div>
+              <label class="field vid-service-field"><span>视频服务</span><select class="select" id="videoService"><option value="">默认服务</option></select><small id="videoServiceModel"></small></label>
+              <div id="videoQualityField"><div class="section-label">清晰度</div><div class="vid-chips" id="qualities"></div></div>
+              <div id="videoDurationField"><div class="section-label">时长</div><div class="vid-chips" id="durations"></div></div>
+            </div>
             <p class="vid-note" id="videoCapabilityHint">参数根据所选模型调整。</p>
 
             <details class="vid-advanced" id="videoAdvanced">

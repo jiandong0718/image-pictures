@@ -97,6 +97,7 @@ function chipRow(container, items, current, onPick, labelFn = (x) => x, isDisabl
 
 function selectVideoService() {
   selectedVideo = videoNodes.find(node => String(node.id) === (videoEndpointId || defaultVideoId)) || null;
+  $("videoServiceModel").textContent = selectedVideo ? `${selectedVideo.name} · ${selectedVideo.model}` : "";
   if (!selectedVideo) { hasVideoConfig = false; renderState(); return; }
   videoCaps = selectedVideo.capabilities;
   costPerSecond = selectedVideo.creditsPerSecond ?? defaultCostPerSecond;
@@ -503,7 +504,7 @@ async function main() {
     const nodes = Array.isArray(cfg.nodes) ? cfg.nodes : [];
     videoNodes = nodes;
     defaultVideoId = cfg.defaultId || "";
-    els.videoService.replaceChildren(new Option("默认服务", ""), ...nodes.map(node => new Option(`${node.name} · ${node.model}`, String(node.id))));
+    els.videoService.replaceChildren(new Option("默认服务", ""), ...nodes.map(node => new Option(node.name, String(node.id))));
     if (!nodes.some(node => String(node.id) === videoEndpointId)) videoEndpointId = "";
     els.videoService.value = videoEndpointId;
     if (typeof cfg.costPerSecond === "number") defaultCostPerSecond = cfg.costPerSecond;
