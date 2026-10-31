@@ -36,7 +36,7 @@ function isConfigured(kind) {
 }
 function rows() {
   if (category === "images") return endpoints.map((ep) => ({ ...ep, title: ep.label || "图像服务", enabled: ep.enabled !== false }));
-  if (category === "video") return videoEndpoints.map(ep => ({ ...ep, title: ep.label || `视频服务 #${ep.id}`, pricing: `${({ openai_video: "通用视频接口", agnes: "Agnes 兼容", wan3: "阿里云万相 3.0", wan26: "阿里云万相 2.6", minimax_h3: "MiniMax H3", grsai_veo: "Grsai Veo 3.1" })[ep.protocol] || ep.protocol} · ${ep.creditsPerSecond ? `每${ep.protocol === "grsai_veo" ? "次" : "秒"} ${ep.creditsPerSecond} 积分` : ep.protocol === "grsai_veo" ? "每次使用全局积分数" : "使用全局每秒积分"}` }));
+  if (category === "video") return videoEndpoints.map(ep => ({ ...ep, title: ep.label || `视频服务 #${ep.id}`, pricing: `${({ openai_video: "OpenAI 兼容 · JSON", openai_video_form: "OpenAI 兼容 · 表单", agnes: "Agnes 兼容", wan3: "阿里云万相 3.0", wan26: "阿里云万相 2.6", minimax_h3: "MiniMax H3", grsai_veo: "Grsai Veo 3.1" })[ep.protocol] || ep.protocol} · ${ep.creditsPerSecond ? `每${ep.protocol === "grsai_veo" ? "次" : "秒"} ${ep.creditsPerSecond} 积分` : ep.protocol === "grsai_veo" ? "每次使用全局积分数" : "使用全局每秒积分"}` }));
   if (category === "prompt" || category === "audio") return modelEndpoints[category].map(ep => ({ ...ep, title: ep.label || `${categories[category].title}服务 #${ep.id}`, pricing: category === "audio" ? `每 ${ep.charactersPerCredit} 字符 / ${ep.creditsPerUnit} 积分` : "" }));
   if (!isConfigured(category)) return [];
   const config = configs[category];
@@ -195,14 +195,18 @@ async function main() {
   $("fetchModels").addEventListener("click", discover);
   $("serviceModel").addEventListener("change", () => { if (category !== "images") $("videoModel").value = ""; });
   $("videoProtocol").addEventListener("change", () => {
-    const presets = { openai_video: ["", ""], agnes: ["https://apihub.agnes-ai.com/v1", "agnes-video-v2.0"], wan3: ["https://dashscope.aliyuncs.com/api/v1", "wan3.0-video"], wan26: ["https://dashscope.aliyuncs.com/api/v1", "wan2.6-t2v"], minimax_h3: ["https://api.minimax.io", "MiniMax-H3"], grsai_veo: ["https://grsai.dakka.com.cn", "veo3.1-fast"] };
+    const presets = { openai_video: ["", ""], openai_video_form: ["", ""], agnes: ["https://apihub.agnes-ai.com/v1", "agnes-video-v2.0"], wan3: ["https://dashscope.aliyuncs.com/api/v1", "wan3.0-video"], wan26: ["https://dashscope.aliyuncs.com/api/v1", "wan2.6-t2v"], minimax_h3: ["https://api.minimax.io", "MiniMax-H3"], grsai_veo: ["https://grsai.dakka.com.cn", "veo3.1-fast"] };
     const [base, model] = presets[$("videoProtocol").value];
-    $("serviceUrl").value = base;
-    $("videoModel").value = model;
+    if (base) {
+      $("serviceUrl").value = base;
+      $("videoModel").value = model;
+      $("serviceKey").value = "";
+      setModels([]);
+      $("keyHint").textContent = "地址变更时请重新输入密钥。";
+    } else {
+      $("keyHint").textContent = editing ? "地址不变时可留空，保留已保存的密钥。" : "仅用于连接当前服务。";
+    }
     $("videoPricing").querySelector("span").textContent = $("videoProtocol").value === "grsai_veo" ? "站内每次积分" : "站内每秒积分";
-    $("serviceKey").value = "";
-    setModels([]);
-    $("keyHint").textContent = "协议或地址变更时请重新输入密钥。";
   });
   for (const id of ["serviceUrl", "serviceKey"]) $(id).addEventListener("input", () => { modelVersion++; $("fetchModels").disabled = false; setModels([]); });
   $("providerList").addEventListener("click", (event) => {

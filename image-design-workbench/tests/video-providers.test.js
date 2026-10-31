@@ -46,6 +46,58 @@ test("通用视频接口提交、查询和认证下载地址符合兼容格式",
   } finally { global.fetch = original; }
 });
 
+test("视频服务 400 错误说明可识别原因且不泄露上游响应或密钥", async () => {
+  const original = global.fetch;
+  const input = { ...text, duration: "12s" };
+  try {
+    global.fetch = async () => Response.json({ error: { message: "invalid model name secret-api-key" } }, { status: 400 });
+    await assert.rejects(client.submitVideo(compat, input, []), error => {
+      assert.match(error.message, /模型不可用/);
+      assert.doesNotMatch(error.message, /secret-api-key/);
+      assert.equal(error.uncertain, false);
+      return true;
+    });
+    global.fetch = async () => Response.json({ error: { message: "unsupported duration for model" } }, { status: 400 });
+    await assert.rejects(client.submitVideo(compat, input, []), /时长不被当前服务支持/);
+    global.fetch = async () => new Response("bad request", { status: 400 });
+    await assert.rejects(client.submitVideo(compat, input, []), error => {
+      assert.match(error.message, /检查模型、时长、比例和接口协议/);
+      assert.equal(error.uncertain, false);
+      return true;
+    });
+    global.fetch = async () => new Response("gateway failure", { status: 502 });
+    await assert.rejects(client.submitVideo(compat, input, []), error => error.uncertain === true);
+  } finally { global.fetch = original; }
+});
+
+test("OpenAI 兼容表单模式发送文件而不是 JSON，查询与下载沿用兼容接口", async () => {
+  const original = global.fetch;
+  const config = { ...compat, protocol: "openai_video_form" };
+  const input = { ...text, mode: "image", duration: "8s", sourceImageIds: ["source"] };
+  try {
+    global.fetch = async (url, options) => {
+      if (options.method === "POST") {
+        assert.equal(url, "https://gateway.example/v1/videos");
+        assert.equal(options.headers["Content-Type"], undefined);
+        assert.ok(options.body instanceof FormData);
+        assert.equal(options.body.get("model"), config.model);
+        assert.equal(options.body.get("seconds"), "8");
+        assert.equal(options.body.get("size"), "1280x720");
+        const file = options.body.get("input_reference");
+        assert.equal(file.type, "image/png");
+        assert.equal(Buffer.from(await file.arrayBuffer()).toString("hex"), "0001");
+        return Response.json({ id: "video_form_123" });
+      }
+      return Response.json({ status: "completed" });
+    };
+    const { videoId } = await client.submitVideo(config, input, ["data:image/png;base64,AAE="]);
+    const done = await client.fetchVideoStatus(config, videoId);
+    assert.equal(done.authenticated, true);
+    assert.equal(done.url, "https://gateway.example/v1/videos/video_form_123/content");
+    await assert.rejects(client.submitVideo(config, input, ["data:image/svg+xml;base64,AAE="]), /格式不受支持/);
+  } finally { global.fetch = original; }
+});
+
 test("万相文生和首帧图生按模型校验并构建官方协议", () => {
   assert.deepEqual(buildRequest(wan, text), { model: "wan2.6-t2v", input: { prompt: "商品展示" }, parameters: { duration: 10, prompt_extend: false, watermark: false, size: "1280*720" } });
   assert.throws(() => validateVideo(wan, { ...text, mode: "image", sourceImageIds: ["a"] }), /不支持图生/);

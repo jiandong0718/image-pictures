@@ -365,6 +365,7 @@ async function main() {
   let h3Submission;
   let grsaiSubmission;
   let compatSubmission;
+  let compatFormSubmission;
   let compatDownloadAuth;
   let promptSubmission;
   let audioSubmission;
@@ -391,6 +392,10 @@ async function main() {
       const body = Buffer.concat(chunks).toString();
       if (body.includes("failure-case")) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: { message: "测试失败" } })); return; }
       res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ data: [{ b64_json: imageData.toString("base64") }] })); return;
+    }
+    if (req.url === "/v1/videos" && /^multipart\/form-data/i.test(req.headers["content-type"] || "")) {
+      compatFormSubmission = { body: Buffer.concat(chunks).toString(), auth: req.headers.authorization };
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ id: "compat-task", status: "queued" })); return;
     }
     const input = JSON.parse(Buffer.concat(chunks).toString());
     if (req.url === "/v1/video/veo") { grsaiSubmission = input; res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ code: 0, data: { id: "grsai-task" } })); return; }
@@ -626,6 +631,14 @@ async function main() {
   assert.equal(compatSubmission.input.model, "mock-video");
   assert.equal(compatSubmission.input.size, "1280x720");
   assert.equal(compatDownloadAuth, "Bearer compat-mock-key");
+  assert.equal((await request("/api/video-config", { cookie: adminCookie, body: { ...compatNode, protocol: "openai_video_form", label: "通用表单视频" } })).response.status, 200);
+  const compatForm = (await request("/api/video-config", { cookie: userCookie })).data.nodes.find(item => item.protocol === "openai_video_form");
+  assert.ok(compatForm);
+  const formTask = await request("/api/videos", { cookie: userCookie, body: { endpointId: compatForm.id, mode: "text", prompt: "商品展示", quality: "720p", duration: "4s", ratio: "16:9", expectedPricing: { endpointId: compatForm.id, creditsPerSecond: 2 } } });
+  assert.equal(formTask.response.status, 200, JSON.stringify(formTask.data));
+  assert.equal((await waitTask(formTask.data.taskId)).status, "done");
+  assert.match(compatFormSubmission.body, /name="model"\r\n\r\nmock-video/);
+  assert.equal(compatFormSubmission.auth, "Bearer compat-mock-key");
   const productUpload = new FormData();
   productUpload.append("image", new Blob([imageData], { type: "image/jpeg" }), "product.jpg");
   const productSourceResponse = await fetch(base + "/api/product-sets/source", { method: "POST", headers: { Cookie: userCookie }, body: productUpload });

@@ -49,14 +49,15 @@ async function credentials(id) {
 async function save(input, id) {
   const previous = id ? await raw(id) : null;
   const protocol = clean(input.protocol) || previous?.protocol || "agnes";
-  const apiBase = normalizeApiBase(input.apiBase || previous?.api_base || (protocol === "openai_video" ? "" : DEFAULT_BASE), "视频 API URL");
+  const compatible = ["openai_video", "openai_video_form"].includes(protocol);
+  const apiBase = normalizeApiBase(input.apiBase || previous?.api_base || (compatible ? "" : DEFAULT_BASE), "视频 API URL");
   const suppliedKey = clean(input.apiKey);
   if (previous && !suppliedKey && apiBase !== previous.api_base) throw new Error("修改 API 地址时请重新输入密钥");
   const apiKey = suppliedKey || previous?.api_key;
   if (!apiKey) throw new Error("视频 API Key 不能为空");
-  const model = normalizeModelName(input.model || previous?.model || (protocol === "openai_video" ? "" : DEFAULT_MODEL));
+  const model = normalizeModelName(input.model || previous?.model || (compatible ? "" : DEFAULT_MODEL));
   if (!model) throw new Error("请选择视频模型");
-  if (protocol === "openai_video") {
+  if (compatible) {
     const parsed = new URL(apiBase);
     if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("兼容视频 API 地址不能包含用户名、密码、查询参数或片段");
   }

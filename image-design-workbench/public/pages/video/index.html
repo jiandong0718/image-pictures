@@ -4,23 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI 生视频 · AI 图像设计工作台</title>
+    <link rel="modulepreload" href="/pages/video/video.js?v=studio-editor-1" />
+    <link rel="modulepreload" href="/shared/layout.js" />
+    <link rel="modulepreload" href="/shared/api.js" />
+    <link rel="modulepreload" href="/shared/persistence.js" />
+    <link rel="modulepreload" href="/shared/image-paste.js" />
+    <link rel="modulepreload" href="/shared/reuse.js" />
+    <link rel="modulepreload" href="/shared/media.js" />
+    <link rel="modulepreload" href="/pages/video/video-inspiration.js" />
     <link rel="stylesheet" href="/shared/theme.css" />
     <script src="/shared/theme-init.js?v=mystic-default-1"></script>
     <link rel="stylesheet" href="/pages/video/video.css" />
   </head>
-  <body>
+  <body class="video-page">
     <div id="page">
       <div class="vid-studio">
-        <!-- 中间画布：模式切换 + 提示词 + 结果 -->
-        <div class="card vid-canvas">
-          <div class="vid-canvas-head">
-            <div>
-              <div class="section-label">AI 生视频</div>
-              <div class="card-title" id="modeTitle">文生视频</div>
-            </div>
-            <span class="badge" id="canvasBadge">就绪</span>
-          </div>
-
+        <!-- 左侧：创作设置 -->
+        <div class="card vid-panel">
+          <div class="vid-panel-scroll">
+            <div class="vid-panel-heading"><div><span class="section-label">创建视频</span><h2>创作设置</h2></div><span class="vid-panel-icon" aria-hidden="true">✦</span></div>
+            <div class="section-label vid-field-label">生成方式</div>
           <div class="vid-modes" id="modes">
             <button type="button" class="vid-mode active" data-mode="text">文生视频</button>
             <button type="button" class="vid-mode" data-mode="image">图生视频</button>
@@ -38,17 +41,7 @@
             <div class="vid-source-tip" id="sourceTip">参考图数量取决于所选模型。</div>
           </div>
 
-          <div class="vid-stage" id="stage"></div>
 
-          <div class="vid-recent" id="recentBlock" hidden>
-            <div class="section-label">最近生成</div>
-            <div class="vid-recent-grid" id="recentGrid"></div>
-          </div>
-        </div>
-
-        <!-- 右侧：控制面板 -->
-        <div class="card vid-panel">
-          <div class="vid-panel-scroll">
             <label class="field"><span>视频服务</span><select class="select" id="videoService"><option value="">默认服务</option></select></label>
             <label class="field vid-prompt-field">
               <span>提示词</span>
@@ -87,15 +80,34 @@
           </div>
 
           <div class="vid-panel-foot">
-            <p class="msg" id="msg"></p>
+            <p class="msg" id="msg" role="status" aria-live="polite"></p>
             <button class="btn primary full" id="generateBtn" type="button">生成视频</button>
             <button class="btn full" id="resumeVideoTask" type="button" hidden>查询上次任务</button>
             <button class="btn full" id="unlinkVideoTask" type="button" hidden>解除本地任务关联</button>
             <p class="card-desc" id="configHint" style="margin-top: 10px"></p>
           </div>
         </div>
+        <!-- 预览和作品 -->
+        <div class="card vid-canvas">
+          <div class="vid-canvas-head">
+            <div>
+              <div class="section-label">视频预览</div>
+              <div class="card-title" id="modeTitle">文生视频</div>
+            </div>
+            <span class="badge" id="canvasBadge">就绪</span>
+          </div>
+
+          <div class="vid-stage" id="stage"></div>
+
+          <div class="vid-recent" id="recentBlock">
+            <div class="vid-recent-head"><div><div class="section-label">视频作品</div><h3>最近生成</h3></div><a href="/my-images">查看全部作品 ↗</a></div>
+            <div class="vid-recent-grid" id="recentGrid"></div>
+          </div>
+        </div>
+
+
       </div>
     </div>
-    <script type="module" src="/pages/video/video.js?v=layout-rollback-1"></script>
+    <script type="module" src="/pages/video/video.js?v=studio-editor-1"></script>
   </body>
 </html>

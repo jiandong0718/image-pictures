@@ -10,7 +10,7 @@ const WAN_SIZES = {
 };
 function capabilities(protocol = "agnes", model = "") {
   if (protocol === "agnes") return { protocol, modes: ["text", "image"], qualities: ["480p", "720p", "1080p"], durations: [3, 5, 10, 15], maxImages: 5, ratios: RATIOS, negativePrompt: true, seed: true, steps: true };
-  if (protocol === "openai_video") return { protocol, modes: ["text", "image"], qualities: ["720p"], durations: [4, 8, 12], maxImages: 1, ratios: ["16:9", "9:16"], negativePrompt: false, seed: false, steps: false, imageSizeMustMatch: true };
+  if (["openai_video", "openai_video_form"].includes(protocol)) return { protocol, modes: ["text", "image"], qualities: ["720p"], durations: [4, 8, 12], maxImages: 1, ratios: ["16:9", "9:16"], negativePrompt: false, seed: false, steps: false, imageSizeMustMatch: true };
   if (protocol === "grsai_veo") {
     if (!["veo3.1-fast", "veo3.1-pro"].includes(model)) throw new Error("Grsai Veo 协议支持 veo3.1-fast 和 veo3.1-pro");
     return { protocol, modes: ["text", "image"], qualities: ["auto"], durations: [8], maxImages: 2, ratios: ["16:9", "9:16"], negativePrompt: false, seed: false, steps: false, externalFrames: true, providerParameters: true, billingUnit: "task" };
@@ -57,7 +57,7 @@ function validateVideo(config, input = {}) {
 }
 function buildRequest(config, input, images = []) {
   const { mode, duration, quality, ratio } = validateVideo(config, input);
-  if (config.protocol === "openai_video") {
+  if (["openai_video", "openai_video_form"].includes(config.protocol)) {
     if (mode === "image" && (!images[0] || images[0].length > 20971520)) throw new Error("兼容视频接口的参考图编码不能超过 20 MiB");
     return { model: config.model, prompt: input.prompt, seconds: String(duration), size: ratio === "16:9" ? "1280x720" : "720x1280", ...(mode === "image" ? { input_reference: { image_url: images[0] } } : {}) };
   }

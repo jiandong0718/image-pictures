@@ -2191,7 +2191,7 @@ async function generateVideo({ user, mode, prompt, ratio, quality, duration, neg
   const prefix = mode === "image" ? "image-to-video" : "text-to-video";
   const { ymd, hms } = videoStamp();
   const destPath = path.join(outputDir, `${prefix}-${ymd}-${hms}-01.mp4`);
-  try { await downloadVideoFile(last.url, destPath, last.authenticated && config.protocol === "openai_video" ? config.apiKey : ""); }
+  try { await downloadVideoFile(last.url, destPath, last.authenticated && ["openai_video", "openai_video_form"].includes(config.protocol) ? config.apiKey : ""); }
   catch (error) { error.uncertain = true; throw error; }
 
   const record = makeVideoRecord({

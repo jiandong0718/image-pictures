@@ -1,6 +1,7 @@
 # Photo credits
 
 - `product-templates/{beauty,fashion,electronics,home}.png`: product preview images by [Ecommerce GPT Image Prompts Studio](https://github.com/ecomimagelab/ecommerce-gpt-image-prompts), used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). These are examples, not the user's uploaded products.
+- `product-templates/*-preview.jpg`: resized, JPEG-compressed versions of the above CC BY 4.0 product previews, used to reduce page load.
 
 - `real-yangshuo-night.jpg`: photograph by [Willian Justen de Vasconcellos](https://unsplash.com/photos/woman-in-traditional-attire-on-a-busy-street-pLJdpeYQq7k), taken in Yangshuo, Guilin, China. Used under the [Unsplash License](https://unsplash.com/license). The file is resized for the homepage; it is a real photograph, while the accompanying creation prompt is an original interpretation for inspiration.
 - `sayram-lake-real.jpg`: photograph of Sayram Lake by [Fumikas Sagisavas](https://commons.wikimedia.org/wiki/File:Sayram_Lake_scenery.jpg), from Wikimedia Commons. Released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The homepage uses a 1280 px thumbnail; the accompanying prompt is original inspiration text.

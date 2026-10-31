@@ -6,11 +6,11 @@ export const PRODUCT_SLOTS = Object.freeze([
 ]);
 
 export const PRODUCT_TEMPLATES = Object.freeze([
-  { id: "clean", title: "清透商品套系", category: "通用", image: "beauty.png", accent: "#c7dfd7", description: "干净主图、质感特写与自然使用场景。", direction: "清爽中性色商业摄影，自然柔光、干净背景、真实比例，统一画面光线。" },
-  { id: "beauty", title: "质感美妆套系", category: "美妆", image: "beauty.png", accent: "#b9d8ce", description: "柔和棚拍与材质细节，适合精致产品。", direction: "高级美妆商业摄影，柔和漫射光，克制的浅色石材或陶瓷台面，细腻自然的材质与反射。" },
-  { id: "fashion", title: "服饰穿搭套系", category: "服饰", image: "fashion.png", accent: "#b8c8cd", description: "服饰整体、面料细节和自然穿搭场景。", direction: "真实服饰电商摄影，简洁中性色影棚与自然穿搭氛围，清晰表现布料纹理、版型及真实比例。" },
-  { id: "home", title: "生活居家套系", category: "家居", image: "home.png", accent: "#d2c4b3", description: "自然居家环境，强调真实生活感。", direction: "真实居家生活方式摄影，自然窗光、温润材质、整洁空间，画面舒展且主体清晰。" },
-  { id: "tech", title: "数码科技套系", category: "数码", image: "electronics.png", accent: "#bec9dd", description: "简洁陈列和结构细节，突出产品质感。", direction: "克制的数码产品商业摄影，整洁中性台面，均匀轮廓光，真实展示产品材质、结构和接口。" },
+  { id: "clean", title: "清透商品套系", category: "通用", image: "beauty-preview.jpg", accent: "#c7dfd7", description: "干净主图、质感特写与自然使用场景。", direction: "清爽中性色商业摄影，自然柔光、干净背景、真实比例，统一画面光线。" },
+  { id: "beauty", title: "质感美妆套系", category: "美妆", image: "beauty-preview.jpg", accent: "#b9d8ce", description: "柔和棚拍与材质细节，适合精致产品。", direction: "高级美妆商业摄影，柔和漫射光，克制的浅色石材或陶瓷台面，细腻自然的材质与反射。" },
+  { id: "fashion", title: "服饰穿搭套系", category: "服饰", image: "fashion-preview.jpg", accent: "#b8c8cd", description: "服饰整体、面料细节和自然穿搭场景。", direction: "真实服饰电商摄影，简洁中性色影棚与自然穿搭氛围，清晰表现布料纹理、版型及真实比例。" },
+  { id: "home", title: "生活居家套系", category: "家居", image: "home-preview.jpg", accent: "#d2c4b3", description: "自然居家环境，强调真实生活感。", direction: "真实居家生活方式摄影，自然窗光、温润材质、整洁空间，画面舒展且主体清晰。" },
+  { id: "tech", title: "数码科技套系", category: "数码", image: "electronics-preview.jpg", accent: "#bec9dd", description: "简洁陈列和结构细节，突出产品质感。", direction: "克制的数码产品商业摄影，整洁中性台面，均匀轮廓光，真实展示产品材质、结构和接口。" },
 ]);
 
 const SLOT_DIRECTIONS = Object.freeze({

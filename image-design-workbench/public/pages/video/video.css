@@ -3,6 +3,13 @@
   display: none !important;
 }
 
+/* 视频工作区保留玄幻主题的静态背景，避免全屏动画和毛玻璃持续重绘。 */
+:root[data-theme="mystic"] body.video-page::before,
+:root[data-theme="mystic"] body.video-page::after { animation: none; }
+:root[data-theme="mystic"] body.video-page .sidebar,
+:root[data-theme="mystic"] body.video-page .vid-panel,
+:root[data-theme="mystic"] body.video-page .vid-canvas { backdrop-filter: none; }
+
 .vid-studio {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(300px, 26vw, 344px);
@@ -430,4 +437,61 @@
   .vid-recent-grid {
     grid-template-columns: repeat(3, 1fr);
   }
+}
+
+/* 编辑器式工作区：设置、预览和底部作品按实际流程排列。 */
+.vid-studio {
+  grid-template-columns: minmax(300px, 370px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.vid-panel, .vid-canvas {
+  min-width: 0;
+  min-height: 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: none;
+}
+.vid-panel-heading, .vid-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.vid-panel-heading { margin-bottom: 22px; }
+.vid-panel-heading h2, .vid-recent-head h3 { margin: 5px 0 0; font-size: 17px; line-height: 1.3; }
+.vid-panel-icon { color: var(--ink-mute); font-size: 17px; }
+.vid-field-label { margin-bottom: 8px; }
+.vid-modes { display: flex; width: 100%; margin-bottom: 20px; }
+.vid-mode { flex: 1; padding: 9px 12px; }
+.vid-panel .field { margin-bottom: 15px; }
+.vid-panel .vid-prompt-field { margin-top: 4px; margin-bottom: 8px; }
+.vid-prompt-field textarea { min-height: 122px; resize: vertical; line-height: 1.65; }
+.vid-inspirations { margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.vid-inspiration-list { max-height: 170px; overflow-y: auto; }
+.vid-chip { border-radius: 7px; letter-spacing: 0; padding: 7px 12px; }
+.vid-note { padding: 0; border: 0; background: transparent; margin: 14px 0 0; }
+.vid-panel-foot .btn.primary, .vid-panel-foot .btn.primary:hover:not(:disabled) { box-shadow: none; }
+.vid-panel-foot .btn + .btn { margin-top: 8px; }
+.vid-panel-foot .msg.error { padding: 10px 12px; margin: 0 0 12px; border: 1px solid rgba(229, 95, 95, .35); border-radius: 8px; background: rgba(229, 95, 95, .08); line-height: 1.55; }
+.vid-canvas-head { align-items: center; margin-bottom: 16px; }
+.vid-canvas-head .card-title { margin-top: 5px; font-size: 17px; }
+.vid-stage { flex: none; width: 100%; min-height: 360px; aspect-ratio: 16 / 9; }
+.vid-stage .stage-empty-sub { max-width: 380px; line-height: 1.6; }
+.vid-recent { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.vid-recent-head a { color: var(--ink-soft); font-size: 12px; text-decoration: none; }
+.vid-recent-head a:hover { color: var(--accent); }
+.vid-recent-grid { display: flex; gap: 10px; overflow-x: auto; padding: 2px 0 6px; }
+.vid-recent-item { appearance: none; display: block; flex: 0 0 150px; padding: 0; text-align: left; }
+.vid-recent-item:focus-visible, .vid-mode:focus-visible, .vid-chip:focus-visible, .vid-inspiration-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vid-recent-empty { width: 100%; margin: 0; padding: 22px 16px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--ink-mute); font-size: 12px; }
+@media (max-width: 1024px) {
+  .vid-studio { grid-template-columns: 1fr; }
+  .vid-stage { min-height: 280px; }
+}
+@media (max-width: 560px) {
+  .vid-panel, .vid-canvas { padding: 16px; }
+  .vid-stage { min-height: 230px; aspect-ratio: auto; }
+  .vid-recent-item { flex-basis: 132px; }
 }

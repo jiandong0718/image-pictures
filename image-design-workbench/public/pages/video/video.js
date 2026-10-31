@@ -31,6 +31,7 @@ let pendingTask = null;
 let canUnlinkTask = false;
 let videoEndpointId = "";
 let videoNodes = [];
+let recentVideoObserver = null;
 let defaultVideoId = "";
 let defaultCostPerSecond = 1;
 let selectedVideo = null;
@@ -110,7 +111,7 @@ function selectVideoService() {
   $("videoAdvanced").hidden = !videoCaps.negativePrompt && !videoCaps.seed && !videoCaps.steps;
   $("videoQualityField").hidden = Boolean(videoCaps.providerParameters);
   $("videoDurationField").hidden = Boolean(videoCaps.providerParameters);
-  $("videoCapabilityHint").textContent = videoCaps.providerParameters ? "时长与清晰度由 Grsai 模型决定；站内按次计费。" : videoCaps.imageRatio && mode === "image" ? "图生视频的画面比例由首帧图片决定；具体能力以模型服务为准。" : "时长与清晰度按所选模型显示，具体能力以模型服务为准。";
+  $("videoCapabilityHint").textContent = videoCaps.providerParameters ? "时长与清晰度由 Grsai 模型决定；站内按次计费。" : ["openai_video", "openai_video_form"].includes(videoCaps.protocol) ? "兼容接口显示的是通用参数，实际支持的模型和规格以服务商文档为准。" : videoCaps.imageRatio && mode === "image" ? "图生视频的画面比例由首帧图片决定；具体能力以模型服务为准。" : "时长与清晰度按所选模型显示，具体能力以模型服务为准。";
   renderMode(); renderChips(); renderState();
 }
 
@@ -217,7 +218,7 @@ function renderStage() {
       <div class="stage-empty">
         <div class="stage-empty-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/><path d="M22 8.5 16 12l6 3.5z"/></svg></div>
         <div class="stage-empty-title">描述一段画面，生成视频</div>
-        <div class="stage-empty-sub">在右侧输入提示词，或点选一个灵感快速开始</div>
+        <div class="stage-empty-sub">在创作设置中描述画面，或选择下方灵感开始</div>
         <div class="stage-empty-ideas">${ideas.map((s) => `<button class="stage-idea" type="button" data-idea="${s}">${s}</button>`).join("")}</div>
       </div>`;
     els.stage.querySelectorAll("[data-idea]").forEach((b) => {
@@ -250,19 +251,43 @@ function renderStage() {
 }
 
 function renderRecent(items) {
+  if (recentVideoObserver) recentVideoObserver.disconnect();
+  recentVideoObserver = null;
   if (!items || !items.length) {
-    els.recentBlock.hidden = true;
+    els.recentBlock.hidden = false;
+    els.recentGrid.innerHTML = '<p class="vid-recent-empty">生成的视频会显示在这里。</p>';
     return;
   }
   els.recentBlock.hidden = false;
   els.recentGrid.innerHTML = "";
   items.forEach((v) => {
-    const item = document.createElement("div");
+    const item = document.createElement("button");
+    item.type = "button";
     item.className = "vid-recent-item";
     const tag = v.mode === "image" ? "图生" : "文生";
+    item.setAttribute("aria-label", `预览${tag}视频`);
     item.innerHTML = `
-      <video src="${v.url}" preload="metadata" muted></video>
+      <video preload="metadata" muted playsinline></video>
       <div class="vid-recent-tag">${tag}</div>`;
+    const preview = item.querySelector("video");
+    if ("IntersectionObserver" in window) {
+      if (!recentVideoObserver) {
+        const observer = new IntersectionObserver(entries => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const video = entry.target;
+            video.src = video.dataset.src;
+            delete video.dataset.src;
+            observer.unobserve(video);
+          }
+        }, { rootMargin: "100px" });
+        recentVideoObserver = observer;
+      }
+      preview.dataset.src = v.url;
+      recentVideoObserver.observe(preview);
+    } else {
+      preview.src = v.url;
+    }
     item.addEventListener("click", () => {
       result = { url: v.url, downloadUrl: v.downloadUrl, size: v.size, seconds: v.seconds };
       save();
@@ -278,7 +303,8 @@ async function loadRecent() {
     const data = await apiGet("/api/videos?pageSize=8");
     renderRecent(data.items || []);
   } catch {
-    /* 忽略 */
+    els.recentBlock.hidden = false;
+    els.recentGrid.innerHTML = '<p class="vid-recent-empty">暂时无法加载最近作品，可前往我的图库查看。</p>';
   }
 }
 
@@ -432,7 +458,7 @@ async function main() {
   els.modes.querySelectorAll(".vid-mode").forEach((btn) => {
     btn.addEventListener("click", () => {
       mode = btn.dataset.mode;
-      $("videoCapabilityHint").textContent = videoCaps.providerParameters ? "时长与清晰度由 Grsai 模型决定；站内按次计费。" : videoCaps.imageRatio && mode === "image" ? "图生视频的画面比例由首帧图片决定；具体能力以模型服务为准。" : "时长与清晰度按所选模型显示，具体能力以模型服务为准。";
+      $("videoCapabilityHint").textContent = videoCaps.providerParameters ? "时长与清晰度由 Grsai 模型决定；站内按次计费。" : ["openai_video", "openai_video_form"].includes(videoCaps.protocol) ? "兼容接口显示的是通用参数，实际支持的模型和规格以服务商文档为准。" : videoCaps.imageRatio && mode === "image" ? "图生视频的画面比例由首帧图片决定；具体能力以模型服务为准。" : "时长与清晰度按所选模型显示，具体能力以模型服务为准。";
       renderMode();
       save();
       renderState();

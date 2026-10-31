@@ -24,7 +24,7 @@ function selectedTypes() { return [...document.querySelectorAll('#slotList input
 function currentTemplate() { return PRODUCT_TEMPLATES.find(item => item.id === selectedTemplate) || PRODUCT_TEMPLATES[0]; }
 
 function renderTemplates() {
-  $("templateGrid").innerHTML = PRODUCT_TEMPLATES.map(item => `<button class="product-template" type="button" data-template="${escapeHtml(item.id)}" aria-pressed="${item.id === selectedTemplate}"><div class="product-template-image" style="--sample-color:${item.accent}"><img src="/assets/product-templates/${item.image}" alt="${escapeHtml(item.category)}商品示例" loading="lazy" /><span class="product-template-check" aria-hidden="true">✓</span></div><span class="product-template-title">${escapeHtml(item.title)}</span><span class="product-template-desc">${escapeHtml(item.description)}</span></button>`).join("");
+  $("templateGrid").innerHTML = PRODUCT_TEMPLATES.map(item => `<button class="product-template" type="button" data-template="${escapeHtml(item.id)}" aria-pressed="${item.id === selectedTemplate}"><div class="product-template-image" style="--sample-color:${item.accent}"><img src="/assets/product-templates/${item.image}" alt="${escapeHtml(item.category)}商品示例" loading="lazy" decoding="async" /><span class="product-template-check" aria-hidden="true">✓</span></div><span class="product-template-title">${escapeHtml(item.title)}</span><span class="product-template-desc">${escapeHtml(item.description)}</span></button>`).join("");
   const template = currentTemplate();
   $("chosenTemplate").innerHTML = `<span>当前模板</span><strong>${escapeHtml(template.title)}</strong>`;
 }
