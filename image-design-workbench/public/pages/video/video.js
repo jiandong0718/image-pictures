@@ -14,6 +14,7 @@ const $ = id => document.getElementById(id);
 const QUALITIES = ["480p", "720p", "1080p"];
 const DURATIONS = ["3s", "5s", "10s", "15s"];
 const MAX_SOURCE_IMAGES = 5; // 1 张=图生视频；2–5 张=关键帧动画
+const playbackUrl = (url) => `${url}${url.includes("?") ? "&" : "?"}preview=1`;
 
 const storage = createLocalState("imageStudio:video:v1");
 const els = {};
@@ -235,12 +236,19 @@ function renderStage() {
   const meta = [result.size, result.seconds ? `${result.seconds}s` : ""].filter(Boolean).join(" · ");
   els.stage.innerHTML = `
     <div class="vid-result">
-      <video src="${result.url}" controls playsinline preload="metadata"></video>
+      <video src="${playbackUrl(result.url)}" controls playsinline preload="metadata"></video>
+      <p class="vid-playback-status" role="status">正在准备流畅预览，首次加载可能需要一些时间…</p>
       <div class="vid-result-bar">
         <span class="badge ok">${meta || "视频"}</span>
         <button class="btn sm" id="downloadVideo" type="button">下载 MP4</button>
       </div>
     </div>`;
+  const player = els.stage.querySelector("video");
+  const playbackStatus = els.stage.querySelector(".vid-playback-status");
+  player.addEventListener("loadeddata", () => { playbackStatus.hidden = true; });
+  player.addEventListener("playing", () => { playbackStatus.hidden = true; });
+  player.addEventListener("waiting", () => { playbackStatus.textContent = "正在缓冲视频，请稍候…"; playbackStatus.hidden = false; });
+  player.addEventListener("error", () => { playbackStatus.textContent = "视频预览加载失败，可尝试下载原视频播放。"; playbackStatus.hidden = false; });
   document.getElementById("downloadVideo")?.addEventListener("click", async () => {
     setMsg("");
     try {
@@ -284,10 +292,10 @@ function renderRecent(items) {
         }, { rootMargin: "100px" });
         recentVideoObserver = observer;
       }
-      preview.dataset.src = v.url;
+      preview.dataset.src = playbackUrl(v.url);
       recentVideoObserver.observe(preview);
     } else {
-      preview.src = v.url;
+      preview.src = playbackUrl(v.url);
     }
     item.addEventListener("click", () => {
       result = { url: v.url, downloadUrl: v.downloadUrl, size: v.size, seconds: v.seconds };

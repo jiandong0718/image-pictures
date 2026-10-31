@@ -25,6 +25,7 @@ const videoProviderClient = require("./lib/video-provider-client");
 const modelServices = require("./lib/model-services");
 const { createAccountApi } = require("./lib/api-accounts");
 const { createPreviewCache } = require("./lib/media-preview");
+const { createVideoPreviewCache } = require("./lib/video-preview");
 const { sendMediaFile } = require("./lib/media-response");
 const generationTasks = require("./lib/generation-tasks");
 const { createTracker } = require("./lib/legacy-task-tracker");
@@ -47,6 +48,7 @@ const OUTPUT_DIR = path.join(ROOT_DIR, "generated-images", "product-design");
 const THUMB_DIR = path.join(OUTPUT_DIR, ".thumbs");
 const THUMB_MAX_PX = 400;
 const previewCache = createPreviewCache({ directory: path.join(THUMB_DIR, 'webp-v1') });
+const videoPreviewCache = createVideoPreviewCache({ directory: path.join(THUMB_DIR, "video-v1"), command: process.env.FFMPEG_PATH || "ffmpeg" });
 const legacyTaskTracker = createTracker({ tasks: generationTasks, directory: path.join(ROOT_DIR, 'generated-images', '.task-state'), observe: serviceCenter.observeTask });
 const AVATAR_DIR = path.join(ROOT_DIR, "generated-images", "avatars");
 const CONTACT_QR_DIR = path.join(ROOT_DIR, "generated-images", "contact-qr");
@@ -2271,18 +2273,20 @@ function sendVideoData(req, res, data, headers) {
   res.end(req.method === "HEAD" ? undefined : data);
 }
 
-async function serveVideo(req, res, id, attachment, user, cacheControl = "private, max-age=604800, immutable") {
+async function serveVideo(req, res, id, attachment, user, cacheControl = "private, max-age=604800, immutable", preview = false) {
   try {
     await assertOwnsImageSet(user, getImageSetIdFromImageId(id));
     const filePath = resolveVideoFile(id);
+    const mediaPath = preview && !attachment ? await videoPreviewCache.get(filePath) : filePath;
+    if (res.destroyed) return;
     const headers = {
       "Content-Type": "video/mp4",
-      "Cache-Control": cacheControl,
+      "Cache-Control": preview && mediaPath === filePath ? "private, no-store" : cacheControl,
     };
     if (attachment) {
       headers["Content-Disposition"] = `attachment; filename="${path.basename(filePath)}"`;
     }
-    await sendMediaFile(req, res, filePath, headers);
+    await sendMediaFile(req, res, mediaPath, headers);
   } catch (error) {
     sendError(res, 404, "视频不存在", error.message);
   }
@@ -3278,7 +3282,7 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
     const id = decodeURIComponent(pathname.replace("/api/videos/file/", ""));
-    await serveVideo(req, res, id, false, user);
+    await serveVideo(req, res, id, false, user, undefined, searchParams.get("preview") === "1");
     return;
   }
 

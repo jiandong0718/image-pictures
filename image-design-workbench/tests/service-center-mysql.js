@@ -7,7 +7,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const {
-  spawn
+  spawn, spawnSync
 } = require("node:child_process");
 const http = require("node:http");
 const mysql = require("mysql2/promise");
@@ -628,6 +628,21 @@ async function main() {
   assert.equal(compatTask.response.status, 200, JSON.stringify(compatTask.data));
   const compatResult = await waitTask(compatTask.data.taskId);
   assert.equal(compatResult.result.video.seconds, "4");
+  if (spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0) {
+    const generatedVideo = compatResult.result.video;
+    const originalFile = path.join(directory, "generated-images", "product-design", generatedVideo.id);
+    const fixture = await fs.readFile(path.join(appRoot, "public", "assets", "video-teaser-from-stills.mp4"));
+    await fs.writeFile(originalFile, fixture);
+    const previewUrl = generatedVideo.url + "?preview=1";
+    assert.equal((await fetch(base + previewUrl)).status, 401);
+    const first = await fetch(base + previewUrl, { headers: { Cookie: userCookie, Range: "bytes=0-31" } });
+    assert.equal(first.status, 206);
+    assert.equal((await first.arrayBuffer()).byteLength, 32);
+    const wholePreview = await fetch(base + previewUrl, { headers: { Cookie: userCookie } });
+    assert.ok((await wholePreview.arrayBuffer()).byteLength < fixture.length);
+    const original = await fetch(base + generatedVideo.downloadUrl, { headers: { Cookie: userCookie } });
+    assert.deepEqual(Buffer.from(await original.arrayBuffer()), fixture);
+  }
   assert.equal(compatSubmission.input.model, "mock-video");
   assert.equal(compatSubmission.input.size, "1280x720");
   assert.equal(compatDownloadAuth, "Bearer compat-mock-key");

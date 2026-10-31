@@ -470,6 +470,8 @@
 .vid-prompt-field textarea { min-height: 122px; resize: vertical; line-height: 1.65; }
 .vid-inspirations { margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .vid-inspiration-list { max-height: 170px; overflow-y: auto; }
+.vid-playback-status { margin: 8px 0 0; color: var(--ink-mute); font-size: 12px; line-height: 1.5; }
+.vid-playback-status[hidden] { display: none; }
 .vid-options-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px 12px; align-items: start; }
 .vid-options-grid > * { min-width: 0; }
 .vid-options-grid .vid-service-field { margin: 0; }
