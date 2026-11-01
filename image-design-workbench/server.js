@@ -271,6 +271,11 @@ function friendlyGenerationError(rawMessage, fallback = "生成失败，请稍�
   if (!msg) {
     return fallback;
   }
+  // 多端点错误仅在全部明确报告账号池不可用时归类，避免掩盖混合故障或暴露上游地址。
+  const endpointFailures = msg.split("\n").map(line => line.trim()).filter(line => line.startsWith("- "));
+  if (endpointFailures.length && endpointFailures.every(line => /\[503\]:\s*无可用账号/.test(line))) {
+    return "生图服务暂无可用账号，请稍后重试或切换其他可用节点";
+  }
   // 多行 / 含技术关键字 / 过长的，一律视为内部错误，替换成友好提示。
   if (msg.includes("\n") || msg.length > 80 || TECHNICAL_ERROR_RE.test(msg)) {
     return fallback;

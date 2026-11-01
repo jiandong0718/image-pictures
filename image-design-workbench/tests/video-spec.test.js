@@ -23,6 +23,10 @@ TimeoutError: The read operation timed out`;
   // 业务类短提示原样保留，用户能据此纠正
   assert.equal(friendlyGenerationError("积分不足，请充值"), "积分不足，请充值");
   assert.equal(friendlyGenerationError("请先在配置中心添加生图 API 端点"), "请先在配置中心添加生图 API 端点");
+  const poolUnavailable = "[ERROR] 所有端点都失败了：\n- https://example.test/v1/images/generations [503]: 无可用账号，请稍后重试";
+  assert.equal(friendlyGenerationError(poolUnavailable), "生图服务暂无可用账号，请稍后重试或切换其他可用节点");
+  assert.equal(friendlyGenerationError(poolUnavailable + "\n- https://other.test/v1/images/generations [401]: invalid API key"), "生成失败，请稍后重试");
+  assert.equal(friendlyGenerationError("[ERROR] 所有端点都失败了：\n- https://example.test [503]: service unavailable"), "生成失败，请稍后重试");
 });
 
 test("computeVideoSize 长边取该档基准，短边按比例，且宽高均为 8 的倍数", () => {
