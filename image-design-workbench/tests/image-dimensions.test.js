@@ -33,6 +33,7 @@ const {
   readImageDimensions,
   staticCacheControl,
   getThumbnailEdge,
+  pageModulePreloadLinks,
 } = require("../server");
 
 // 生图端点 / 提示词配置的纯逻辑（不依赖 DB）。
@@ -695,4 +696,13 @@ test("未指纹化的静态文本保持重验，缩略图使用列表级尺寸",
   assert.equal(staticCacheControl(".css"), "no-cache");
   assert.equal(staticCacheControl(".png"), "public, max-age=86400");
   assert.equal(getThumbnailEdge(), 400);
+});
+
+test("页面响应预加载入口和公共模块，避免导航后的模块串行瀑布", () => {
+  const workbench = pageModulePreloadLinks("workbench");
+  assert.match(workbench, /pages\/workbench\/workbench\.js/);
+  assert.match(workbench, /shared\/layout\.js/);
+  assert.match(workbench, /shared\/api\.js/);
+  assert.match(workbench, /shared\/image-target\.js/);
+  assert.equal(pageModulePreloadLinks("missing"), "");
 });

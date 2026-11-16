@@ -475,14 +475,22 @@ async function main() {
   [els.customW, els.customH].forEach((el) => el.addEventListener("input", save));
   els.generateBtn.addEventListener("click", generate);
 
-  imageTarget = await mountImageTarget(document.getElementById("imageTarget"), {
+  // 节点目录不影响画布、草稿和历史记录的首屏可用性；异步加载完成后再启用生成按钮。
+  void mountImageTarget(document.getElementById("imageTarget"), {
     storageKey: "imageStudio:target:" + ctx.me.id + ":playground",
     onConfig(configured) {
       hasImageConfig = configured;
       renderState();
     },
+  }).then((target) => {
+    imageTarget = target;
+    hasImageConfig = target.configured;
+    renderState();
+  }).catch((error) => {
+    hasImageConfig = false;
+    setMsg(`生图配置加载失败：${error.message}`, "error");
+    renderState();
   });
-  hasImageConfig = imageTarget.configured;
   renderState();
   renderStage();
 

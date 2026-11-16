@@ -2412,6 +2412,62 @@ const PAGE_ROUTES = {
   "/service-center": { dir: "service-center" },
 };
 
+// 多页应用无法保留上一页的模块图。通过 HTTP Link 在 HTML 到达时提前并发请求入口和
+// 公共依赖，避免“入口脚本下载完后才发现还要拉 layout/api”的串行瀑布；资源仍使用 ETag
+// 重验，不改变未指纹化静态文件的发布一致性。
+const PAGE_ENTRY_MODULES = Object.freeze({
+  home: "/pages/home/home.js",
+  login: "/pages/login/login.js",
+  config: "/pages/config/config.js",
+  "studio-hat": "/pages/studio-hat/hat.js",
+  "studio-bag": "/pages/studio-bag/bag.js",
+  "studio-print": "/pages/studio-print/print.js",
+  "studio-3d": "/pages/studio-3d/studio-3d.js",
+  prompt: "/pages/prompt/prompt.js",
+  prompts: "/pages/prompts/prompts.js",
+  assets: "/pages/assets/assets.js",
+  audio: "/pages/audio/audio.js",
+  workbench: "/pages/workbench/workbench.js",
+  "product-sets": "/pages/product-sets/product-sets.js",
+  playground: "/pages/playground/playground.js",
+  video: "/pages/video/video.js",
+  retouch: "/pages/retouch/retouch.js",
+  "full-playground": "/pages/full-playground/full-playground.js",
+  account: "/pages/account/account.js",
+  "my-images": "/pages/my-images/my-images.js",
+  "user-center": "/pages/user-center/user-center.js",
+  contact: "/pages/contact/contact.js",
+  admin: "/pages/admin/admin.js",
+  "service-center": "/pages/service-center/service-center.js",
+});
+
+const PAGE_CORE_PRELOADS = Object.freeze({
+  "studio-hat": ["/product-workspaces.js", "/shared/studio-core.js", "/shared/image-target.js"],
+  "studio-bag": ["/product-workspaces.js", "/shared/studio-core.js", "/shared/image-target.js"],
+  "studio-print": ["/product-workspaces.js", "/shared/studio-core.js", "/shared/image-target.js"],
+  "studio-3d": ["/product-workspaces.js", "/shared/studio-core.js", "/shared/image-target.js"],
+  playground: ["/shared/image-target.js", "/shared/persistence.js"],
+  retouch: ["/shared/image-target.js", "/shared/persistence.js"],
+  workbench: ["/shared/image-target.js", "/shared/creative-picker.js"],
+  "product-sets": ["/shared/image-target.js", "/pages/product-sets/templates.js"],
+  video: ["/pages/video/video-inspiration.js", "/shared/persistence.js"],
+  prompts: ["/shared/creative-picker.js", "/pages/prompts/prompt-library.js"],
+  assets: ["/shared/creative-picker.js", "/shared/creative-utils.js"],
+  audio: ["/shared/creative-picker.js", "/shared/creative-utils.js"],
+});
+
+function pageModulePreloadLinks(dir) {
+  const entry = PAGE_ENTRY_MODULES[dir];
+  if (!entry) {
+    return "";
+  }
+  const shared = dir === "home" || dir === "login"
+    ? ["/shared/api.js"]
+    : ["/shared/layout.js", "/shared/api.js"];
+  const urls = [...new Set([entry, ...shared, ...(PAGE_CORE_PRELOADS[dir] || [])])];
+  return urls.map((url) => `<${url}>; rel=modulepreload`).join(", ");
+}
+
 async function servePage(req, res, pathname) {
   if (req.method !== "GET") {
     return false;
@@ -2430,6 +2486,10 @@ async function servePage(req, res, pathname) {
   }
 
   const dir = path.join(PAGES_DIR, route.dir);
+  const preloadLinks = pageModulePreloadLinks(route.dir);
+  if (preloadLinks) {
+    res.setHeader("Link", preloadLinks);
+  }
   await serveStaticFromDir(req, res, dir, "index.html", "index.html");
   return true;
 }
@@ -4024,4 +4084,5 @@ module.exports = {
   sendVideoData,
   staticCacheControl,
   getThumbnailEdge,
+  pageModulePreloadLinks,
 };

@@ -489,14 +489,22 @@ async function main() {
   });
   els.generateBtn.addEventListener("click", generate);
 
-  imageTarget = await mountImageTarget(document.getElementById("imageTarget"), {
+  // 上传、提示词编辑和历史渲染不必等待节点目录；仅生成按钮等目录就绪后启用。
+  void mountImageTarget(document.getElementById("imageTarget"), {
     storageKey: "imageStudio:target:" + ctx.me.id + ":retouch",
     onConfig(configured) {
       hasImageConfig = configured;
       renderState();
     },
+  }).then((target) => {
+    imageTarget = target;
+    hasImageConfig = target.configured;
+    renderState();
+  }).catch((error) => {
+    hasImageConfig = false;
+    setMsg(`生图配置加载失败：${error.message}`, "error");
+    renderState();
   });
-  hasImageConfig = imageTarget.configured;
   renderState();
   renderCanvas();
 
