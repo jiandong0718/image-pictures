@@ -168,7 +168,13 @@ async function main() {
   schemes = readStored(user.id, "schemes", []); if (!Array.isArray(schemes)) schemes = [];
   renderHistory(); renderSchemes(); syncHistoryLink();
   try {
-    imageTarget = await mountImageTargetDrawer($("imageTarget"), { storageKey: `imageStudio:target:${user.id}:workbench` }); configured = imageTarget.configured;
+    imageTarget = await mountImageTargetDrawer($("imageTarget"), {
+      storageKey: `imageStudio:target:${user.id}:workbench`,
+      onConfig(value) {
+        configured = value;
+        syncGenerateButton();
+      },
+    }); configured = imageTarget.configured;
     $("configHint").textContent = configured ? "每张图片按当前生图规则扣除积分，任务提交后将在生成记录中显示。" : "尚未配置可用生图服务，请联系管理员在配置中心设置。";
   } catch (error) { $("configHint").textContent = `生图配置加载失败：${error.message}，请刷新后重试。`; }
   applyDraft(saved);

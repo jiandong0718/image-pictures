@@ -43,8 +43,17 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
     await accounts.setAvatarPath(userId, filename);
   }
 
-  async function requireUser(req, res) {
-    const user = await auth.getSessionUser(req);
+  async function requireUser(req, res, { full = false } = {}) {
+    let user;
+    try {
+      user = full ? await auth.getSessionUser(req) : await auth.getSessionIdentity(req);
+    } catch (error) {
+      if (error.statusCode === 503) {
+        sendError(res, 503, error.message || "登录服务暂时不可用，请稍后重试");
+        return null;
+      }
+      throw error;
+    }
     if (!user) {
       sendError(res, 401, "请先登录");
       return null;
@@ -72,7 +81,7 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
           email: payload.email,
           phone: payload.phone,
         });
-        const { token, expiresAt } = await auth.createSession(user.id);
+        const { token, expiresAt } = await auth.createSession(user);
         setCookie(res, auth.buildSessionCookie(token, expiresAt));
         sendJson(res, 200, { ok: true, user });
       } catch (error) {
@@ -85,7 +94,7 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
       const payload = await readJson(req);
       try {
         const user = await accounts.login(payload.username, payload.password);
-        const { token, expiresAt } = await auth.createSession(user.id);
+        const { token, expiresAt } = await auth.createSession(user);
         setCookie(res, auth.buildSessionCookie(token, expiresAt));
         sendJson(res, 200, { ok: true, user });
       } catch (error) {
@@ -96,20 +105,40 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
 
     if (req.method === "POST" && pathname === "/api/auth/logout") {
       const cookies = auth.parseCookies(req);
-      await auth.destroySession(cookies[auth.COOKIE_NAME]);
-      setCookie(res, auth.buildClearCookie());
-      sendJson(res, 200, { ok: true });
+      try {
+        await auth.destroySession(cookies[auth.COOKIE_NAME]);
+        setCookie(res, auth.buildClearCookie());
+        sendJson(res, 200, { ok: true });
+      } catch (error) {
+        sendError(res, error.statusCode || 500, error.message || "退出登录失败，请稍后重试");
+      }
       return true;
     }
 
-    if (req.method === "GET" && pathname === "/api/auth/me") {
-      const user = await auth.getSessionUser(req);
-      sendJson(res, 200, { ok: true, user: user ? sanitize(user) : null });
+    if (req.method === "GET" && (pathname === "/api/auth/me" || pathname === "/api/bootstrap")) {
+      try {
+        const user = await auth.getSessionUser(req);
+        sendJson(res, 200, { ok: true, user: user ? sanitize(user) : null });
+      } catch (error) {
+        sendError(res, error.statusCode || 500, error.message || "登录服务暂时不可用，请稍后重试");
+      }
+      return true;
+    }
+
+    // 轻量会话核验只读 Redis 的 id / role；多页切换用它及时发现登出或失效，
+    // 避免每次都为展示昵称、积分而读 MySQL。
+    if (req.method === "GET" && pathname === "/api/auth/status") {
+      try {
+        const user = await auth.getSessionIdentity(req);
+        sendJson(res, 200, { ok: true, user: user ? { id: user.id, role: user.role } : null });
+      } catch (error) {
+        sendError(res, error.statusCode || 500, error.message || "登录服务暂时不可用，请稍后重试");
+      }
       return true;
     }
 
     if (req.method === "GET" && pathname === "/api/account") {
-      const user = await requireUser(req, res);
+      const user = await requireUser(req, res, { full: true });
       if (!user) {
         return true;
       }
@@ -235,7 +264,14 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
       }
       const payload = await readJson(req);
       try {
-        await accounts.changePassword(user.id, payload.oldPassword, payload.newPassword);
+        await accounts.changePassword(user.id, payload.oldPassword, payload.newPassword, {
+          beforeCommit: () => auth.invalidateUserSessions(user.id),
+        });
+        // 再递增一次版本，覆盖“旧密码校验完成后、密码真正落库前”的并发登录窗口。
+        await auth.invalidateUserSessions(user.id);
+        // 密码变更会使全部旧会话失效；为当前浏览器签发一枚新会话，其他设备仍需重新登录。
+        const { token, expiresAt } = await auth.createSession(user);
+        setCookie(res, auth.buildSessionCookie(token, expiresAt));
         sendJson(res, 200, { ok: true });
       } catch (error) {
         sendError(res, error.statusCode || 400, error.message || "修改密码失败");
@@ -288,8 +324,15 @@ function createAccountApi({ sendJson, sendError, readJson, readMultipartFile, in
         sendError(res, 400, "不能修改自己的角色");
         return true;
       }
+      if (!["user", "admin"].includes(payload.role)) {
+        sendError(res, 400, "角色不合法");
+        return true;
+      }
       try {
+        // 前后各递增一次版本：第一次覆盖变更前会话，第二次覆盖角色写库期间的并发登录。
+        await auth.invalidateUserSessions(payload.userId);
         const user = await accounts.setRole(payload.userId, payload.role);
+        await auth.invalidateUserSessions(payload.userId);
         sendJson(res, 200, { ok: true, user });
       } catch (error) {
         sendError(res, error.statusCode || 400, error.message || "操作失败");

@@ -475,7 +475,13 @@ async function main() {
   [els.customW, els.customH].forEach((el) => el.addEventListener("input", save));
   els.generateBtn.addEventListener("click", generate);
 
-  imageTarget = await mountImageTarget(document.getElementById("imageTarget"), { storageKey: "imageStudio:target:" + ctx.me.id + ":playground" });
+  imageTarget = await mountImageTarget(document.getElementById("imageTarget"), {
+    storageKey: "imageStudio:target:" + ctx.me.id + ":playground",
+    onConfig(configured) {
+      hasImageConfig = configured;
+      renderState();
+    },
+  });
   hasImageConfig = imageTarget.configured;
   renderState();
   renderStage();

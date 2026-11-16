@@ -138,7 +138,7 @@ function taskState(task, count) {
 }
 function activityRequest(req) {
   const pathname = String(req.url || "").split("?")[0];
-  if (req.method === "GET") return ["/api/auth/me", "/api/gallery", "/api/gallery/item", "/api/prompts", "/api/assets", "/api/videos", "/api/audio", "/api/account", "/api/service-center/dashboard", "/api/service-center/users", "/api/service-center/tasks"].includes(pathname) || !pathname.startsWith("/api/") && !/\.[a-z0-9]+$/i.test(pathname);
+  if (req.method === "GET") return ["/api/auth/me", "/api/bootstrap", "/api/auth/status", "/api/gallery", "/api/gallery/item", "/api/prompts", "/api/assets", "/api/videos", "/api/audio", "/api/account", "/api/service-center/dashboard", "/api/service-center/users", "/api/service-center/tasks"].includes(pathname) || !pathname.startsWith("/api/") && !/\.[a-z0-9]+$/i.test(pathname);
   return ["POST", "PUT", "PATCH", "DELETE"].includes(req.method) && pathname.startsWith("/api/") && pathname !== "/api/auth/logout";
 }
 function createServiceCenter({

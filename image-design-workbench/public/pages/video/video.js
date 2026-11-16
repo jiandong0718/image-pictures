@@ -506,6 +506,8 @@ async function main() {
   els.videoService.addEventListener("change", () => { videoEndpointId = els.videoService.value; selectVideoService(); save(); });
   $("videoFirstFrame").addEventListener("input", renderState);
 
+  // 最近作品和服务配置彼此独立，先并发请求，避免近期作品还要等配置接口返回。
+  void loadRecent();
   try {
     const cfg = await apiGet("/api/video-config");
     hasVideoConfig = Boolean(cfg.config?.uploaded);
@@ -522,7 +524,6 @@ async function main() {
   }
   renderState();
   renderStage();
-  loadRecent();
 
   // 离开前若有任务未轮询完，回来续上（避免扣了费视频却丢了）。
   if (pendingTask) {

@@ -329,10 +329,11 @@ async function main() {
       cookie: userCookie
     })).response.status, 403);
   }
-  assert.equal((await request("/service-center")).response.status, 302);
+  // 服务中心 HTML 本身是静态壳层，不含统计数据；权限由 bootstrap 与统计 API 强制执行。
+  assert.equal((await request("/service-center")).response.status, 200);
   assert.equal((await request("/service-center", {
     cookie: userCookie
-  })).response.status, 302);
+  })).response.status, 200);
   assert.equal((await request("/service-center", {
     cookie: adminCookie
   })).response.status, 200);

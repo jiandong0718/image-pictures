@@ -259,7 +259,7 @@ async function listTransactions(userId, { page, pageSize } = {}) {
 }
 
 // 修改自己的密码：校验原密码后更新。
-async function changePassword(userId, oldPassword, newPassword) {
+async function changePassword(userId, oldPassword, newPassword, { beforeCommit } = {}) {
   const next = String(newPassword || "");
   if (next.length < 6 || next.length > 64) {
     throw new AccountError("新密码长度需为 6-64 位");
@@ -271,6 +271,9 @@ async function changePassword(userId, oldPassword, newPassword) {
   }
   if (!verifyPassword(String(oldPassword || ""), rows[0].password_hash)) {
     throw new AccountError("原密码错误", 401);
+  }
+  if (typeof beforeCommit === "function") {
+    await beforeCommit();
   }
   await pool.query("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(next), userId]);
 }

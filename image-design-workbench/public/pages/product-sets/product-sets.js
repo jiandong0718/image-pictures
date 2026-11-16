@@ -1,5 +1,5 @@
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost, apiUpload, downloadJsonFile } from "/shared/api.js";
+import { apiGet, apiPost, apiUpload, downloadJsonFile, fetchMe } from "/shared/api.js";
 import { escapeHtml } from "/shared/creative-utils.js";
 import { previewUrl } from "/shared/media.js";
 import { mountImageTargetDrawer } from "/shared/image-target.js";
@@ -77,7 +77,7 @@ async function upload(file) {
   finally { uploading = false; syncState(); }
 }
 async function refreshCredits() {
-  try { const data = await apiGet("/api/auth/me"); if (typeof data.user?.credits === "number") setCredits(data.user.credits); } catch { /* 余额稍后由布局刷新 */ }
+  try { const user = await fetchMe({ force: true, full: true }); if (typeof user?.credits === "number") setCredits(user.credits); } catch { /* 余额稍后由布局刷新 */ }
 }
 async function poll(taskId) {
   if (!taskId || polling) return;
@@ -142,7 +142,14 @@ async function main() {
   if (["1:1", "3:4", "4:3", "9:16", "16:9"].includes(saved.ratio)) $("ratio").value = saved.ratio;
   if (["1k", "2k"].includes(saved.resolution)) $("resolution").value = saved.resolution;
   renderTemplates(); renderSlots(Array.isArray(saved.selected) ? saved.selected : undefined); renderSource(); renderResults();
-  try { target = await mountImageTargetDrawer($("imageTarget"), { storageKey: `imageStudio:target:${user.id}:product-sets` }); }
+  try {
+    target = await mountImageTargetDrawer($("imageTarget"), {
+      storageKey: `imageStudio:target:${user.id}:product-sets`,
+      onConfig() {
+        syncState();
+      },
+    });
+  }
   catch (error) { setError(`生图配置加载失败：${error.message}`); }
   $("templateGrid").addEventListener("click", event => { const button = event.target.closest("[data-template]"); if (!button) return; selectedTemplate = button.dataset.template; renderTemplates(); save(); });
   $("slotList").addEventListener("change", () => { syncState(); save(); });

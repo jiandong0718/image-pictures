@@ -13,9 +13,12 @@ export default function WorkbenchTargets() {
     const start = async () => {
       const moduleUrl = '/shared/image-target.js'
       const runtime = await import(/* @vite-ignore */ moduleUrl)
-      const response = await fetch('/api/auth/me')
+      // 这里只需要当前用户 ID 构造本地偏好 key；轻量状态接口只读 Redis session，
+      // 不为嵌入式工作台额外读取 MySQL 用户资料。
+      const response = await fetch('/api/auth/status')
       if (!response.ok) throw new Error('请重新登录')
       const data = await response.json()
+      if (!data.user?.id) throw new Error('请重新登录')
       if (disposed || !host.current) return
       control = await runtime.mountImageTarget(host.current, { storageKey: `imageStudio:target:${data.user.id}:full-playground`, onChange: send })
       send()

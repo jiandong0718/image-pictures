@@ -531,7 +531,13 @@ export function createStudio(config) {
     syncSpecButtons();
     const targetHost = document.createElement("div");
     document.querySelector(".topbar-right").prepend(targetHost);
-    imageTarget = await mountImageTargetDrawer(targetHost, { storageKey: `imageStudio:target:${ctx.me.id}:${mode}` });
+    imageTarget = await mountImageTargetDrawer(targetHost, {
+      storageKey: `imageStudio:target:${ctx.me.id}:${mode}`,
+      onConfig(configured) {
+        state.hasImageConfig = configured;
+        renderControls();
+      },
+    });
     state.hasImageConfig = imageTarget.configured;
 
     allTypes.forEach((type) => renderCard(type));

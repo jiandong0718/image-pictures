@@ -2,7 +2,14 @@
 // 共享布局：渲染侧边栏 + 顶栏（含当前用户、积分余额、登出）。
 // 各页面只负责自己的内容区；导航结构集中在这里，保证多页一致。
 
-import { fetchMe, logout } from "./api.js";
+import {
+  bootstrapAuth,
+  readAuthSnapshot,
+  updateAuthenticatedUser,
+  clearAuthenticatedUser,
+  verifySession,
+  logout,
+} from "./api.js";
 
 // 导航图标（线性 SVG，颜色继承 currentColor，自动跟随各主题 --accent）。
 const ICONS = {
@@ -102,78 +109,101 @@ function toggleTheme(btn) {
   if (btn) btn.textContent = `${THEME_LABELS[next]}风`;
 }
 
-// 缓存当前用户（非敏感：仅用于即时渲染菜单/顶栏；真正的权限由服务端 cookie + 路由/接口守卫强制）。
-const ME_KEY = "imageStudio:me";
-
-function readCachedMe() {
-  try {
-    const raw = localStorage.getItem(ME_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function cacheMe(me) {
-  try {
-    localStorage.setItem(
-      ME_KEY,
-      JSON.stringify({
-        id: me.id,
-        username: me.username,
-        role: me.role,
-        credits: me.credits,
-        avatarUrl: me.avatarUrl || "",
-      }),
-    );
-  } catch {
-    /* localStorage 不可用时忽略，退回每次 fetchMe */
-  }
-}
-
 function loginRedirect() {
   const redirect = encodeURIComponent(location.pathname + location.search);
-  location.href = `/?auth=login&redirect=${redirect}`;
+  location.replace(`/?auth=login&redirect=${redirect}`);
 }
 
-// 切换菜单是整页刷新：先用本地缓存的用户信息同步渲染骨架（侧栏/顶栏立即出现，不等网络），
-// 再后台校验会话 + 刷新余额/角色。这样导航不再卡在 fetchMe 的网络往返上。
+const LOADING_USER = Object.freeze({
+  id: "",
+  username: "正在加载",
+  role: "user",
+  credits: 0,
+  avatarUrl: "",
+});
+
+function hasRequiredRole(me, requiredRole) {
+  return !requiredRole || (requiredRole === "admin" && me?.role === "admin");
+}
+
+function redirectUnauthorizedRole() {
+  location.replace("/studio/hat");
+}
+
+// 多页切换时只读取 sessionStorage 中的非权威展示快照；真实身份仍由后端 Redis session 决定。
+// 每个受保护页面都会后台请求轻量 status（只读 Redis，不读 MySQL），失效立即回登录。
 export async function mountLayout(opts) {
-  let me = readCachedMe();
+  const snapshot = readAuthSnapshot();
+  let me = snapshot?.user || null;
   if (!me) {
-    me = await fetchMe();
+    renderShell(LOADING_USER, opts);
+    me = await bootstrapAuth({ force: true });
     if (!me) {
       loginRedirect();
       return null;
     }
-    cacheMe(me);
+    if (!hasRequiredRole(me, opts.requiredRole)) {
+      redirectUnauthorizedRole();
+      return null;
+    }
+    // 真实身份返回后仅重建一次壳层，以补齐管理员菜单与账户信息；页面内容保持不变。
+    return renderShell(me, opts);
+  }
+
+  // 管理页不能只依赖旧展示快照判断角色，进入时强制通过后端 bootstrap 复核一次。
+  if (opts.requiredRole === "admin") {
+    me = await bootstrapAuth({ force: true });
+    if (!me) {
+      loginRedirect();
+      return null;
+    }
+  }
+
+  if (!hasRequiredRole(me, opts.requiredRole)) {
+    redirectUnauthorizedRole();
+    return null;
   }
 
   const ctx = renderShell(me, opts);
 
-  // 后台校验：会话失效则跳登录；余额/角色变化则更新（角色变了重载以刷新菜单）。
-  fetchMe()
-    .then((fresh) => {
-      if (!fresh) {
-        try {
-          localStorage.removeItem(ME_KEY);
-        } catch {
-          /* 忽略 */
-        }
+  verifySession()
+    .then((identity) => {
+      if (!identity) {
+        clearAuthenticatedUser();
         loginRedirect();
         return;
       }
-      cacheMe(fresh);
-      setCredits(fresh.credits);
-      if (fresh.role !== me.role) {
+      if (identity.role !== me.role || !hasRequiredRole(identity, opts.requiredRole)) {
+        updateAuthenticatedUser({ role: identity.role });
         location.reload();
       }
     })
     .catch(() => {
-      /* 网络抖动不打断已渲染页面 */
+      /* Redis 或网络短暂异常时保留当前展示，业务请求会继续由后端返回明确错误。 */
     });
 
   return ctx;
+}
+
+let layoutMessageListenerBound = false;
+
+function bindLayoutMessageListener() {
+  if (layoutMessageListenerBound) {
+    return;
+  }
+  layoutMessageListenerBound = true;
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (event.data?.type === "image-workbench:request-theme") {
+      event.source?.postMessage(
+        { type: "image-workbench:theme-changed", theme: currentTheme() },
+        event.origin,
+      );
+    }
+    if (event.data?.type === "image-workbench:credits-changed") {
+      setCredits(event.data.credits);
+    }
+  });
 }
 
 function renderShell(me, { active, title, crumb }) {
@@ -264,18 +294,7 @@ function renderShell(me, { active, title, crumb }) {
   shell.querySelectorAll(".nav-link").forEach((a) => a.addEventListener("click", closeNav));
 
   // 用户菜单：鼠标悬停展示/收起（纯 CSS :hover，见 theme.css .user-menu-wrap），不用点击展开。
-  window.addEventListener("message", (event) => {
-    if (event.origin !== window.location.origin) return;
-    if (event.data?.type === "image-workbench:request-theme") {
-      event.source?.postMessage(
-        { type: "image-workbench:theme-changed", theme: currentTheme() },
-        event.origin,
-      );
-    }
-    if (event.data?.type === "image-workbench:credits-changed") {
-      setCredits(event.data.credits);
-    }
-  });
+  bindLayoutMessageListener();
   requestAnimationFrame(broadcastTheme);
 
   return { me, setCredits };
@@ -289,6 +308,7 @@ export function setCredits(value) {
   document.querySelectorAll("[data-credits]").forEach((el) => {
     el.textContent = String(value);
   });
+  updateAuthenticatedUser({ credits: value });
 }
 
 // 供用户中心页在头像上传成功后立即刷新顶栏头像，不用等下次导航。
@@ -297,13 +317,12 @@ export function setAvatar(url) {
   if (!el) {
     return;
   }
-  const me = readCachedMe();
+  const me = readAuthSnapshot()?.user;
   // 清除时（url 为空）回退到用户名首字母，与初次渲染一致。
   el.innerHTML = url
     ? `<img src="${url}" alt="" />`
     : (me?.username || "?").slice(0, 1).toUpperCase();
   if (me) {
-    me.avatarUrl = url;
-    cacheMe(me);
+    updateAuthenticatedUser({ avatarUrl: url });
   }
 }

@@ -230,7 +230,8 @@ async function init() {
   const ctx = await mountLayout({
     active: "service-center",
     title: "服务中心",
-    crumb: "管理 / 服务中心"
+    crumb: "管理 / 服务中心",
+    requiredRole: "admin"
   });
   if (!ctx || ctx.me.role !== "admin") return;
   preset(30);

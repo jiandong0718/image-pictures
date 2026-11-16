@@ -196,6 +196,8 @@ async function main() {
   els.copyBtn.addEventListener("click", copy);
   els.output.addEventListener("input", saveDraft);
 
+  // IndexedDB 草稿恢复无需等待服务配置，两个来源并发读取以缩短首屏可编辑时间。
+  const draftRequest = restoreDraft();
   try {
     const cfg = await apiGet("/api/prompt-config");
     hasPromptConfig = Boolean(cfg.config?.uploaded);
@@ -203,7 +205,7 @@ async function main() {
   } catch {
     hasPromptConfig = false;
   }
-  await restoreDraft();
+  await draftRequest;
   renderState();
 }
 

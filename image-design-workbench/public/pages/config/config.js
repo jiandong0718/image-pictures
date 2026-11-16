@@ -1,5 +1,6 @@
 import { mountLayout } from "/shared/layout.js";
 import { apiGet, apiPost } from "/shared/api.js";
+import { clearImageTargetConfigCache } from "/shared/image-target.js";
 
 const $ = (id) => document.getElementById(id);
 const categories = {
@@ -23,6 +24,9 @@ let videoEndpoints = [];
 let videoDefaultId = "";
 let modelEndpoints = { prompt: [], audio: [] };
 let modelDefaults = { prompt: "", audio: "" };
+const configKinds = ["images", "prompt", "video", "audio"];
+const loadedKinds = new Set();
+const pendingLoads = new Map();
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -44,15 +48,20 @@ function rows() {
 }
 function render() {
   document.querySelectorAll("[data-category]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.category === category)));
-  $("countImages").textContent = errors.images ? "!" : endpoints.length;
-  for (const kind of ["prompt", "video", "audio"]) $("count" + kind[0].toUpperCase() + kind.slice(1)).textContent = errors[kind] ? "!" : kind === "video" ? videoEndpoints.length : modelEndpoints[kind].length;
+  $("countImages").textContent = !loadedKinds.has("images") ? "…" : errors.images ? "!" : endpoints.length;
+  for (const kind of ["prompt", "video", "audio"]) $("count" + kind[0].toUpperCase() + kind.slice(1)).textContent = !loadedKinds.has(kind) ? "…" : errors[kind] ? "!" : kind === "video" ? videoEndpoints.length : modelEndpoints[kind].length;
   const maintenance = category === "maintenance";
   $("scheduleField").hidden = category !== "images";
   $("addService").hidden = maintenance;
   $("maintenancePanel").hidden = !maintenance;
   $("providerList").hidden = maintenance;
   $("categoryDescription").textContent = categories[category].description + (category === "images" ? globalDefault ? ` 全局默认：${globalDefault.name} / ${globalDefault.model}` : " 可通过服务的更多菜单设定全局默认。" : "");
-  $("providerList").setAttribute("aria-busy", "false");
+  const loading = !maintenance && !loadedKinds.has(category) && !errors[category];
+  $("providerList").setAttribute("aria-busy", String(loading));
+  if (loading) {
+    $("providerList").innerHTML = '<div class="settings-empty"><h3>正在读取服务配置…</h3><p>其他分类会在当前页面可用后后台预取。</p></div>';
+    return;
+  }
   const list = rows();
   $("addService").textContent = "＋ 添加服务";
   if (errors[category]) {
@@ -77,17 +86,51 @@ function render() {
     </article>`;
   }).join("");
 }
-async function load() {
-  const kinds = ["images", "prompt", "video", "audio"];
-  const results = await Promise.allSettled(kinds.map((kind) => apiGet("/api/" + (kind === "images" ? "image" : kind) + "-config")));
-  results.forEach((result, i) => {
-    const kind = kinds[i];
-    if (result.status === "rejected") { errors[kind] = result.reason.message; return; }
-    delete errors[kind];
-    if (kind === "images") { endpoints = result.value.endpoints || []; globalDefault = result.value.defaultTarget || null; $("schedule").value = result.value.schedule || "round_robin"; }
-    else { configs[kind] = result.value.config || {}; if (kind === "video") { videoEndpoints = result.value.endpoints || []; videoDefaultId = result.value.defaultId || ""; } else { modelEndpoints[kind] = result.value.endpoints || []; modelDefaults[kind] = result.value.defaultId || ""; } }
-  });
+async function loadKind(kind) {
+  if (pendingLoads.has(kind)) return pendingLoads.get(kind);
+  const request = apiGet("/api/" + (kind === "images" ? "image" : kind) + "-config")
+    .then((data) => {
+      delete errors[kind];
+      if (kind === "images") {
+        endpoints = data.endpoints || [];
+        globalDefault = data.defaultTarget || null;
+        $("schedule").value = data.schedule || "round_robin";
+      } else {
+        configs[kind] = data.config || {};
+        if (kind === "video") {
+          videoEndpoints = data.endpoints || [];
+          videoDefaultId = data.defaultId || "";
+        } else {
+          modelEndpoints[kind] = data.endpoints || [];
+          modelDefaults[kind] = data.defaultId || "";
+        }
+      }
+    })
+    .catch((error) => {
+      errors[kind] = error.message;
+    })
+    .finally(() => {
+      loadedKinds.add(kind);
+      pendingLoads.delete(kind);
+    });
+  pendingLoads.set(kind, request);
+  return request;
+}
+
+async function load(kinds = [category]) {
+  const targets = [...new Set(kinds)].filter((kind) => configKinds.includes(kind));
+  await Promise.all(targets.map(loadKind));
   render();
+}
+
+function prefetchOtherCategories() {
+  const otherKinds = configKinds.filter((kind) => kind !== category);
+  const work = () => { void load(otherKinds); };
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(work, { timeout: 1200 });
+  } else {
+    window.setTimeout(work, 250);
+  }
 }
 function setModels(models, selected = "") {
   const unique = [...new Set(models.filter(Boolean))];
@@ -158,12 +201,13 @@ async function save(event) {
   try {
     if (category === "images") {
       await apiPost("/api/image-config", { ...input, action: editing ? "update" : "add", id: editing?.id, label: $("serviceLabel").value.trim(), models: [model, ...availableModels.filter((item) => item !== model)] });
+      clearImageTargetConfigCache();
     } else {
       if (category === "audio") Object.assign(input, { charactersPerCredit: Number($("charactersPerCredit").value), creditsPerUnit: Number($("creditsPerUnit").value) });
       if (category === "video") Object.assign(input, { protocol: $("videoProtocol").value, creditsPerSecond: $("videoCredits").value });
       await apiPost("/api/" + category + "-config", { ...input, action: editing ? "update" : "add", id: editing?.id, label: $("serviceLabel").value.trim() });
     }
-    await load();
+    await load([category]);
     saving = false;
     closeEditor();
     message("pageMessage", "服务配置已保存", "success");
@@ -177,16 +221,22 @@ async function imageAction(action, id) {
   message("pageMessage", "正在更新服务…");
   try {
     const data = await apiPost("/api/" + (category === "images" ? "image" : category) + "-config", { action, id, ...(action === "toggle" ? { enabled: !endpoint.enabled } : {}) });
-    if (category !== "images") await load();
+    if (category === "images") clearImageTargetConfigCache();
+    if (category !== "images") await load([category]);
     else { endpoints = data.endpoints; globalDefault = data.defaultTarget || null; }
     render();
     message("pageMessage", action === "set_default" ? "已设为全局默认，跟随默认的模块将优先使用此节点与其默认模型" : "服务已更新", "success");
   } catch (error) { message("pageMessage", error.message, "error"); }
 }
 async function main() {
-  const ctx = await mountLayout({ active: "config", title: "配置中心", crumb: "SETTINGS" });
+  const ctx = await mountLayout({ active: "config", title: "配置中心", crumb: "SETTINGS", requiredRole: "admin" });
   if (!ctx) return;
-  document.querySelectorAll("[data-category]").forEach((button) => button.addEventListener("click", () => { category = button.dataset.category; message("pageMessage"); render(); }));
+  document.querySelectorAll("[data-category]").forEach((button) => button.addEventListener("click", () => {
+    category = button.dataset.category;
+    message("pageMessage");
+    render();
+    if (configKinds.includes(category) && !loadedKinds.has(category)) void load([category]);
+  }));
   $("addService").addEventListener("click", () => openEditor());
   $("closeDialog").addEventListener("click", closeEditor);
   $("cancelDialog").addEventListener("click", closeEditor);
@@ -213,7 +263,7 @@ async function main() {
     const button = event.target.closest("button");
     if (!button) return;
     if (button.hasAttribute("data-add")) openEditor();
-    else if (button.hasAttribute("data-retry")) load();
+    else if (button.hasAttribute("data-retry")) load([category]);
     else if (button.dataset.edit) openEditor(button.dataset.edit);
     else if (button.dataset.default) imageAction("set_default", button.dataset.default);
     else if (button.dataset.refresh) { openEditor(button.dataset.refresh); discover(); }
@@ -222,7 +272,7 @@ async function main() {
   });
   $("schedule").addEventListener("change", async () => {
     try { await apiPost("/api/image-config", { action: "schedule", schedule: $("schedule").value }); message("pageMessage", "调度策略已保存", "success"); }
-    catch (error) { message("pageMessage", error.message, "error"); await load(); }
+    catch (error) { message("pageMessage", error.message, "error"); await load(["images"]); }
   });
   $("resetCache").addEventListener("click", async () => {
     if (!window.confirm("确认清理当前账户的生成图片缓存？此操作无法撤销。")) return;
@@ -231,6 +281,7 @@ async function main() {
     catch (error) { message("pageMessage", error.message, "error"); }
     finally { $("resetCache").disabled = false; }
   });
-  await load();
+  await load([category]);
+  prefetchOtherCategories();
 }
 main().catch((error) => message("pageMessage", error.message, "error"));

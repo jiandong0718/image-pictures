@@ -31,6 +31,8 @@ const {
   requestedImageCountFromJson,
   isRetryablePlaygroundStatus,
   readImageDimensions,
+  staticCacheControl,
+  getThumbnailEdge,
 } = require("../server");
 
 // 生图端点 / 提示词配置的纯逻辑（不依赖 DB）。
@@ -685,4 +687,12 @@ test("applyEndpointModel：JSON 请求体的 model 被端点模型覆盖，multi
   // multipart 不改
   const mp = Buffer.from("--b\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\ngpt-image-2\r\n--b--");
   assert.equal(applyEndpointModel(mp, "multipart/form-data; boundary=b", "agnes").toString(), mp.toString());
+});
+
+test("未指纹化的静态文本保持重验，缩略图使用列表级尺寸", () => {
+  assert.equal(staticCacheControl(".html"), "no-cache");
+  assert.equal(staticCacheControl(".js"), "no-cache");
+  assert.equal(staticCacheControl(".css"), "no-cache");
+  assert.equal(staticCacheControl(".png"), "public, max-age=86400");
+  assert.equal(getThumbnailEdge(), 400);
 });

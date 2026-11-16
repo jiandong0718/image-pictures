@@ -1,5 +1,5 @@
 import { previewUrl } from "/shared/media.js";
-import { apiGet, fetchMe } from "/shared/api.js";
+import { apiGet, fetchMe, rememberAuthenticatedUser } from "/shared/api.js";
 import { DEFAULT_AUTH_DESTINATION, resolveAuthDestination } from "/shared/auth-navigation.js";
 import { saveReuse } from "/shared/reuse.js";
 import { normalizeTheme, normalizeLanguage, parseReadReleaseIds, unreadReleaseIds, RELEASE_NOTES } from "/shared/site-preferences.js";
@@ -292,7 +292,8 @@ async function submitAuth(event) {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || tr("authRequestFailed"));
-    location.assign(state.authDestination);
+    rememberAuthenticatedUser(result.user);
+    location.replace(state.authDestination);
   } catch (error) {
     setAuthMessage(error.message || tr("authRequestFailed"), true);
     els.authSubmit.disabled = false;
@@ -639,7 +640,7 @@ els.createFromPrompt.addEventListener("click", () => {
   location.href = destination;
 });
 
-fetchMe().then((user) => {
+fetchMe({ force: true }).then((user) => {
   if (!user) return;
   state.user = user;
   syncAccount();

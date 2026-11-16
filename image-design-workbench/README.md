@@ -46,7 +46,7 @@ http://127.0.0.1:4174
 
 自由生图在桌面端左侧展示作品，右侧输入提示词、切换文生图/图生图与上传参考图。创作工作台和四个商品工作台的节点/模型选择收进右上角抽屉。绘图聚集地在底部展示节点、模型和生成参数，任务列表支持每页 12/24/48/96 条。当前异步代理不支持实时生成预览，透明背景使用现有本地处理机制，界面会标明限制。
 
-配置中心保存的生图端点、提示词和视频接口配置持久化在 MySQL；`.env` 仍可提供初始配置。账户、积分和图库元数据也使用 MySQL，图片及视频文件保存在 `generated-images/`。
+配置中心保存的生图端点、提示词和视频接口配置持久化在 MySQL；`.env` 仍可提供初始配置。账户、积分和图库元数据也使用 MySQL，图片及视频文件保存在 `generated-images/`。登录会话主读使用 Redis：Cookie 只保存 HttpOnly 的随机会话 token，Redis 保存用户 ID、角色和失效时间；MySQL 会话表保留持久记录，并在 Redis miss 时兼容迁移旧会话。
 
 `.env` 仍可作为命令行脚本的本地默认配置：
 
@@ -57,6 +57,7 @@ CUSTOM_IMAGE_MODEL=gpt-image-2
 CUSTOM_PROMPT_API_BASE=https://api.example.com/v1
 CUSTOM_PROMPT_API_KEY=your-prompt-api-key-here
 CUSTOM_PROMPT_EXTRACT_MODEL=gpt-4o-mini
+REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
 每个浏览器窗口会自动分配一个独立套图编号，窗口之间互不影响；一套图包含 1 张主图和当前模式下的衍生图。生成结果会按数据顺序保存到独立文件夹：

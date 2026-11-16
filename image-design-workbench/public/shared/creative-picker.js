@@ -1,4 +1,4 @@
-import { apiGet } from "./api.js";
+import { apiGet, apiRequest } from "./api.js";
 import { escapeHtml, parseTags, thumbnailUrl, mediaUrl, storageKey, listTotal } from "./creative-utils.js";
 
 export { escapeHtml, parseTags, thumbnailUrl, mediaUrl } from "./creative-utils.js";
@@ -27,11 +27,11 @@ export function thumbHtml(item) {
 }
 
 export async function requestMutation(url, method, body) {
-  const response = await fetch(url, { method, headers: { "Content-Type": "application/json", Accept: "application/json" }, body: body ? JSON.stringify(body) : undefined });
-  const data = await response.json().catch(() => ({}));
-  if (response.status === 401) location.href = `/?auth=login&redirect=${encodeURIComponent(location.pathname)}`;
-  if (!response.ok) throw new Error(data.details || data.error || "操作失败，请重试");
-  return data;
+  return apiRequest(url, {
+    method,
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
 }
 
 export function createDialog(title, body, wide = false) {

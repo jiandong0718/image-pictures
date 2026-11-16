@@ -12,7 +12,7 @@ require("./lib/env").loadEnv();
 
 const db = require("./lib/db");
 const accounts = require("./lib/accounts");
-const auth = require("./lib/auth");
+const redis = require("./lib/redis");
 const imageConfig = require("./lib/image-config");
 const imageSets = require("./lib/image-sets");
 const images = require("./lib/images");
@@ -233,6 +233,11 @@ const DERIVED_TYPES = Object.keys(IMAGE_TYPES).filter((type) => !["main", "playg
 const IMAGE_SET_ID_PATTERN = /^\d{3,}$/;
 const IMAGE_FILE_PATTERN = /^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp|gif)$/i;
 let imageSetAllocationQueue = Promise.resolve();
+// 图库列表会在短时间内并发请求多张同套图的缩略图。归属是创建后不变的，
+// 因此缓存极短时间的正向查询即可避免每张卡片重复查数据库；删除/新建会主动失效。
+const IMAGE_SET_OWNER_CACHE_TTL_MS = 60 * 1000;
+const IMAGE_SET_OWNER_CACHE_LIMIT = 4096;
+const imageSetOwnerCache = new Map();
 // 生图端点（多组 key+url）与提示词配置已迁移到 MySQL，见 lib/image-config.js。
 
 // 生图任务表：Cloudflare 橙云代理单请求 100s 超时，而生图常需数分钟，
@@ -1384,8 +1389,13 @@ function getThumbnailCommand(command, filePath, size) {
 }
 
 // 返回 id 对应的缩略图路径，不存在则从原图生成并缓存到 .thumbs。id 已由调用方经 resolveOutputFile 校验安全。
+// 缩略图只用于列表/首页预览，统一限制到 400px，避免首屏为视觉卡片生成不必要的 768px 文件。
+function getThumbnailEdge() {
+  return THUMB_MAX_PX;
+}
+
 async function ensureThumbnail(id, srcPath) {
-  return previewCache.get(srcPath);
+  return previewCache.get(srcPath, getThumbnailEdge(id));
 }
 
 function normalizeImageSetId(value) {
@@ -1479,6 +1489,7 @@ async function allocateImageSetNow(ownerUserId) {
   const dir = resolveImageSetDir(folderName);
   await fsp.mkdir(dir, { recursive: true });
   await imageSets.recordOwner(folderName, ownerUserId);
+  cacheImageSetOwner(folderName, ownerUserId);
   return {
     id: folderName,
     order,
@@ -1531,6 +1542,7 @@ async function resetImageSetsNow(ownerUserId) {
     ownedIds.map((id) => fsp.rm(resolveImageSetDir(id), { recursive: true, force: true })),
   );
   await imageSets.removeOwned(ownerUserId);
+  ownedIds.forEach((id) => imageSetOwnerCache.delete(id));
   await images.removeByOwner(ownerUserId);
   await videos.removeByOwner(ownerUserId);
   await gallery.removeByOwner(ownerUserId);
@@ -1539,12 +1551,31 @@ async function resetImageSetsNow(ownerUserId) {
 }
 
 // 校验某个套图是否属于当前用户；管理员不受限。imageSetId 为空时交给各接口自身的必填校验处理。
+async function getCachedImageSetOwner(id) {
+  const cached = imageSetOwnerCache.get(id);
+  if (cached && Date.now() - cached.cachedAt <= IMAGE_SET_OWNER_CACHE_TTL_MS) {
+    return cached.ownerId;
+  }
+  const ownerId = await imageSets.getOwner(id);
+  if (ownerId !== undefined) {
+    cacheImageSetOwner(id, ownerId);
+  }
+  return ownerId;
+}
+
+function cacheImageSetOwner(id, ownerId) {
+  if (!imageSetOwnerCache.has(id) && imageSetOwnerCache.size >= IMAGE_SET_OWNER_CACHE_LIMIT) {
+    imageSetOwnerCache.clear();
+  }
+  imageSetOwnerCache.set(id, { ownerId, cachedAt: Date.now() });
+}
+
 async function assertOwnsImageSet(user, imageSetId) {
   const id = normalizeImageSetId(imageSetId);
   if (!id || user.role === "admin") {
     return;
   }
-  const ownerId = await imageSets.getOwner(id);
+  const ownerId = await getCachedImageSetOwner(id);
   if (ownerId === undefined || Number(ownerId) !== Number(user.id)) {
     const error = new Error("无权访问该套图");
     error.statusCode = 403;
@@ -2350,34 +2381,35 @@ async function runPythonProcess(args, cwd, env = process.env) {
 }
 
 // 多页面路由：每个菜单一个独立目录（public/pages/<name>/index.html + 各自 JS）。
-// 干净 URL → 页面目录的映射。auth: 'user' 需登录，'admin' 需管理员，'guest' 无需登录。
+// 页面本体是静态模板，不含私有业务数据，因此不在返回 HTML 时查询会话；
+// 权限统一由 API / 媒体接口和前端公共壳层的 bootstrap 处理。
 const PAGES_DIR = path.join(PUBLIC_DIR, "pages");
 const PAGE_ROUTES = {
-  "/": { dir: "home", auth: "guest" },
-  "/index.html": { dir: "home", auth: "guest" },
-  "/login": { dir: "login", auth: "guest" },
-  "/register": { dir: "login", auth: "guest" },
-  "/config": { dir: "config", auth: "admin" },
-  "/studio/hat": { dir: "studio-hat", auth: "user" },
-  "/studio/bag": { dir: "studio-bag", auth: "user" },
-  "/studio/print": { dir: "studio-print", auth: "user" },
-  "/studio/3d": { dir: "studio-3d", auth: "user" },
-  "/prompt": { dir: "prompt", auth: "user" },
-  "/prompts": { dir: "prompts", auth: "user" },
-  "/assets": { dir: "assets", auth: "user" },
-  "/audio": { dir: "audio", auth: "user" },
-  "/workbench": { dir: "workbench", auth: "user" },
-  "/product-sets": { dir: "product-sets", auth: "user" },
-  "/playground": { dir: "playground", auth: "user" },
-  "/video": { dir: "video", auth: "user" },
-  "/retouch": { dir: "retouch", auth: "user" },
-  "/full-playground": { dir: "full-playground", auth: "user" },
-  "/account": { dir: "account", auth: "user" },
-  "/my-images": { dir: "my-images", auth: "user" },
-  "/user-center": { dir: "user-center", auth: "user" },
-  "/contact": { dir: "contact", auth: "user" },
-  "/admin": { dir: "admin", auth: "admin" },
-  "/service-center": { dir: "service-center", auth: "admin" },
+  "/": { dir: "home" },
+  "/index.html": { dir: "home" },
+  "/login": { dir: "login" },
+  "/register": { dir: "login" },
+  "/config": { dir: "config" },
+  "/studio/hat": { dir: "studio-hat" },
+  "/studio/bag": { dir: "studio-bag" },
+  "/studio/print": { dir: "studio-print" },
+  "/studio/3d": { dir: "studio-3d" },
+  "/prompt": { dir: "prompt" },
+  "/prompts": { dir: "prompts" },
+  "/assets": { dir: "assets" },
+  "/audio": { dir: "audio" },
+  "/workbench": { dir: "workbench" },
+  "/product-sets": { dir: "product-sets" },
+  "/playground": { dir: "playground" },
+  "/video": { dir: "video" },
+  "/retouch": { dir: "retouch" },
+  "/full-playground": { dir: "full-playground" },
+  "/account": { dir: "account" },
+  "/my-images": { dir: "my-images" },
+  "/user-center": { dir: "user-center" },
+  "/contact": { dir: "contact" },
+  "/admin": { dir: "admin" },
+  "/service-center": { dir: "service-center" },
 };
 
 async function servePage(req, res, pathname) {
@@ -2397,27 +2429,13 @@ async function servePage(req, res, pathname) {
     return true;
   }
 
-  if (route.auth === "user" || route.auth === "admin") {
-    const user = await auth.getSessionUser(req).catch(() => null);
-    if (!user) {
-      res.writeHead(302, { Location: `/?auth=login&redirect=${encodeURIComponent(pathname)}` });
-      res.end();
-      return true;
-    }
-    if (route.auth === "admin" && user.role !== "admin") {
-      res.writeHead(302, { Location: "/studio/hat" });
-      res.end();
-      return true;
-    }
-  }
-
   const dir = path.join(PAGES_DIR, route.dir);
   await serveStaticFromDir(req, res, dir, "index.html", "index.html");
   return true;
 }
 
-// 静态资源缓存策略：页面与脚本样式使用 ETag 重验；图片缓存 1 天。
-// 高延迟链路下，让浏览器缓存静态资源可显著减少切页面时的重复往返。
+// 静态资源尚未使用内容哈希文件名；HTML、JS、CSS 必须重验，避免部署后混用新旧模块。
+// 后续引入构建产物指纹后，再为带哈希的资源开启 immutable 长缓存。
 const COMPRESSIBLE_EXT = new Set([".html", ".css", ".js", ".json", ".svg"]);
 const LONG_CACHE_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
 
@@ -2943,6 +2961,7 @@ async function handleApi(req, res, pathname, searchParams) {
       defaultImageRatio: normalizeImageSpec().ratio,
       imageEndpoints: await imageConfig.countEndpoints(),
       promptApiConfig: { uploaded: Boolean(await modelServices.defaultId("prompt")) },
+      redis: redis.status(),
     });
     return;
   }
@@ -2954,13 +2973,31 @@ async function handleApi(req, res, pathname, searchParams) {
     if (!user) {
       return;
     }
-    const uploaded = (await imageConfig.countEndpoints()) > 0;
     // nodes：脱敏的可选节点列表（供自由生图指定节点，普通用户也能拿，不含 url/key）。
-    const nodes = await imageConfig.listSelectableEndpoints();
-    const payload = { ok: true, config: { uploaded }, nodes, defaultTarget: await imageConfig.getGlobalDefaultTarget(nodes), models: [...new Set(nodes.flatMap((node) => node.models))] };
+    const adminDetails = user.role === "admin"
+      ? Promise.all([imageConfig.listEndpointsForDisplay(), imageConfig.getSchedule()])
+      : null;
+    const [endpointCount, nodes] = await Promise.all([
+      imageConfig.countEndpoints(),
+      imageConfig.listSelectableEndpoints(),
+    ]);
+    const payload = {
+      ok: true,
+      config: { uploaded: endpointCount > 0 },
+      nodes,
+      defaultTarget: null,
+      models: [...new Set(nodes.flatMap((node) => node.models))],
+    };
     if (user.role === "admin") {
-      payload.endpoints = await imageConfig.listEndpointsForDisplay();
-      payload.schedule = await imageConfig.getSchedule();
+      const [defaultTarget, [endpoints, schedule]] = await Promise.all([
+        imageConfig.getGlobalDefaultTarget(nodes),
+        adminDetails,
+      ]);
+      payload.defaultTarget = defaultTarget;
+      payload.endpoints = endpoints;
+      payload.schedule = schedule;
+    } else {
+      payload.defaultTarget = await imageConfig.getGlobalDefaultTarget(nodes);
     }
     sendJson(res, 200, payload);
     return;
@@ -3032,14 +3069,18 @@ async function handleApi(req, res, pathname, searchParams) {
     if (!user) {
       return;
     }
-    const nodes = await modelServices.selectable("prompt");
-    const defaultId = await modelServices.defaultId("prompt");
+    const adminEndpoints = user.role === "admin" ? modelServices.list("prompt") : null;
+    const [nodes, defaultId, endpoints] = await Promise.all([
+      modelServices.selectable("prompt"),
+      modelServices.defaultId("prompt"),
+      adminEndpoints,
+    ]);
     const selected = nodes.find(node => node.id === defaultId);
     sendJson(res, 200, {
       ok: true,
       config: { uploaded: Boolean(selected), hasApiKey: Boolean(selected), model: selected?.model || "" },
       nodes, defaultId,
-      ...(user.role === "admin" ? { endpoints: await modelServices.list("prompt") } : {}),
+      ...(user.role === "admin" ? { endpoints } : {}),
     });
     return;
   }
@@ -3072,14 +3113,18 @@ async function handleApi(req, res, pathname, searchParams) {
     if (!user) {
       return;
     }
-    const nodes = await videoServices.selectable();
-    const defaultId = await videoServices.defaultId();
+    const adminEndpoints = user.role === "admin" ? videoServices.list() : null;
+    const [nodes, defaultId, endpoints] = await Promise.all([
+      videoServices.selectable(),
+      videoServices.defaultId(),
+      adminEndpoints,
+    ]);
     const selected = nodes.find(node => node.id === defaultId);
     sendJson(res, 200, {
       ok: true,
       config: { uploaded: Boolean(selected), model: selected?.model || "", hasApiKey: Boolean(selected) },
       nodes, defaultId,
-      ...(user.role === "admin" ? { endpoints: await videoServices.list() } : {}),
+      ...(user.role === "admin" ? { endpoints } : {}),
       costPerSecond: VIDEO_CREDIT_PER_SECOND,
     });
     return;
@@ -3875,8 +3920,28 @@ async function listExistingImageSetIds() {
     .map((entry) => entry.name);
 }
 
+function registerGracefulShutdown() {
+  let closing = false;
+  const shutdown = (signal) => {
+    if (closing) return;
+    closing = true;
+    console.log(`收到 ${signal}，正在关闭服务…`);
+    server.close(() => {
+      redis.close()
+        .catch(() => {})
+        .finally(() => process.exit(0));
+    });
+    setTimeout(() => {
+      redis.close().catch(() => {}).finally(() => process.exit(1));
+    }, 10000).unref();
+  };
+  process.once("SIGINT", () => shutdown("SIGINT"));
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+}
+
 if (require.main === module) {
-  db.init()
+  redis.init()
+    .then(() => db.init())
     .then(() =>
       // 生图端点/提示词表建好；DB 为空时把 .env 里的旧值一次性迁进来，之后完全走 DB。
       imageConfig.init({
@@ -3904,13 +3969,14 @@ if (require.main === module) {
       server.listen(PORT, HOST, () => {
         console.log(`AI 图像设计工作台已启动：http://${HOST}:${PORT}`);
       });
+      registerGracefulShutdown();
       // 历史图回填放到监听之后异步跑，不拖慢启动；已记录的套图会跳过。
       backfillImageRecords()
         .then(() => serviceCenter.backfillMedia())
         .catch((error) => console.error("图库或服务统计回填失败：", error.message));
     })
     .catch((error) => {
-      console.error("数据库初始化失败，请检查 .env 中的 DB_* 配置与 MySQL 服务：");
+      console.error("服务初始化失败，请检查 Redis、MySQL 与 .env 中的 REDIS_URL / DB_* 配置：");
       console.error(error.message);
       process.exit(1);
     });
@@ -3956,4 +4022,6 @@ module.exports = {
   parsePromptExtractionResponse,
   readImageDimensions,
   sendVideoData,
+  staticCacheControl,
+  getThumbnailEdge,
 };

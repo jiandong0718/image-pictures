@@ -207,8 +207,11 @@ async function main() {
   if (!ctx) {
     return;
   }
-  // 头像/邮箱是本页的编辑对象，不用可能过期的本地缓存，直接拉一次最新值。
-  const me = (await fetchMe()) || ctx.me;
+  // 头像/邮箱是本页的编辑对象，不用可能过期的本地缓存。与 VIP 查询并发，
+  // 避免两个独立请求串行拖慢整个账户页。
+  const freshMeRequest = fetchMe({ force: true, full: true }).catch(() => null);
+  const vipRequest = apiGet("/api/account/vip");
+  const me = (await freshMeRequest) || ctx.me;
   renderProfileHero(me);
   renderAvatarPreview(me);
   bindAvatar(me);
@@ -216,8 +219,11 @@ async function main() {
   bindContactField("phone", "/api/account/phone", "手机号", me.phone);
   bindPasswordForm();
 
-  const { vip } = await apiGet("/api/account/vip");
-  renderVip(vip);
+  try {
+    renderVip((await vipRequest).vip);
+  } catch {
+    document.getElementById("vipNextLabel").textContent = "等级信息暂时无法加载，请刷新重试";
+  }
 }
 
 main();

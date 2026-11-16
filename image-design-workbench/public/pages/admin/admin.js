@@ -185,7 +185,7 @@ async function toggleRole() {
 }
 
 async function main() {
-  const ctx = await mountLayout({ active: "admin", title: "充值管理", crumb: "ADMIN" });
+  const ctx = await mountLayout({ active: "admin", title: "充值管理", crumb: "ADMIN", requiredRole: "admin" });
   if (!ctx) {
     return;
   }

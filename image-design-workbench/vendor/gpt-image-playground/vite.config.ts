@@ -27,6 +27,20 @@ export default defineConfig(({ command }) => {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __DEV_PROXY_CONFIG__: JSON.stringify(devProxyConfig),
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // 绘图聚集地是嵌入式页面，首屏不应把编辑器本体、Markdown、压缩工具和模型 SDK
+          // 压进同一个大包。拆成稳定依赖块，让浏览器并发下载并复用缓存。
+          manualChunks: {
+            react: ['react', 'react-dom', 'zustand'],
+            markdown: ['react-markdown', 'streamdown', 'remark-gfm'],
+            archive: ['fflate'],
+            fal: ['@fal-ai/client'],
+          },
+        },
+      },
+    },
     server: {
       host: true,
       proxy:

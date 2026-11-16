@@ -1,6 +1,6 @@
 // 登录 / 注册页。根据 URL（/login 或 /register）决定初始模式，可在页内切换。
 
-import { apiPost, fetchMe } from "/shared/api.js";
+import { apiPost, fetchMe, rememberAuthenticatedUser } from "/shared/api.js";
 import { resolveAuthDestination } from "/shared/auth-navigation.js";
 
 let mode = location.pathname === "/register" ? "register" : "login";
@@ -68,8 +68,9 @@ els.form.addEventListener("submit", async (e) => {
   try {
     const path = mode === "login" ? "/api/auth/login" : "/api/auth/register";
     const payload = mode === "login" ? { username, password } : { username, password, email, phone };
-    await apiPost(path, payload);
-    location.href = redirectTarget();
+    const result = await apiPost(path, payload);
+    rememberAuthenticatedUser(result.user);
+    location.replace(redirectTarget());
   } catch (err) {
     setMsg(err.message, "error");
     els.submit.disabled = false;
@@ -77,10 +78,12 @@ els.form.addEventListener("submit", async (e) => {
 });
 
 // 已登录则直接进工作台。
-fetchMe().then((user) => {
+fetchMe({ force: true }).then((user) => {
   if (user) {
-    location.href = redirectTarget();
+    location.replace(redirectTarget());
   }
+}).catch(() => {
+  // Redis 或网络暂时不可用时保留登录页，用户可稍后重试。
 });
 
 renderMode();

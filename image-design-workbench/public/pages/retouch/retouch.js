@@ -4,7 +4,7 @@ import { previewUrl as imagePreviewUrl } from "/shared/media.js";
 // 链路复用现有接口：分配套图 → 上传照片 → /api/playground/images(mode:edit)。提示词/历史只存本地。
 
 import { mountLayout, setCredits } from "/shared/layout.js";
-import { apiGet, apiPost, apiUpload, downloadFile, pollTask } from "/shared/api.js";
+import { apiGet, apiPost, apiUpload, downloadFile, pollTask, authorizedFetch } from "/shared/api.js";
 import { createLocalState } from "/shared/persistence.js";
 import { enableImagePaste } from "/shared/image-paste.js";
 import { takeReuse } from "/shared/reuse.js";
@@ -335,7 +335,7 @@ function selectFile(f) {
 async function applyGallerySource(reuse) {
   if (!reuse?.imageId) return;
   try {
-    const response = await fetch("/api/images/file/" + encodeURIComponent(reuse.imageId));
+    const response = await authorizedFetch("/api/images/file/" + encodeURIComponent(reuse.imageId));
     if (!response.ok) throw new Error("原图无法读取");
     const blob = await response.blob();
     const filename = String(reuse.imageId).split("/").pop() || "gallery-image.png";
@@ -489,7 +489,13 @@ async function main() {
   });
   els.generateBtn.addEventListener("click", generate);
 
-  imageTarget = await mountImageTarget(document.getElementById("imageTarget"), { storageKey: "imageStudio:target:" + ctx.me.id + ":retouch" });
+  imageTarget = await mountImageTarget(document.getElementById("imageTarget"), {
+    storageKey: "imageStudio:target:" + ctx.me.id + ":retouch",
+    onConfig(configured) {
+      hasImageConfig = configured;
+      renderState();
+    },
+  });
   hasImageConfig = imageTarget.configured;
   renderState();
   renderCanvas();
